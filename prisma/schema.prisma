@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String          @id @default(cuid())
+  name               String?
+  email              String          @unique
+  password           String?
+  emailVerified      DateTime?
+  image              String?
+  role               Role            @default(user)
+  plan               Plan            @default(pymes)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  apiUrl             String          @default("https://api.openAI.co")
+  company            String          @default("Empresa Demo")
+  lat                String          @default("0.0000")
+  lng                String          @default("0.0000")
+  mapsUrl            String          @default("https://maps.google.com/?q=0,0")
+  notificationNumber String          @default("0000000000")
+  openingPhrase      String?         @default("DEPRECATED")
+  apiKeyId           String?
+  del_seguimiento    String?         @default("Estamos para servirle.")
+  accounts           Account[]
+  instancias         Instancias[]
+  pausar             Pausar[]
+  sessions           Session[]
+  systemMessages     SystemMessage[]
+  tools              Tools[]
+  apiKey             ApiKey?         @relation(fields: [apiKeyId], references: [id])
+}
+
+model Session {
+  userId       String
+  remoteJid    String
+  pushName     String
+  instanceId   String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  status       Boolean
+  id           Int      @id @default(autoincrement())
+  seguimientos String?  @default("")
+  inactividad  String?  @default("")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Pausar {
+  userId      String
+  mensaje     String   @default("Fue un gusto ayudarte.")
+  tipo        String   @default("abrir")
+  baseurl     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  apikeyId    String
+  instanciaId String
+  id          Int      @id @default(autoincrement())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  url       String
+  key       String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  Users     User[]
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model VerificationToken {
+  identifier String   @id @unique
+  token      String
+  expires    DateTime
+}
+
+model Instancias {
+  id           Int    @id @default(autoincrement())
+  instanceName String @unique
+  userId       String
+  instanceId   String
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SystemMessage {
+  id        String   @id @default(cuid())
+  message   String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  title     String   @default("Sin título")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Tools {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Workflow {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  definition  String
+  status      String
+  createdAt   DateTime @default(now())
+  updateAt    DateTime @updatedAt
+
+  @@unique([name, userId])
+}
+
+model WorkflowNode {
+  id          String   @id @default(cuid())
+  workflowId  String
+  message     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tipo        String
+  url         String?
+  delay       String?
+  inactividad Boolean?
+}
+
+model n8n_chat_histories {
+  id         Int    @id @default(autoincrement())
+  session_id String @db.VarChar(255)
+  message    Json
+}
+
+model seguimientos {
+  id          Int     @id @default(autoincrement())
+  idNodo      String
+  serverurl   String?
+  instancia   String?
+  apikey      String?
+  remoteJid   String?
+  mensaje     String?
+  tipo        String?
+  media       String?
+  time        String?
+  name_file   String?
+  consecutivo String?
+}
+
+model rr {
+  id         Int      @id @default(autoincrement())
+  workflowId String
+  mensaje    String?
+  userId     String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+enum Role {
+  user
+  admin
+}
+
+enum Plan {
+  empresarial
+  business
+  pymes
+}

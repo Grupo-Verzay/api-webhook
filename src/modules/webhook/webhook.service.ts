@@ -7,6 +7,8 @@ import { MessageDirectionService } from './services/message-direction/message-di
 import { MessageTypeHandlerService } from './services/message-type-handler/message-type-handler.service';
 import { InstancesService } from '../instances/instances.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
+import { ConfigService } from '@nestjs/config';
+import { HttpService } from '@nestjs/axios';
 
 @Injectable()
 export class WebhookService {
@@ -14,10 +16,12 @@ export class WebhookService {
     private readonly logger: LoggerService,
     private readonly sessionService: SessionService,
     private readonly instancesService: InstancesService,
-
     private readonly messageDirectionService: MessageDirectionService,
     private readonly messageTypeHandlerService: MessageTypeHandlerService,
     private readonly aiAgentService: AiAgentService,
+
+    private readonly configService: ConfigService,
+    private readonly httpService: HttpService,
   ) { }
 
   /**
@@ -61,7 +65,11 @@ export class WebhookService {
     this.logger.debug(`Ouput AI - proceso multimedia: ${JSON.stringify(extractedContent)}`, 'WebhookService');
     /* LLamado al agente IA */
     const aiResponse = await this.aiAgentService.processInput((await extractedContent).toString());
-    this.logger.debug(`Ouput AI - respuesta del agente IA: ${JSON.stringify(extractedContent)}`, 'WebhookService');
+    this.logger.debug(`Ouput AI - respuesta del agente IA: ${JSON.stringify(aiResponse)}`, 'WebhookService');
+
+    /* Enviar mensaje al cliente */
+    await this.sendMessageToClient(remoteJid, aiResponse, instanceName);
+
     // Continuar con workflow...
   }
 
@@ -87,6 +95,41 @@ export class WebhookService {
     } else {
       await this.sessionService.registerSession(userId, remoteJid, pushName, instanceId);
       this.logger.log(`✅ Registro exitoso`, 'WebhookService');
+    }
+  }
+
+  private async sendMessageToClient(remoteJid: string, message: string, instanceName: string) {
+    try {
+      const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
+      const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
+
+      if (!baseUrl || !apiKey) {
+        this.logger.error('❌ No se encontraron EVOLUTION_API_URL o EVOLUTION_API_KEY en configuración.', '', 'WebhookService');
+        return;
+      }
+
+      const url = `${baseUrl}/message/sendText/${instanceName}`;
+
+      const payload = {
+        number: remoteJid,
+        text: message,
+        // Puedes activar opciones opcionales aquí si quieres:
+        // delay: 1200,
+        // linkPreview: false,
+        // mentionsEveryOne: false,
+        // mentioned: [remoteJid],
+      };
+
+      await this.httpService.post(url, payload, {
+        headers: {
+          Authorization: apiKey,
+          'Content-Type': 'application/json',
+        },
+      }).toPromise();
+
+      this.logger.log(`📨 Mensaje enviado exitosamente a ${remoteJid}`, 'WebhookService');
+    } catch (error) {
+      this.logger.error('❌ Error enviando mensaje a Evolution API', error?.response?.data || error.message, 'WebhookService');
     }
   }
 }

@@ -7,6 +7,7 @@ import { WebhookModule } from './modules/webhook/webhook.module';
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
 import { InstancesService } from './modules/instances/instances.service';
+import { AiAgentModule } from './modules/ai-agent/ai-agent.module';
 
 @Module({
   imports: [
@@ -16,7 +17,8 @@ import { InstancesService } from './modules/instances/instances.service';
     }),
     WebhookModule,
     LoggerModule,
-    DatabaseModule
+    DatabaseModule,
+    AiAgentModule
   ],
   providers: [
     ServicesService,

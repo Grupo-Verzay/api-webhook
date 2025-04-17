@@ -5,8 +5,8 @@ import { LoggerService } from 'src/core/logger/logger.service';
 import { WebhookBodyDto } from './dto/webhook-body';
 import { MessageDirectionService } from './services/message-direction/message-direction.service';
 import { MessageTypeHandlerService } from './services/message-type-handler/message-type-handler.service';
-import { OpenAiService } from './services/openai/openai.service';
 import { InstancesService } from '../instances/instances.service';
+import { AiAgentService } from '../ai-agent/ai-agent.service';
 
 @Injectable()
 export class WebhookService {
@@ -17,7 +17,7 @@ export class WebhookService {
 
     private readonly messageDirectionService: MessageDirectionService,
     private readonly messageTypeHandlerService: MessageTypeHandlerService,
-    private readonly openAiService: OpenAiService,
+    private readonly aiAgentService: AiAgentService,
   ) { }
 
   /**
@@ -50,6 +50,7 @@ export class WebhookService {
 
     /* Validar si la session está activa */
     const sessionActive = await this.sessionService.isSessionActive(remoteJid);
+    this.logger.log(`Estado de la session: ${sessionActive}`, 'WebhookService');
     if (!sessionActive) {
       // Terminar flujo
       return;
@@ -57,7 +58,8 @@ export class WebhookService {
 
     /* Extraer la data dependiendo del tipo de mensaje, "text", "media", "audio" */
     const extractedContent = this.messageTypeHandlerService.extractContentByType(messageType, data);
-    const aiResponse = await this.openAiService.processInput(extractedContent);
+    /* LLamado al agente IA */
+    // const aiResponse = await this.aiAgentService.processInput(extractedContent);
     // Continuar con workflow...
   }
 

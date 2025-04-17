@@ -1,12 +1,25 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { ServicesService } from './services/services.service';
-import { PrismaService } from './prisma.service';
 import { SessionService } from './modules/session/session.service';
 import { LoggerModule } from './core/logger/logger.module';
 import { WebhookModule } from './modules/webhook/webhook.module';
+import configuration from './config/configuration';
+import { DatabaseModule } from './database/database.module';
 
 @Module({
-  imports: [WebhookModule, LoggerModule],
-  providers: [ServicesService, PrismaService, SessionService],
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true, // Así puedes usar ConfigService en cualquier parte
+      load: [configuration], // Carga tu archivo src/config/configuration.ts
+    }),
+    WebhookModule,
+    LoggerModule,
+    DatabaseModule
+  ],
+  providers: [
+    ServicesService,
+    SessionService,
+  ],
 })
-export class AppModule {}
+export class AppModule { }

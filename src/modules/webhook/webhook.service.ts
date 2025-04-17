@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { SessionService } from '../session/session.service';
 import { parseRemoteJid } from './utils/parse-remote-jid.util'; // Utilidad separada
-import { WebhookBodyDto } from './dto/webhook-body/webhook-body';
 import { LoggerService } from 'src/core/logger/logger.service';
+import { WebhookBodyDto } from './dto/webhook-body';
 
 @Injectable()
 export class WebhookService {

@@ -1,14 +1,19 @@
 import { Controller, Post, Body, Res } from '@nestjs/common';
 import { WebhookService } from './webhook.service';
 import { Response } from 'express';
+import { LoggerService } from 'src/core/logger/logger.service';
 
 @Controller('webhook')
 export class WebhookController {
-  constructor(private readonly webhookService: WebhookService) { }
+  constructor(
+    private readonly webhookService: WebhookService,
+    private readonly logger: LoggerService,
+  ) { }
 
   @Post()
   async recibirWebhook(@Body() payload: any, @Res() res: Response) {
-    console.log('📦 Webhook recibido:', JSON.stringify(payload, null, 2)); // <<--- Aquí se imprime el body bien formateado 
+    this.logger.log(`📦 Webhook recibido:${JSON.stringify(payload, null, 2)}`, 'WebhookController');
+
     try {
       await this.webhookService.procesarWebhook(payload);
       return res.status(200).send('Webhook recibido y procesado con éxito');

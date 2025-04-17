@@ -9,6 +9,7 @@ import { InstancesService } from '../instances/instances.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class WebhookService {
@@ -33,10 +34,13 @@ export class WebhookService {
   async processWebhook(body: WebhookBodyDto): Promise<void> {
     const {
       instance: instanceName,
+      server_url,
+      apikey,
       data = {},
     } = body;
 
-    const remoteJid = parseRemoteJid(data?.key?.remoteJid);
+    const pureRemoteJid = data?.key?.remoteJid ?? '';
+    const remoteJid = parseRemoteJid(pureRemoteJid);
     const pushName = data?.pushName || 'Desconocido';
 
     const prismaInstancia = await this.instancesService.getUserId(instanceName);
@@ -68,7 +72,7 @@ export class WebhookService {
     this.logger.debug(`Ouput AI - respuesta del agente IA: ${JSON.stringify(aiResponse)}`, 'WebhookService');
 
     /* Enviar mensaje al cliente */
-    await this.sendMessageToClient(remoteJid, aiResponse, instanceName);
+    await this.sendMessageToClient(pureRemoteJid, aiResponse, instanceName, server_url, apikey);
 
     // Continuar con workflow...
   }
@@ -98,35 +102,53 @@ export class WebhookService {
     }
   }
 
-  private async sendMessageToClient(remoteJid: string, message: string, instanceName: string) {
+  /**
+   * Envía un mensaje de texto a un cliente de WhatsApp a través de la Evolution API.
+   *
+   * @private
+   * @param {string} remoteJid - Número de teléfono del destinatario en formato internacional.
+   * @param {string} message - Contenido del mensaje de texto que se desea enviar.
+   * @param {string} instanceName - Nombre de la instancia de Evolution asociada al envío.
+   * @param {string} server_url - URL base del servidor Evolution API para el envío de mensajes.
+   * @param {string} apikey - Clave API para autorización en el servidor Evolution.
+   * @returns {Promise<void>} - No retorna ningún valor. Lanza logs en caso de éxito o error.
+   */
+  private async sendMessageToClient(
+    remoteJid: string,
+    message: string,
+    instanceName: string,
+    server_url: string,
+    apikey: string,
+  ) {
     try {
-      const baseUrl = this.configService.get<string>('EVOLUTION_API_URL');
-      const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
 
-      if (!baseUrl || !apiKey) {
-        this.logger.error('❌ No se encontraron EVOLUTION_API_URL o EVOLUTION_API_KEY en configuración.', '', 'WebhookService');
+      this.logger.debug(server_url)
+      this.logger.debug(apikey)
+      this.logger.debug(instanceName)
+      this.logger.debug(remoteJid)
+      this.logger.debug(message)
+
+      if (!server_url || !apikey) {
+        this.logger.error('❌ No se encontraron server_url o apikey dinámicos.', '', 'WebhookService');
         return;
       }
-
-      const url = `${baseUrl}/message/sendText/${instanceName}`;
-
+  
+      const url = `${server_url}/message/sendText/${instanceName}`;
+  
       const payload = {
         number: remoteJid,
         text: message,
-        // Puedes activar opciones opcionales aquí si quieres:
-        // delay: 1200,
-        // linkPreview: false,
-        // mentionsEveryOne: false,
-        // mentioned: [remoteJid],
       };
-
-      await this.httpService.post(url, payload, {
-        headers: {
-          Authorization: apiKey,
-          'Content-Type': 'application/json',
-        },
-      }).toPromise();
-
+  
+      await firstValueFrom(
+        this.httpService.post(url, payload, {
+          headers: {
+            apikey: apikey,
+            'Content-Type': 'application/json',
+          },
+        }),
+      );
+  
       this.logger.log(`📨 Mensaje enviado exitosamente a ${remoteJid}`, 'WebhookService');
     } catch (error) {
       this.logger.error('❌ Error enviando mensaje a Evolution API', error?.response?.data || error.message, 'WebhookService');

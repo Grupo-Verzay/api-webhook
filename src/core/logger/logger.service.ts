@@ -22,12 +22,12 @@ export class LoggerService extends Logger {
 
   async warn(message: string, context?: string): Promise<void> {
     super.warn(`🟡 WARNING - ${message}`, context);
-    await this.saveLog('warn', message, context);
+    // await this.saveLog('warn', message, context);
   }
 
   async debug(message: string, context?: string): Promise<void> {
     super.debug(`🔵 DEBUG - ${message}`, context);
-    await this.saveLog('debug', message, context);
+    // await this.saveLog('debug', message, context);
   }
 
   async verbose(message: string, context?: string): Promise<void> {

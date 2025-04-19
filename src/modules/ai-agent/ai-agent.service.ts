@@ -47,7 +47,7 @@ export class AiAgentService {
 
   async processInput(content: string, userId: string): Promise<string> {
     try {
-      const systemPrompt = await this.promptService.getSystemMessageByUserId(userId);
+      const systemPrompt = await this.promptService.getPromptUserId(userId);
 
       const response = await firstValueFrom(
         this.httpService.post(

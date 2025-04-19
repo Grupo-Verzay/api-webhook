@@ -5,7 +5,7 @@ import { PrismaService } from 'src/database/prisma.service';
 export class PromptService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSystemMessageByUserId(userId: string): Promise<string> {
+  async getPromptUserId(userId: string): Promise<string> {
     const systemMessage = await this.prisma.systemMessage.findFirst({
       where: { userId },
       orderBy: { createdAt: 'desc' }, // Por si tiene varios, le traemos el último actualizado

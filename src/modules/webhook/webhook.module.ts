@@ -8,10 +8,11 @@ import { MessageDirectionService } from './services/message-direction/message-di
 import { MessageTypeHandlerService } from './services/message-type-handler/message-type-handler.service';
 import { InstancesService } from '../instances/instances.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
+import { PromptService } from '../prompt/prompt.service';
 
 @Module({
   imports: [HttpModule],
   controllers: [WebhookController],
-  providers: [WebhookService, PrismaService, SessionService, InstancesService, MessageDirectionService, MessageTypeHandlerService, AiAgentService]
+  providers: [WebhookService, PrismaService, SessionService, InstancesService, MessageDirectionService, MessageTypeHandlerService, AiAgentService, PromptService]
 })
 export class WebhookModule {}

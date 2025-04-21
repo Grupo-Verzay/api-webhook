@@ -15,7 +15,6 @@ export class AiAgentService {
   private openAiClient: OpenAI;
   private readonly openAiApiKey: string;
   private readonly openAiChatUrl = 'https://api.openai.com/v1/chat/completions';
-  private readonly openAiWhisperUrl = 'https://api.openai.com/v1/audio/transcriptions';
 
   constructor(
     private readonly configService: ConfigService,

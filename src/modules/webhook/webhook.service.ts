@@ -96,7 +96,6 @@ export class WebhookService {
       this.logger.log(`Chat pausado.`, 'WebhookService');
 
 
-
       // TODO: Continuar con monitoreo de RR y Seguimientos...
 
       return;

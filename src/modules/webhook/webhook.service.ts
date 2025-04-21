@@ -49,6 +49,10 @@ export class WebhookService {
     const instanceId = prismaInstancia?.instanceId ?? '';
     const fromMe = data?.key?.fromMe ?? false;
     const messageType = data?.messageType ?? '';
+    /* user information */
+    const userWithRelations = await this.userService.getUserWithPausar(userId);
+    /* apikey */
+    const apikeyOpenAi = userWithRelations?.apiUrl as string;
 
     const sessionStatus = await this.checkOrRegisterSession(remoteJid, instanceId, userId, pushName);
 
@@ -64,8 +68,6 @@ export class WebhookService {
 
       if (!sessionStatus) {
         // Monitoreo de PAUSA: buscar palabra clave para reactivación
-        const userWithRelations = await this.userService.getUserWithPausar(userId);
-
         if (!userWithRelations) {
           this.logger.warn('No se encontró el usuario para obtener la frase de reactivación.', 'WebhookService');
           return;
@@ -110,10 +112,10 @@ export class WebhookService {
     }
 
     /* Extraer la data dependiendo del tipo de mensaje, "text", "media", "audio" */
-    const extractedContent = this.messageTypeHandlerService.extractContentByType(messageType, data);
+    const extractedContent = this.messageTypeHandlerService.extractContentByType(messageType, apikeyOpenAi, data);
     this.logger.debug(`Ouput AI - proceso multimedia: ${JSON.stringify(extractedContent)}`, 'WebhookService');
     /* LLamado al agente IA */
-    const aiResponse = await this.aiAgentService.processInput((await extractedContent).toString(), userId);
+    const aiResponse = await this.aiAgentService.processInput((await extractedContent).toString(), userId, apikeyOpenAi);
     this.logger.debug(`Ouput AI - respuesta del agente IA: ${JSON.stringify(aiResponse)}`, 'WebhookService');
 
     /* Enviar mensaje al cliente */

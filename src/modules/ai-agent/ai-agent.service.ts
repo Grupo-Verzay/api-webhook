@@ -2,122 +2,129 @@ import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
 import OpenAI from 'openai';
-
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
 import { LoggerService } from 'src/core/logger/logger.service';
 import { PromptService } from '../prompt/prompt.service';
 
 @Injectable()
 export class AiAgentService {
   private openAiClient: OpenAI;
-  private readonly openAiApiKey: string;
-  private readonly openAiChatUrl = 'https://api.openai.com/v1/chat/completions';
 
   constructor(
-    private readonly configService: ConfigService,
-    private readonly httpService: HttpService,
     private readonly logger: LoggerService,
     private readonly promptService: PromptService,
-  ) {
-    this.openAiApiKey = this.configService.get<string>('OPENAI_API_KEY') || '';
+  ) { }
 
-    this.openAiClient = new OpenAI({
-      apiKey: this.configService.get<string>('OPENAI_API_KEY'),
-    });
-
-    if (!this.openAiApiKey) {
-      this.logger.error('❌ API Key de OpenAI no encontrada. Verifica tu archivo .env', '', 'AiAgentService');
+  /**
+   * Inicializa el cliente de OpenAI con una API Key proporcionada.
+   *
+   * @param {string} apikeyOpenAi
+   */
+  private initializeClient(apikeyOpenAi: string): void {
+    if (!this.isValidApiKey(apikeyOpenAi)) {
+      this.logger.error('API Key inválida o no proporcionada.', '', 'AiAgentService');
     }
+    this.openAiClient = new OpenAI({ apiKey: apikeyOpenAi });
   }
 
-  private getHeaders() {
-    if (!this.openAiApiKey) {
-      throw new Error('No se puede hacer petición: API Key de OpenAI no configurada.');
-    }
-
-    return {
-      Authorization: `Bearer ${this.openAiApiKey}`,
-      'Content-Type': 'application/json',
-    };
+  /**
+   * Valida si una API Key parece válida.
+   *
+   * @param {string} apikeyOpenAi
+   * @returns {boolean}
+   */
+  private isValidApiKey(apikeyOpenAi: string): boolean {
+    return typeof apikeyOpenAi === 'string' && apikeyOpenAi.startsWith('sk-') && apikeyOpenAi.length >= 40;
   }
 
-  async processInput(content: string, userId: string): Promise<string> {
+  /**
+   * Procesa la entrada de texto del usuario.
+   *
+   * @param {string} input
+   * @param {string} userId
+   * @param {string} apikeyOpenAi
+   * @returns {Promise<string>}
+   */
+  async processInput(input: string, userId: string, apikeyOpenAi: string): Promise<string> {
     try {
+      this.initializeClient(apikeyOpenAi);
       const systemPrompt = await this.promptService.getPromptUserId(userId);
-      this.logger.debug(`PROMPT: ${systemPrompt}`, 'processInput');
 
-      const response = await firstValueFrom(
-        this.httpService.post(
-          this.openAiChatUrl,
-          {
-            model: 'gpt-3.5-turbo',
-            messages: [
-              // { role: 'system', content: systemPrompt},
-              { role: 'system', content: 'hola' },
-              { role: 'user', content },
-            ],
-            temperature: 0.7,
-          },
-          {
-            headers: this.getHeaders(),
-          },
-        ),
-      );
+      const response = await this.openAiClient.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: input },
+        ],
+        temperature: 0.7,
+      });
 
-      return response.data.choices?.[0]?.message?.content?.trim() ?? '[ERROR_OPENAI_EMPTY_RESPONSE]';
+      return response.choices?.[0]?.message?.content?.trim() ?? '[ERROR_OPENAI_EMPTY_RESPONSE]';
     } catch (error) {
-      this.logger.error('❌ Error procesando input con OpenAI', error?.response?.data || error.message, 'AiAgentService');
+      this.logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
       return '[ERROR_PROCESSING_OPENAI_INPUT]';
     }
   }
 
-
-  async downloadAudioFile(url, outputPath) {
+  /**
+   * Descarga un archivo de audio desde una URL.
+   *
+   * @param {string} url
+   * @param {string} outputPath
+   * @returns {Promise<void>}
+   */
+  private async downloadAudioFile(url: string, outputPath: string): Promise<void> {
     const writer = fs.createWriteStream(outputPath);
-    const response = await axios({
-      url,
-      method: 'GET',
-      responseType: 'stream'
-    });
+    const response = await axios.get(url, { responseType: 'stream' });
 
     response.data.pipe(writer);
 
-    return new Promise<void>((resolve, reject) => {
+    return new Promise((resolve, reject) => {
       writer.on('finish', resolve);
       writer.on('error', reject);
     });
   }
 
-  async transcribeAudio(audioUrl: string): Promise<string> {
+  /**
+   * Transcribe un archivo de audio utilizando OpenAI Whisper.
+   *
+   * @param {string} audioUrl
+   * @returns {Promise<string>}
+   */
+  async transcribeAudio(audioUrl: string, apikeyOpenAi: string): Promise<string> {
     try {
-      // 1. Descargar el audio temporalmente
-      const tempFilePath = path.join(__dirname, 'temp_audio_file.oga');
+      this.initializeClient(apikeyOpenAi);
+
+      const tempFilePath = path.resolve(__dirname, '../../tmp/temp_audio_file.oga');
       await this.downloadAudioFile(audioUrl, tempFilePath);
 
-      // 2. Enviar el audio a OpenAI Whisper
       const transcription = await this.openAiClient.audio.transcriptions.create({
         file: fs.createReadStream(tempFilePath),
         model: 'whisper-1',
         language: 'es',
       });
 
-      // 3. Borrar el archivo temporal si quieres limpiar
       fs.unlinkSync(tempFilePath);
 
       return transcription.text;
     } catch (error) {
-      this.logger.error('❌ Error transcribiendo audio con OpenAI', error?.response?.data || error.message, 'AiAgentService');
+      this.logger.error('Error transcribiendo audio con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
       return '[ERROR_TRANSCRIBING_AUDIO]';
     }
   }
 
-  async describeImage(imageUrl: string): Promise<string> {
+  /**
+   * Describe una imagen utilizando OpenAI GPT-4 con input de imagen.
+   *
+   * @param {string} imageUrl
+   * @returns {Promise<string>}
+   */
+  async describeImage(imageUrl: string, apikeyOpenAi: string): Promise<string> {
     try {
+      this.initializeClient(apikeyOpenAi);
+
       const response = await this.openAiClient.responses.create({
-        model: 'gpt-4.1', // Este modelo soporta imágenes
+        model: 'gpt-4.1',
         input: [
           { role: 'user', content: 'Describe de forma clara y detallada el contenido de esta imagen.' },
           {
@@ -126,7 +133,7 @@ export class AiAgentService {
               {
                 type: 'input_image',
                 image_url: imageUrl,
-                detail: 'auto'
+                detail: 'auto',
               },
             ],
           },
@@ -135,9 +142,8 @@ export class AiAgentService {
 
       return response.output_text ?? '[ERROR_DESCRIBING_IMAGE]';
     } catch (error) {
-      this.logger.error('❌ Error describiendo imagen con OpenAI', error?.response?.data || error.message, 'AiAgentService');
+      this.logger.error('Error describiendo imagen con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
       return '[ERROR_DESCRIBING_IMAGE]';
     }
   }
-
 }

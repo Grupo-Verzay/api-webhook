@@ -10,6 +10,7 @@ import { AiAgentService } from '../ai-agent/ai-agent.service';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { UserService } from '../user/user.service';
+import { isGroupChat } from './utils/is-group-chat';
 
 @Injectable()
 export class WebhookService {
@@ -25,154 +26,101 @@ export class WebhookService {
     private readonly httpService: HttpService,
   ) { }
 
-/**
- * Procesa un webhook recibido desde Evolution API.
- *
- * @param {WebhookBodyDto} body - Payload recibido del webhook.
- * @returns {Promise<void>}
- */
-async processWebhook(body: WebhookBodyDto): Promise<void> {
-  const { instance: instanceName, server_url, apikey, data } = body;
+  /**
+   * Procesa un webhook recibido de Evolution API.
+   *
+   * @param {WebhookBodyDto} body - Payload recibido del webhook.
+   * @returns {Promise<void>}
+   */
+  async processWebhook(body: WebhookBodyDto): Promise<void> {
+    const {
+      instance: instanceName,
+      server_url,
+      apikey,
+      data,
+    } = body;
 
-  const remoteJid = parseRemoteJid(data?.key?.remoteJid ?? '');
-  const pushName = data?.pushName || 'Desconocido';
-  const fromMe = data?.key?.fromMe ?? false;
-  const messageType = data?.messageType ?? '';
+    const pureRemoteJid = data?.key?.remoteJid ?? '';
+    const remoteJid = parseRemoteJid(pureRemoteJid);
+    const pushName = data?.pushName || 'Desconocido';
 
-  const prismaInstancia = await this.instancesService.getUserId(instanceName);
-  const userId = prismaInstancia?.userId ?? '';
-  const instanceId = prismaInstancia?.instanceId ?? '';
+    const prismaInstancia = await this.instancesService.getUserId(instanceName);
+    const userId = prismaInstancia?.userId ?? '';
+    const instanceId = prismaInstancia?.instanceId ?? '';
+    const fromMe = data?.key?.fromMe ?? false;
+    const messageType = data?.messageType ?? '';
 
-  if (this.isGroupMessage(remoteJid)) return;
+    const sessionStatus = await this.checkOrRegisterSession(remoteJid, instanceId, userId, pushName);
 
-  const sessionStatus = await this.checkOrRegisterSession(remoteJid, instanceId, userId, pushName);
+    /* Validar si el mensaje proviene de un grupo. */
+    if (isGroupChat(remoteJid)) {
+      this.logger.log('🔇 Mensaje de grupo detectado, no se responderá.', 'WebhookService');
+      return;
+    }
 
-  if (this.messageDirectionService.isFromMe(fromMe)) {
-    await this.handleOutgoingMessage(remoteJid, instanceId, userId, data, sessionStatus);
-    return;
+    /* Validar quién está escribiendo y ejecutar pausas, reactivaciones o seguimientos */
+    if (this.messageDirectionService.isFromMe(fromMe)) {
+      this.logger.log(`Is from me: ${fromMe}`, 'WebhookService');
+
+      if (!sessionStatus) {
+        // Monitoreo de PAUSA: buscar palabra clave para reactivación
+        const userWithRelations = await this.userService.getUserWithPausar(userId);
+
+        if (!userWithRelations) {
+          this.logger.warn('No se encontró el usuario para obtener la frase de reactivación.', 'WebhookService');
+          return;
+        }
+
+        const dataPausar = userWithRelations.pausar ?? [];
+        const pausarItem = dataPausar.find(p => p.tipo === 'abrir');
+
+        if (!pausarItem) {
+          this.logger.warn('El usuario no tiene frase de reactivación configurada.', 'WebhookService');
+          return;
+        }
+
+        const phraseToReactivateChat = pausarItem.mensaje;
+        this.logger.log(`Frase de reactivación del usuario: "${phraseToReactivateChat}"`, 'WebhookService');
+
+        const conversationMsg = data?.message?.conversation ?? '';
+
+        // 3. Verificar si el cliente escribió la frase correcta para reactivar
+        if (conversationMsg.trim().toLowerCase() === phraseToReactivateChat.trim().toLowerCase()) {
+          this.logger.log('Frase correcta detectada. Reactivando chat...', 'WebhookService');
+          await this.sessionService.updateSessionStatus(remoteJid, instanceId, true);
+          return;
+        }
+      }
+      // Poner el estado del chat en falso
+      await this.sessionService.updateSessionStatus(remoteJid, instanceId, false);
+      this.logger.log(`Chat pausado.`, 'WebhookService');
+
+
+
+      // TODO: Continuar con monitoreo de RR y Seguimientos...
+
+      return;
+    }
+
+    /* Validar si la session está activa */
+    const sessionActive = await this.sessionService.isSessionActive(remoteJid);
+    this.logger.log(`Estado de la session: ${sessionActive}`, 'WebhookService');
+    if (!sessionActive) {
+      // Terminar flujo
+      return;
+    }
+
+    /* Extraer la data dependiendo del tipo de mensaje, "text", "media", "audio" */
+    const extractedContent = this.messageTypeHandlerService.extractContentByType(messageType, data);
+    this.logger.debug(`Ouput AI - proceso multimedia: ${JSON.stringify(extractedContent)}`, 'WebhookService');
+    /* LLamado al agente IA */
+    const aiResponse = await this.aiAgentService.processInput((await extractedContent).toString(), userId);
+    this.logger.debug(`Ouput AI - respuesta del agente IA: ${JSON.stringify(aiResponse)}`, 'WebhookService');
+
+    /* Enviar mensaje al cliente */
+    await this.sendMessageToClient(pureRemoteJid, aiResponse, instanceName, server_url, apikey);
+    // Continuar con workflow...
   }
-
-  const sessionActive = await this.sessionService.isSessionActive(remoteJid);
-  this.logger.debug(`Session active: ${sessionActive}`, 'WebhookService');
-  if (!sessionActive) return;
-
-  await this.processIncomingMessage(remoteJid, messageType, data, userId, instanceName, server_url, apikey);
-}
-
-/**
- * Verifica si el mensaje es de un grupo.
- *
- * @param {string} remoteJid
- * @returns {boolean}
- */
-private isGroupMessage(remoteJid: string): boolean {
-  const isGroup = remoteJid.endsWith('@g.us');
-  if (isGroup) {
-    this.logger.log('Group message detected. No response will be sent.', 'WebhookService');
-  }
-  return isGroup;
-}
-
-/**
- * Maneja mensajes enviados desde el sistema (fromMe: true).
- *
- * @param {string} remoteJid
- * @param {string} instanceId
- * @param {string} userId
- * @param {any} data
- * @param {boolean} sessionStatus
- */
-private async handleOutgoingMessage(
-  remoteJid: string,
-  instanceId: string,
-  userId: string,
-  data: any,
-  sessionStatus: boolean,
-): Promise<void> {
-  this.logger.debug('Processing outgoing message.', 'WebhookService');
-
-  if (!sessionStatus) {
-    await this.checkChatReactivation(remoteJid, instanceId, userId, data);
-  }
-
-  await this.sessionService.updateSessionStatus(remoteJid, instanceId, false);
-  this.logger.log('Chat paused after outgoing message.', 'WebhookService');
-}
-
-/**
- * Verifica si el usuario reactivó el chat con la frase configurada.
- *
- * @param {string} remoteJid
- * @param {string} instanceId
- * @param {string} userId
- * @param {any} data
- */
-private async checkChatReactivation(
-  remoteJid: string,
-  instanceId: string,
-  userId: string,
-  data: any,
-): Promise<void> {
-  const userWithRelations = await this.userService.getUserWithPausar(userId);
-
-  if (!userWithRelations) {
-    this.logger.warn('User not found when attempting reactivation.', 'WebhookService');
-    return;
-  }
-
-  const phraseToReactivateChat = userWithRelations.pausar?.find(p => p.tipo === 'abrir')?.mensaje;
-  if (!phraseToReactivateChat) {
-    this.logger.warn('No reactivation phrase configured for the user.', 'WebhookService');
-    return;
-  }
-
-  const conversationMsg = data?.message?.conversation ?? '';
-  if (conversationMsg.trim().toLowerCase() === phraseToReactivateChat.trim().toLowerCase()) {
-    await this.sessionService.updateSessionStatus(remoteJid, instanceId, true);
-    this.logger.log('Chat reactivated successfully.', 'WebhookService');
-  }
-}
-
-/**
- * Procesa mensajes entrantes de clientes (fromMe: false).
- *
- * @param {string} remoteJid
- * @param {string} messageType
- * @param {any} data
- * @param {string} userId
- * @param {string} instanceName
- * @param {string} serverUrl
- * @param {string} apiKey
- */
-private async processIncomingMessage(
-  remoteJid: string,
-  messageType: string,
-  data: any,
-  userId: string,
-  instanceName: string,
-  serverUrl: string,
-  apiKey: string,
-): Promise<void> {
-  const extractedContent = this.messageTypeHandlerService.extractContentByType(messageType, data);
-
-  if (!extractedContent) {
-    this.logger.warn('No valid content extracted from incoming message.', 'WebhookService');
-    return;
-  }
-
-  this.logger.debug(`Extracted content: ${extractedContent}`, 'WebhookService');
-
-  const aiResponse = await this.aiAgentService.processInput(extractedContent.toString(), userId);
-
-  if (!aiResponse) {
-    this.logger.warn('No response generated by AI agent.', 'WebhookService');
-    return;
-  }
-
-  this.logger.debug(`AI agent response: ${aiResponse}`, 'WebhookService');
-
-  await this.sendMessageToClient(remoteJid, aiResponse, instanceName, serverUrl, apiKey);
-}
 
   /**
    * Verifica si una sesión existe o registra una nueva si no existe.
@@ -188,7 +136,7 @@ private async processIncomingMessage(
     instanceId: string,
     userId: string,
     pushName: string,
-  ): Promise<boolean> {
+  ): Promise<Boolean> {
     const session = await this.sessionService.getSession(remoteJid, instanceId, userId);
 
     if (session) {

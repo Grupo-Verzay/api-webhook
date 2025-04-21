@@ -7,22 +7,22 @@ import { MessageDirectionService } from './services/message-direction/message-di
 import { MessageTypeHandlerService } from './services/message-type-handler/message-type-handler.service';
 import { InstancesService } from '../instances/instances.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
-import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { isGroupChat } from './utils/is-group-chat';
+import { UserService } from '../user/user.service';
 
 @Injectable()
 export class WebhookService {
   constructor(
     private readonly logger: LoggerService,
     private readonly sessionService: SessionService,
+    private readonly userService: UserService,
     private readonly instancesService: InstancesService,
     private readonly messageDirectionService: MessageDirectionService,
     private readonly messageTypeHandlerService: MessageTypeHandlerService,
     private readonly aiAgentService: AiAgentService,
 
-    private readonly configService: ConfigService,
     private readonly httpService: HttpService,
   ) { }
 
@@ -58,25 +58,52 @@ export class WebhookService {
       return;
     }
 
+    /* Validar quién está escribiendo y ejecutar pausas, reactivaciones o seguimientos */
+    if (this.messageDirectionService.isFromMe(fromMe)) {
+      this.logger.log(`Is from me: ${fromMe}`, 'WebhookService');
+
+      // 1. Poner el estado del chat en falso
+      await this.sessionService.updateSessionStatus(remoteJid, instanceId, false);
+      this.logger.log(`Chat pausado.`, 'WebhookService');
+
+      // 2. Monitoreo de PAUSA: buscar palabra clave para reactivación
+      const userWithRelations = await this.userService.getUserWithPausar(userId);
+
+      if (!userWithRelations) {
+        this.logger.warn('No se encontró el usuario para obtener la frase de reactivación.', 'WebhookService');
+        return;
+      }
+
+      const dataPausar = userWithRelations.pausar ?? [];
+      const pausarItem = dataPausar.find(p => p.tipo === 'abrir');
+
+      if (!pausarItem) {
+        this.logger.warn('El usuario no tiene frase de reactivación configurada.', 'WebhookService');
+        return;
+      }
+
+      const phraseToReactivateChat = pausarItem.mensaje;
+      this.logger.log(`Frase de reactivación del usuario: "${phraseToReactivateChat}"`, 'WebhookService');
+
+      const conversationMsg = data?.message?.conversation ?? '';
+
+      // 3. Verificar si el cliente escribió la frase correcta para reactivar
+      if (conversationMsg.trim().toLowerCase() === phraseToReactivateChat.trim().toLowerCase()) {
+        this.logger.log('Frase correcta detectada. Reactivando chat...', 'WebhookService');
+        await this.sessionService.updateSessionStatus(remoteJid, instanceId, true);
+        return;
+      }
+
+      // TODO: Continuar con monitoreo de RR y Seguimientos...
+
+      return;
+    }
+
     /* Validar si la session está activa */
     const sessionActive = await this.sessionService.isSessionActive(remoteJid);
     this.logger.log(`Estado de la session: ${sessionActive}`, 'WebhookService');
     if (!sessionActive) {
       // Terminar flujo
-      return;
-    }
-
-    /* Validar quien está escribiendo y ejecutar pausas, rr ó seguimientos. */
-    if (this.messageDirectionService.isFromMe(fromMe)) {
-      this.logger.log(`IS FROM ME: ${fromMe}`, 'WebhookService');
-
-      /* Poner el estado del chat en false */
-      await this.sessionService.updateSessionStatus(remoteJid, instanceId, false);
-      this.logger.log(`Se pausa el chat.`, 'WebhookService');
-      /* Monitoreo de PAUSA, buscar si en el mensaje viene la palabra clave para reactivar el chat*/
-      /* Monitoreo de RR */
-      /* Monitoreo de RR */
-      // Ejecutar otro flujo si es enviado por el sistema
       return;
     }
 

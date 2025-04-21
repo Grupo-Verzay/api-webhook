@@ -8,6 +8,7 @@ import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
 import { InstancesService } from './modules/instances/instances.service';
 import { AiAgentModule } from './modules/ai-agent/ai-agent.module';
+import { UserService } from './modules/user/user.service';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { AiAgentModule } from './modules/ai-agent/ai-agent.module';
     ServicesService,
     SessionService,
     InstancesService,
+    UserService,
   ],
 })
 export class AppModule { }

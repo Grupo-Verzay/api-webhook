@@ -12,6 +12,7 @@ import { firstValueFrom } from 'rxjs';
 import { UserService } from '../user/user.service';
 import { isGroupChat } from './utils/is-group-chat';
 import { Pausar, User } from '@prisma/client';
+import { MessageBufferService } from './services/message-buffer/message-buffer.service';
 
 @Injectable()
 export class WebhookService {
@@ -22,6 +23,7 @@ export class WebhookService {
     private readonly instancesService: InstancesService,
     private readonly messageDirectionService: MessageDirectionService,
     private readonly messageTypeHandlerService: MessageTypeHandlerService,
+    private readonly messageBufferService: MessageBufferService,
     private readonly aiAgentService: AiAgentService,
 
     private readonly httpService: HttpService,
@@ -41,6 +43,7 @@ export class WebhookService {
       data,
     } = body;
 
+    const delayConversation = 10000;
     const pureRemoteJid = data?.key?.remoteJid ?? '';
     const remoteJid = parseRemoteJid(pureRemoteJid);
     const pushName = data?.pushName || 'Desconocido';
@@ -84,15 +87,41 @@ export class WebhookService {
     }
 
     /* Extraer la data dependiendo del tipo de mensaje, "text", "media", "audio" */
-    const extractedContent = this.messageTypeHandlerService.extractContentByType(messageType, apikeyOpenAi, data);
+    const extractedContent = await this.messageTypeHandlerService.extractContentByType(messageType, apikeyOpenAi, data);
     this.logger.debug(`Ouput AI - proceso multimedia: ${JSON.stringify(extractedContent)}`, 'WebhookService');
-    /* LLamado al agente IA */
-    const aiResponse = await this.aiAgentService.processInput((await extractedContent).toString(), userId, apikeyOpenAi);
-    this.logger.debug(`Ouput AI - respuesta del agente IA: ${JSON.stringify(aiResponse)}`, 'WebhookService');
 
-    /* Enviar mensaje al cliente */
-    await this.sendMessageToClient(pureRemoteJid, aiResponse, instanceName, server_url, apikey);
-    // Continuar con workflow...
+    const incomingMessage = extractedContent.toString().trim().toLowerCase();
+
+    // Detectar comandos especiales
+    if (['listo', 'envía', 'terminé'].includes(incomingMessage)) {
+      // FLUSH: El usuario terminó de escribir, enviamos lo acumulado YA
+      await this.messageBufferService.flush(remoteJid, async (mergedText) => {
+        this.logger.debug(`Merged text (flushed) ready for AI processing: ${mergedText}`, 'WebhookService');
+        const aiResponse = await this.aiAgentService.processInput(mergedText, userId, apikeyOpenAi);
+        await this.sendMessageToClient(pureRemoteJid, aiResponse, instanceName, server_url, apikey);
+      });
+      return; // No sigas esperando, ya procesaste
+    }
+
+    // Detectar cambios de contexto bruscos (opcional)
+    if (incomingMessage.includes('otro tema') || incomingMessage.includes('cambiar tema')) {
+      // RESET: El usuario quiere hablar de otra cosa
+      this.messageBufferService.reset(remoteJid);
+    }
+
+    // Si no es "listo" ni cambio de tema, acumula normalmente
+    this.messageBufferService.handleIncomingMessage(
+      remoteJid,
+      incomingMessage,
+      delayConversation,
+      async (mergedText) => {
+        this.logger.debug(`Merged text ready for AI processing: ${mergedText}`, 'WebhookService');
+
+        const aiResponse = await this.aiAgentService.processInput(mergedText, userId, apikeyOpenAi);
+        await this.sendMessageToClient(pureRemoteJid, aiResponse, instanceName, server_url, apikey);
+      }
+    );
+
   }
 
   /**

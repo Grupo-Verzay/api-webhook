@@ -14,7 +14,21 @@ import { MessageBufferService } from './services/message-buffer/message-buffer.s
 
 @Module({
   imports: [HttpModule],
+
   controllers: [WebhookController],
-  providers: [WebhookService, PrismaService, SessionService, UserService, InstancesService, MessageDirectionService, MessageTypeHandlerService, AiAgentService, PromptService, MessageBufferService]
+
+  providers: [
+    WebhookService,
+    PrismaService,
+    SessionService,
+    UserService,
+    InstancesService,
+    MessageDirectionService,
+    MessageBufferService,
+    MessageTypeHandlerService,
+    AiAgentService,
+    PromptService,
+    MessageBufferService
+  ]
 })
-export class WebhookModule {}
+export class WebhookModule { }

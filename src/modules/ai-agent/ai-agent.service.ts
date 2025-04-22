@@ -74,6 +74,11 @@ export class AiAgentService {
    * @returns {Promise<void>}
    */
   private async downloadAudioFile(url: string, outputPath: string): Promise<void> {
+    // Verifica que la carpeta destino exista. Crea la carpeta si no existe
+    const dir = path.dirname(outputPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
     const writer = fs.createWriteStream(outputPath);
     const response = await axios.get(url, { responseType: 'stream' });
 
@@ -105,7 +110,6 @@ export class AiAgentService {
       });
 
       fs.unlinkSync(tempFilePath);
-
       return transcription.text;
     } catch (error) {
       this.logger.error('Error transcribiendo audio con OpenAI.', error?.response?.data || error.message, 'AiAgentService');

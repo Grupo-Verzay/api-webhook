@@ -26,7 +26,7 @@ export class WorkflowService {
      * @param {userId} userId - cm8tdvkcd0000q0vgshc1wweu.
      * @returns {Promise<{ message: string; workflow: string; totalNodes: number }>}
      */
-    async executeWorkflowNew(
+    async executeWorkflow(
         name_flujo: string,
         urlevo: string,
         apikey: string,
@@ -79,7 +79,7 @@ export class WorkflowService {
         };
     }
 
-    async executeWorkflow(
+    async executeWorkflowNew(
         name_flujo: string,
         urlevo: string,
         apikey: string,

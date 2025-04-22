@@ -11,7 +11,7 @@ export class WorkflowService {
     constructor(
         private prisma: PrismaService,
         private nodeSenderService: NodeSenderService,
-        private logger: LoggerService, 
+        private logger: LoggerService,
         private http: HttpService
     ) { }
 
@@ -49,27 +49,34 @@ export class WorkflowService {
 
         this.logger.log(`Total de nodos a procesar: ${nodes.length}`, 'WorkflowService');
 
+        const sendTasks: Promise<void>[] = [];
+
         for (const [index, node] of nodes.entries()) {
-            try {
-                this.logger.debug(`Procesando nodo ${index + 1}/${nodes.length} (ID: ${node.id})`, 'WorkflowService');
+            this.logger.debug(`Procesando nodo ${index + 1}/${nodes.length} (ID: ${node.id})`, 'WorkflowService');
 
-                if (node.tipo === 'text') {
-                    const url = `${urlevo}/message/sendText/${instanceName}`;
-                    await this.nodeSenderService.sendTextNode(url, apikey, remoteJid, node.message);
-                    this.logger.log(`Texto enviado correctamente (nodo ID: ${node.id})`, 'WorkflowService');
-                } else if (['image', 'video', 'document', 'audio'].includes(node.tipo)) {
-                    const url = `${urlevo}/message/sendMedia/${instanceName}`;
-                    await this.nodeSenderService.sendMediaNode(url, apikey, remoteJid, node.tipo, node.message, node.url as string);
-                    this.logger.log(`${node.tipo} enviado correctamente (nodo ID: ${node.id})`, 'WorkflowService');
-                } else {
-                    this.logger.warn(`Tipo de nodo desconocido: ${node.tipo} (ID: ${node.id})`, 'WorkflowService');
+            const sendPromise = (async () => {
+                try {
+                    if (node.tipo === 'text') {
+                        const url = `${urlevo}/message/sendText/${instanceName}`;
+                        await this.nodeSenderService.sendTextNode(url, apikey, remoteJid, node.message);
+                        this.logger.log(`Texto enviado correctamente (nodo ID: ${node.id})`, 'WorkflowService');
+                    } else if (['image', 'video', 'document', 'audio'].includes(node.tipo)) {
+                        const url = `${urlevo}/message/sendMedia/${instanceName}`;
+                        await this.nodeSenderService.sendMediaNode(url, apikey, remoteJid, node.tipo, node.message, node.url as string);
+                        this.logger.log(`${node.tipo} enviado correctamente (nodo ID: ${node.id})`, 'WorkflowService');
+                    } else {
+                        this.logger.warn(`Tipo de nodo desconocido: ${node.tipo} (ID: ${node.id})`, 'WorkflowService');
+                    }
+                } catch (error) {
+                    this.logger.error(`Error procesando nodo ID: ${node.id}`, error?.response?.data || error.message, 'WorkflowService');
                 }
-            } catch (error) {
-                this.logger.error(`Error procesando nodo ID: ${node.id}`, error?.response?.data || error.message, 'WorkflowService');
-                // Continúa procesando los siguientes nodos aunque haya error
-            }
-        }
+            })();
 
+            sendTasks.push(sendPromise);
+        };
+
+        // Ejecutar todos en paralelo sin esperar uno por uno
+        await Promise.all(sendTasks);
         this.logger.log(`Workflow "${result.name}" ejecutado correctamente.`, 'WorkflowService');
 
         return {

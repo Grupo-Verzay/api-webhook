@@ -8,7 +8,7 @@ export class NodeSenderService {
   constructor(
     private readonly http: HttpService,
     private readonly logger: LoggerService,
-  ) {}
+  ) { }
 
   /**
    * Envía un nodo de texto al cliente y registra la respuesta.
@@ -47,15 +47,28 @@ export class NodeSenderService {
     mediaUrl: string,
   ) {
     try {
+      const mimeMap = {
+        image: 'image/png',
+        video: 'video/mp4',
+        document: 'application/pdf',
+        audio: 'audio/mpeg',
+        text: 'text/plain',
+      };
+
+      const mimetype = mimeMap[type.toLowerCase()] || 'application/octet-stream';
+
       const body = {
         number: remoteJid,
         mediatype: type,
-        mimetype: type,
+        mimetype,
         caption,
         media: mediaUrl,
       };
 
-      this.logger.log(`Enviando ${type} a ${remoteJid} con caption: "${caption}" y mediaURL ${mediaUrl}`, 'NodeSenderService');
+      this.logger.log(
+        `Enviando ${type} a ${remoteJid} con mimetype: ${mimetype}, caption: "${caption}" y mediaURL: ${mediaUrl}`,
+        'NodeSenderService',
+      );
 
       const response = await firstValueFrom(
         this.http.post(url, body, {
@@ -63,9 +76,17 @@ export class NodeSenderService {
         }),
       );
 
-      this.logger.log(`Respuesta del ${type} a ${remoteJid}: ${JSON.stringify(response.data)}`, 'NodeSenderService');
+      this.logger.log(
+        `Respuesta del ${type} a ${remoteJid}: ${JSON.stringify(response.data)}`,
+        'NodeSenderService',
+      );
     } catch (error) {
-      this.logger.error(`Error enviando ${type} a ${remoteJid}`, error?.response?.data || error.message, 'NodeSenderService');
+      this.logger.error(
+        `Error enviando ${type} a ${remoteJid}`,
+        error?.response?.data || error.message,
+        'NodeSenderService',
+      );
     }
   }
+
 }

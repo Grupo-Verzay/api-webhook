@@ -56,7 +56,7 @@ export class AiAgentService {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: input },
         ],
-        temperature: 0.7,
+        temperature: 0.1,
       });
 
       return response.choices?.[0]?.message?.content?.trim() ?? '[ERROR_OPENAI_EMPTY_RESPONSE]';

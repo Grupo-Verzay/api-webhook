@@ -7,13 +7,10 @@ import { LoggerService } from 'src/core/logger/logger.service';
 export class WebhookController {
   constructor(
     private readonly webhookService: WebhookService,
-    private readonly logger: LoggerService,
   ) { }
 
   @Post()
   async recibirWebhook(@Body() payload: any, @Res() res: Response) {
-    // this.logger.log(`📦 Webhook recibido:${JSON.stringify(payload, null, 2)}`, 'WebhookController');
-
     try {
       await this.webhookService.processWebhook(payload);
       return res.status(200).send('Webhook recibido y procesado con éxito');

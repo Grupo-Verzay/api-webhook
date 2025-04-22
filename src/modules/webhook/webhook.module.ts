@@ -12,9 +12,10 @@ import { PromptService } from '../prompt/prompt.service';
 import { UserService } from '../user/user.service';
 import { MessageBufferService } from './services/message-buffer/message-buffer.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
+import { WorkflowModule } from '../workflow/workflow.module';
 
 @Module({
-  imports: [HttpModule],
+  imports: [HttpModule, WorkflowModule],
 
   controllers: [WebhookController],
 
@@ -30,7 +31,7 @@ import { ChatHistoryService } from '../chat-history/chat-history.service';
     AiAgentService,
     PromptService,
     MessageBufferService,
-    ChatHistoryService
+    ChatHistoryService,
   ]
 })
 export class WebhookModule { }

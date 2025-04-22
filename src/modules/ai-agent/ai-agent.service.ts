@@ -79,7 +79,6 @@ export class AiAgentService {
     } catch (error) {
       this.logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
       return '[ERROR_PROCESSING_OPENAI_INPUT]';
-      
     }
   }
 

@@ -14,6 +14,7 @@ import { isGroupChat } from './utils/is-group-chat';
 import { Pausar, User } from '@prisma/client';
 import { MessageBufferService } from './services/message-buffer/message-buffer.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
+import { WorkflowService } from '../workflow/services/workflow.service.ts/workflow.service';
 
 @Injectable()
 export class WebhookService {
@@ -28,6 +29,7 @@ export class WebhookService {
     private readonly aiAgentService: AiAgentService,
     private readonly chatHistoryService: ChatHistoryService,
     private readonly httpService: HttpService,
+    private readonly workflowService: WorkflowService,
   ) { }
 
   /**
@@ -92,6 +94,23 @@ export class WebhookService {
     const extractedContent = await this.messageTypeHandlerService.extractContentByType(messageType, apikeyOpenAi, data);
     const incomingMessage = extractedContent.toString().trim().toLowerCase();
 
+    /* Ejecución de flujos */
+    // Buscar flujos disponibles
+    //TODO: SE DEBE DETERMINAR CON BASE AL PROMPT SI SE EJECUTA O NO UN FLUJO
+    const workflows = await this.workflowService.getWorkflow();
+    const matchedFlow = workflows.find((flow) => incomingMessage.includes(flow.name.toLowerCase()));
+
+    if (matchedFlow) {
+      await this.workflowService.executeWorkflow(
+        matchedFlow.name,
+        server_url,
+        apikey,
+        instanceName,
+        pureRemoteJid,
+      );
+      return; // Ya ejecutaste un flujo, no proceses normal
+    }
+
     // Detectar comandos especiales
     if (['listo', 'envía', 'terminé'].includes(incomingMessage)) {
       // FLUSH: El usuario terminó de escribir, enviamos lo acumulado YA
@@ -129,7 +148,6 @@ export class WebhookService {
         await this.sendMessageToClient(pureRemoteJid, aiResponse, instanceName, server_url, apikey);
       }
     );
-
   }
 
   /**

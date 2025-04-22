@@ -12,7 +12,6 @@ export class LoggerService extends Logger {
 
   async log(message: string, context?: string): Promise<void> {
     super.log(`🟢 LOG - ${message}`, context);
-    await this.saveLog('log', message, context);
   }
 
   async error(message: any, trace?: string, context?: string): Promise<void> {
@@ -22,7 +21,7 @@ export class LoggerService extends Logger {
 
   async warn(message: string, context?: string): Promise<void> {
     super.warn(`🟡 WARNING - ${message}`, context);
-    // await this.saveLog('warn', message, context);
+    await this.saveLog('warn', message, context);
   }
 
   async debug(message: string, context?: string): Promise<void> {
@@ -32,7 +31,6 @@ export class LoggerService extends Logger {
 
   async verbose(message: string, context?: string): Promise<void> {
     super.verbose(`🟣 VERBOSE - ${message}`, context);
-    await this.saveLog('verbose', message, context);
   }
 
   //TODO: Mejorar para que guarde datos cómo instancia, user, y demás datos que sean necesarios.

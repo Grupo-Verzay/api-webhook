@@ -52,29 +52,55 @@ export class WorkflowService {
 
         this.logger.log(`Iniciando ejecución de workflow "${result.name}" con ${nodes.length} nodos`, 'WorkflowService');
 
-        for (const [index, node] of nodes.entries()) {
-            try {
-                this.logger.debug(`Procesando nodo ${index + 1}/${nodes.length} (ID: ${node.id}, tipo: ${node.tipo})`, 'WorkflowService');
+        // for (const [index, node] of nodes.entries()) {
+        //     try {
+        //         this.logger.debug(`Procesando nodo ${index + 1}/${nodes.length} (ID: ${node.id}, tipo: ${node.tipo})`, 'WorkflowService');
 
-                if (node.tipo === 'text') {
+        //         if (node.tipo === 'text') {
+        //             const url = `${urlevo}/message/sendText/${instanceName}`;
+        //             await this.nodeSenderService.sendTextNode(url, apikey, remoteJid, node.message);
+        //             this.logger.log(`Texto enviado correctamente (nodo ID: ${node.id})`, 'WorkflowService');
+
+        //         } else if (['image', 'video', 'document', 'audio'].includes(node.tipo)) {
+        //             const url = `${urlevo}/message/sendMedia/${instanceName}`;
+        //             await this.nodeSenderService.sendMediaNode(url, apikey, remoteJid, node.tipo, node.message, node.url as string);
+        //             this.logger.log(`${node.tipo} enviado correctamente (nodo ID: ${node.id})`, 'WorkflowService');
+
+        //         } else {
+        //             this.logger.warn(`Tipo de nodo desconocido: ${node.tipo} (ID: ${node.id})`, 'WorkflowService');
+        //         }
+
+        //     } catch (error) {
+        //         this.logger.error(`Error procesando nodo ID: ${node.id}`, error?.response?.data || error.message, 'WorkflowService');
+        //         // Sigue con el siguiente nodo
+        //     }
+
+        // }
+
+        for (const [index, node] of nodes.entries()) {
+            this.logger.debug(`Procesando nodo ${index + 1}/${nodes.length} (ID: ${node.id})`, 'WorkflowService');
+
+            try {
+                if (node.tipo === 'delay') {
+                    this.logger.log(`Esperando ${node.delay}ms (nodo ID: ${node.id})`, 'WorkflowService');
+                    await new Promise(res => setTimeout(res, 3000));
+                } else if (node.tipo === 'text') {
                     const url = `${urlevo}/message/sendText/${instanceName}`;
                     await this.nodeSenderService.sendTextNode(url, apikey, remoteJid, node.message);
                     this.logger.log(`Texto enviado correctamente (nodo ID: ${node.id})`, 'WorkflowService');
-
                 } else if (['image', 'video', 'document', 'audio'].includes(node.tipo)) {
                     const url = `${urlevo}/message/sendMedia/${instanceName}`;
                     await this.nodeSenderService.sendMediaNode(url, apikey, remoteJid, node.tipo, node.message, node.url as string);
                     this.logger.log(`${node.tipo} enviado correctamente (nodo ID: ${node.id})`, 'WorkflowService');
-
                 } else {
                     this.logger.warn(`Tipo de nodo desconocido: ${node.tipo} (ID: ${node.id})`, 'WorkflowService');
                 }
-
             } catch (error) {
                 this.logger.error(`Error procesando nodo ID: ${node.id}`, error?.response?.data || error.message, 'WorkflowService');
-                // Sigue con el siguiente nodo
             }
         }
+
+
 
         this.logger.log(`Workflow "${result.name}" ejecutado con éxito.`, 'WorkflowService');
 

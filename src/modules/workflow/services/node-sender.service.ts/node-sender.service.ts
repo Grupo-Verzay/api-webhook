@@ -97,7 +97,7 @@ export class NodeSenderService {
    *  Extrae el nombre del documento basado en el mediaUrl
    */
   private extractFilenameFromUrl(url: string): string | null {
-    const match = url.match(/[^/]+?\.(pdf|xlsx|docx)/i);
-    return match ? match[0] : null;
+    const match = url.match(/([^/-]+-[^/-]+-[^/-]+\.(?:pdf|xlsx|docx))$/i);
+    return match ? match[1] : null;
   }
 }

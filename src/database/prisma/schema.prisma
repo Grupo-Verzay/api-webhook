@@ -45,6 +45,7 @@ model Session {
   updatedAt    DateTime @updatedAt
   status       Boolean
   id           Int      @id @default(autoincrement())
+  flujos       String?  @default("")
   seguimientos String?  @default("")
   inactividad  String?  @default("")
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -148,6 +149,8 @@ model WorkflowNode {
   url         String?
   delay       String?
   inactividad Boolean?
+  name_file   String?
+  order       String?
 }
 
 model n8n_chat_histories {

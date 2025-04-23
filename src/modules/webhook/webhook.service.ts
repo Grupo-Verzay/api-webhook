@@ -206,6 +206,7 @@ export class WebhookService {
       const payload = {
         number: remoteJid,
         text: message,
+        delay: 5200,
       };
 
       await firstValueFrom(

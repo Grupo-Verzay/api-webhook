@@ -46,4 +46,39 @@ export class ChatHistoryService {
             return '';
         });
     }
+
+    async registerExecutedIntention(sessionId: string, name: string, tipo: string) {
+        const message = {
+            type: 'intention',
+            name,
+            tipo,
+            executedAt: new Date().toISOString()
+        };
+
+        await this.prisma.n8n_chat_histories.create({
+            data: {
+                session_id: sessionId,
+                message
+            }
+        });
+    }
+
+    async hasIntentionBeenExecuted(sessionId: string, name: string): Promise<boolean> {
+        const executed = await this.prisma.n8n_chat_histories.findFirst({
+            where: {
+                session_id: sessionId,
+                message: {
+                    path: ['type'],
+                    equals: 'intention'
+                }
+            }
+        });
+
+        if (!executed || !executed.message || typeof executed.message !== 'object') {
+            return false;
+        }
+
+        const msg = executed.message as { type?: string; name?: string };
+        return msg.name === name;
+    }
 }

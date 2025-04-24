@@ -12,6 +12,8 @@ export class NodeSenderService {
 
   /**
    * Envía un nodo de texto al cliente y registra la respuesta.
+   * url = `${urlevo}/message/sendText/${instanceName}`;
+   * 
    */
   async sendTextNode(url: string, apikey: string, remoteJid: string, text: string) {
     try {
@@ -30,7 +32,7 @@ export class NodeSenderService {
         }),
       );
 
-      this.logger.log(`Respuesta del texto a ${remoteJid}: ${JSON.stringify(response.data)}`, 'NodeSenderService');
+      this.logger.log(`Respuesta ${remoteJid}: ${JSON.stringify(response.data)}`, 'NodeSenderService');
     } catch (error) {
       this.logger.error(`Error enviando texto a ${remoteJid}`, error?.response?.data || error.message, 'NodeSenderService');
     }

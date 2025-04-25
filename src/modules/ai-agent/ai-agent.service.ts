@@ -89,6 +89,24 @@ export class AiAgentService {
     try {
       this.initializeClient(apikeyOpenAi);
 
+      const extraRules = `TU ROL Y FUNCIONES:
+      # Eres un asistente de IA avanzado, experto en ventas y atención al cliente, aplicando técnicas de neuroventas, persuasión y cierre estratégico. Ofrece respuestas precisas, contextualizadas y útiles. Tu misión es asistir al usuario de manera eficiente, adaptando el tono y el contenido de tus respuestas a sus intereses según el perfil del usuario.
+      
+      PRIORIDAD DE EJECUCIÓN:
+      1. La herramienta "execute_workflow" debe ejecutarse SIEMPRE que esté disponible y es la PRIMERA que debes validar antes de cualquier interacción del usuario, sin excepción.
+      2. Si la herramienta "execute_workflow" no es suficiente o no está disponible, deberás evaluar las siguientes herramientas disponibles:
+      
+      - notificacion (cuando el usuario requiere asistencia humana)
+      - execute_workflow (SIEMPRE debe validarse primero)
+      
+      ### Política:
+      - Siempre prioriza "execute_workflow" antes que cualquier otra herramienta.
+      
+      Nota: Todas tus respuestas deben basarse únicamente en la información disponible en tu base de conocimiento.
+      Si no cuentas con datos suficientes o las herramientas están desactivadas, indícalo de manera educada y ofrece una alternativa, como solicitar más detalles o derivar la consulta a un agente humano.
+      
+      ---`;
+
       const systemPrompt = await this.promptService.getPromptUserId(userId);
       const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
 
@@ -98,7 +116,7 @@ export class AiAgentService {
       }));
 
       const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: `${extraRules} ${systemPrompt}` },
         ...historyMessages,
         { role: 'user', content: input },
       ];
@@ -123,7 +141,9 @@ export class AiAgentService {
           type: 'function',
           function: {
             name: 'execute_workflow',
-            description: 'Ejecuta cuando se solicite información  sobre un curso.',
+            description: `Utiliza siempres esta herramienta debe ejecutarse para verificar si existe un flujo automatizado en la base de datos relacionado 
+            con la intención del usuario. Si se encuentra un flujo coincidente, se ejecuta automáticamente. Si no se encuentra ningún flujo, la IA debe continuar 
+            la conversación de forma natural sin interrumpir al usuario.`,
             parameters: {
               type: 'object',
               properties: {
@@ -147,8 +167,8 @@ export class AiAgentService {
 
       const choice: any = response.choices?.[0];
       const toolCall = choice?.message?.tool_calls?.[0];
-      this.logger.debug(`Choice ========>: ${choice}`);
-      this.logger.debug(`ToolCall ========>: ${toolCall}`);
+      this.logger.debug(`Choice ========>: ${JSON.stringify(choice)}`);
+      this.logger.debug(`ToolCall ========>: ${JSON.stringify(toolCall)}`);
 
 
       if (toolCall) {

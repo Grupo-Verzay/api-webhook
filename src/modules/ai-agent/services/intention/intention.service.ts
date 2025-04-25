@@ -57,7 +57,7 @@ export class IntentionService {
             }
         }
 
-        if (bestMatch && bestMatch.score >= 0.6) {
+        if (bestMatch && bestMatch.score >= 0.5) {
             return bestMatch.item;
         }
 

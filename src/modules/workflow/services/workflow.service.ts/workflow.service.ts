@@ -53,7 +53,7 @@ export class WorkflowService {
         this.logger.log(`Iniciando ejecución de workflow "${result.name}" con ${nodes.length} nodos`, 'WorkflowService');
 
         for (const [index, node] of nodes.entries()) {
-            this.logger.debug(`Procesando nodo ${index + 1}/${nodes.length} (ID: ${node.id})`, 'WorkflowService');
+            this.logger.debug(`Procesando nodo ${index + 1}/${nodes.length} (ID: ${node.id})`);
 
             try {
                 const sendNode = async () => {

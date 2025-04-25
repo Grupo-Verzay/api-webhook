@@ -147,8 +147,9 @@ export class AiAgentService {
 
       const choice: any = response.choices?.[0];
       const toolCall = choice?.message?.tool_calls?.[0];
-      console.debug(`choice >>>>>>>>>>> ${JSON.stringify(choice)}`)
-      console.debug(`toolCall >>>>>>>>>>> ${JSON.stringify(toolCall)}`)
+      this.logger.debug(`Choice ========>: ${choice}`);
+      this.logger.debug(`ToolCall ========>: ${toolCall}`);
+
 
       if (toolCall) {
         const args = JSON.parse(toolCall.function.arguments);
@@ -208,7 +209,7 @@ export class AiAgentService {
     }));
 
     const decision = await this.intentionService.detectIntent(args.nombre_flujo, posiblesIntenciones, apikeyOpenAi);
-    console.debug(`decision =>>>>>>>>>>>>>>> ${JSON.stringify(decision)}`)
+    this.logger.debug(`decision ========>: ${JSON.stringify(decision)}`);
 
     if (!decision) return 'Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?';
 

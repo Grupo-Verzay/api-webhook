@@ -226,7 +226,7 @@ export class AiAgentService {
       pureRemoteJid,
     );
 
-    return `✅ Flujo "${decision.name}" ejecutado correctamente.`;
+    return `Esta es la información sobre "${decision.name}". Algo más en lo que pueda ayudarte?`;
   };
 
   /**

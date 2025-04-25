@@ -226,31 +226,41 @@ export class AiAgentService {
       name: flow.name,
       tipo: 'flujo',
       frase: flow.description ?? flow.name,
-      umbral: flow.umbral
+      umbral: flow.umbral,
     }));
 
-    const decision = await this.intentionService.detectIntent(args.nombre_flujo, dataWorkflow, apikeyOpenAi);
-    this.logger.debug(`decision ========>: ${JSON.stringify(decision)}`);
+    const decisions = await this.intentionService.detectIntent(args.nombre_flujo, dataWorkflow, apikeyOpenAi);
+    this.logger.debug(`decisions ========>: ${JSON.stringify(decisions)}`);
 
-    if (!decision) return 'Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?';
-
-    const alreadyExecuted = await this.chatHistoryService.hasIntentionBeenExecuted(sessionId, decision.name);
-    if (alreadyExecuted) {
-      return `Ya te compartí "${decision.name}", ¿quieres otra cosa?`;
+    if (!decisions.length) {
+      return 'Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?';
     }
 
-    await this.chatHistoryService.registerExecutedIntention(sessionId, decision.name, decision.tipo);
+    let mensajesEnviados: string[] = [];
 
-    await this.workflowService.executeWorkflow(
-      decision?.name,
-      server_url,
-      apikey,
-      instanceName,
-      pureRemoteJid,
-    );
+    for (const decision of decisions) {
+      const alreadyExecuted = await this.chatHistoryService.hasIntentionBeenExecuted(sessionId, decision.name);
+      this.logger.debug(`alreadyExecuted ========>: ${alreadyExecuted} para ${decision.name}`);
 
-    return `Esta es la información sobre "${decision.name}". Algo más en lo que pueda ayudarte?`;
-  };
+      if (alreadyExecuted) {
+        // mensajesEnviados.push(`Ya te compartí "${decision.name}". ¿Te puedo ayudar en algo más?`);
+        continue;
+      }
+
+      await this.chatHistoryService.registerExecutedIntention(sessionId, decision.name, decision.tipo);
+      await this.workflowService.executeWorkflow(
+        decision.name,
+        server_url,
+        apikey,
+        instanceName,
+        pureRemoteJid,
+      );
+
+      // mensajesEnviados.push(`Te he enviado la información sobre "${decision.name}". ¿Deseas algo más?`);
+    }
+
+    return mensajesEnviados.join('\n');
+  }
 
   /**
    * Descarga un archivo de audio desde una URL.

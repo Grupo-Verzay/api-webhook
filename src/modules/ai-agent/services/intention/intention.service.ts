@@ -39,34 +39,33 @@ export class IntentionService {
      * @param input Texto enviado por el usuario.
      * @param dataWorkflow Lista de intenciones posibles (flujos, seguimientos, notificaciones).
      */
-    async detectIntent(input: string, dataWorkflow: IntentionItem[], apikeyOpenAi: string): Promise<IntentionItem | null> {
+    async detectIntent(input: string, dataWorkflow: IntentionItem[], apikeyOpenAi: string): Promise<IntentionItem[]> {
         this.logger.debug(`input =>>>${input}, dataWorkflow =>>>${JSON.stringify(dataWorkflow)}, apikeyOpenAi =>>>${JSON.stringify(apikeyOpenAi)}`, 'detectIntent');
         this.initializeClient(apikeyOpenAi);
 
         const inputEmbedding = await this.createEmbedding(input);
 
-        let bestMatch: { item: IntentionItem; score: number } | null = null;
+        const matches: { item: IntentionItem; score: number }[] = [];
 
         for (const item of dataWorkflow) {
             const itemEmbedding = await this.createEmbedding(item.frase);
             const similarity = this.cosineSimilarity(inputEmbedding, itemEmbedding);
             this.logger.debug(`Comparando con: ${item.name} → Similaridad: ${similarity.toFixed(4)}`);
 
-            if (!bestMatch || similarity > bestMatch.score) {
-                bestMatch = { item, score: similarity };
+            const umbral = item.umbral ?? 0.5;
+
+            if (similarity >= umbral) {
+                matches.push({ item, score: similarity });
             }
         }
 
-        if (bestMatch) {
-            const umbral = bestMatch.item.umbral ?? 0.5; // Ahora sí puedes acceder a item.umbral
-            this.logger.debug(`Mejor coincidencia: ${bestMatch.item.name} con score ${bestMatch.score.toFixed(4)} y umbral ${umbral}`, 'detectIntent');
+        // Ordenar por el score más alto primero
+        matches.sort((a, b) => b.score - a.score);
 
-            if (bestMatch.score >= umbral) {
-                return bestMatch.item;
-            }
-        }
-
-        return null;
+        this.logger.debug(`Total de coincidencias encontradas: ${matches.length}`, 'detectIntent');
+        
+        // Retornar sólo los items
+        return matches.map((m) => m.item);
     }
 
     private async createEmbedding(text: string): Promise<number[]> {

@@ -64,7 +64,7 @@ export class ChatHistoryService {
     }
 
     async hasIntentionBeenExecuted(sessionId: string, name: string): Promise<boolean> {
-        const executed = await this.prisma.n8n_chat_histories.findFirst({
+        const executed = await this.prisma.n8n_chat_histories.findMany({
             where: {
                 session_id: sessionId,
                 message: {
@@ -74,11 +74,13 @@ export class ChatHistoryService {
             }
         });
 
-        if (!executed || !executed.message || typeof executed.message !== 'object') {
+        if (!executed || executed.length === 0) {
             return false;
         }
 
-        const msg = executed.message as { type?: string; name?: string };
-        return msg.name === name;
+        return executed.some((record) => {
+            const msg = record.message as { type?: string; name?: string };
+            return msg.name === name;
+        });
     }
 }

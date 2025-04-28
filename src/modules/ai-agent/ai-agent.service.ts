@@ -73,7 +73,7 @@ export class AiAgentService {
    * @param server_url - URL base del servidor Evolution
    * @param apikey - API Key para autorización con Evolution
    * @param instanceName - Nombre de la instancia en Evolution API
-   * @param pureRemoteJid - Número del cliente en formato WhatsApp
+   * @param remoteJid - Número del cliente en formato WhatsApp
    * @returns {Promise<void>}
    */
   async processInput({
@@ -84,7 +84,7 @@ export class AiAgentService {
     server_url,
     apikey,
     instanceName,
-    pureRemoteJid
+    remoteJid
   }: proccessInput) {
     try {
       this.initializeClient(apikeyOpenAi);
@@ -187,7 +187,7 @@ export class AiAgentService {
               server_url,
               apikey,
               instanceName,
-              pureRemoteJid);
+              remoteJid);
 
           default:
             this.logger.warn(`Tool no soportada: ${toolCall.function.name}`, 'AiAgentService');
@@ -219,7 +219,7 @@ export class AiAgentService {
     server_url: string,
     apikey: string,
     instanceName: string,
-    pureRemoteJid: string
+    remoteJid: string
   ): Promise<string> {
     const workflows = await this.workflowService.getWorkflow(userId);
     const dataWorkflow: IntentionItem[] = workflows.map((flow) => ({
@@ -242,12 +242,13 @@ export class AiAgentService {
       const alreadyExecuted = await this.chatHistoryService.hasIntentionBeenExecuted(sessionId, decision.name);
       this.logger.debug(`alreadyExecuted ========>: ${alreadyExecuted} para ${decision.name}`);
 
-      if (alreadyExecuted) {
-        //TODO: VALIDAR MSG  
-        // mensajesEnviados.push(`Ya te compartí "${decision.name}". ¿Te puedo ayudar en algo más?`);
-        mensajesEnviados.push(``);
-        continue;
-      }
+      // if (alreadyExecuted) {
+      //   //TODO: VALIDAR MSG  
+      //   // mensajesEnviados.push(`Ya te compartí "${decision.name}". ¿Te puedo ayudar en algo más?`);
+      //   mensajesEnviados.push(``);
+      //   this.logger.log(`El flujo ${decision.name} ya fue ejecutado, revise el historial para ejecutar nuevamente.`);
+      //   continue;
+      // }
 
       await this.chatHistoryService.registerExecutedIntention(sessionId, decision.name, decision.tipo);
       await this.workflowService.executeWorkflow(
@@ -255,7 +256,8 @@ export class AiAgentService {
         server_url,
         apikey,
         instanceName,
-        pureRemoteJid,
+        remoteJid,
+        userId
       );
       //TODO: VALIDAR MSG 
       // mensajesEnviados.push(`Te he enviado la información sobre "${decision.name}". ¿Deseas algo más?`);

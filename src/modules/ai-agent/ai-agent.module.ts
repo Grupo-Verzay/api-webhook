@@ -8,13 +8,14 @@ import { IntentionService } from './services/intention/intention.service';
 import { NodeSenderService } from '../workflow/services/node-sender.service.ts/node-sender.service';
 import { WorkflowService } from '../workflow/services/workflow.service.ts/workflow.service';
 import { SeguimientosService } from '../seguimientos/seguimientos.service';
+import { SessionService } from '../session/session.service';
 
 @Module({
   imports: [
     HttpModule, 
     ConfigModule, // necesario porque usas ConfigService
   ],
-  providers: [AiAgentService, PromptService, ChatHistoryService, IntentionService, NodeSenderService, WorkflowService, IntentionService, SeguimientosService],
+  providers: [AiAgentService, PromptService, ChatHistoryService, IntentionService, NodeSenderService, WorkflowService, IntentionService, SeguimientosService, SessionService],
   exports: [AiAgentService],
 })
 export class AiAgentModule {}

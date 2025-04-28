@@ -22,5 +22,5 @@ export interface proccessInput {
     server_url: string,
     apikey: string,
     instanceName: string,
-    pureRemoteJid: string,
+    remoteJid: string,
 }

@@ -13,6 +13,16 @@ import { Pausar, User } from '@prisma/client';
 import { MessageBufferService } from './services/message-buffer/message-buffer.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
 import { NodeSenderService } from '../workflow/services/node-sender.service.ts/node-sender.service';
+import { SeguimientosService } from '../seguimientos/seguimientos.service';
+
+interface stopOrResumeConversation {
+  conversationMsg: string,
+  remoteJid: string,
+  instanceId: string,
+  sessionStatus: boolean,
+  userWithRelations: User & { pausar: Pausar[] },
+  instanceName: string,
+};
 
 @Injectable()
 export class WebhookService {
@@ -27,6 +37,7 @@ export class WebhookService {
     private readonly aiAgentService: AiAgentService,
     private readonly chatHistoryService: ChatHistoryService,
     private readonly nodeSenderService: NodeSenderService,
+    private readonly seguimientosService: SeguimientosService,
   ) { }
 
   /**
@@ -44,8 +55,7 @@ export class WebhookService {
     } = body;
 
     const delayConversation = 10000;
-    const pureRemoteJid = data?.key?.remoteJid ?? '';
-    const remoteJid = parseRemoteJid(pureRemoteJid);
+    const remoteJid = data?.key?.remoteJid ?? '';
     const pushName = data?.pushName || 'Desconocido';
 
     const prismaInstancia = await this.instancesService.getUserId(instanceName);
@@ -58,9 +68,9 @@ export class WebhookService {
     /* apikey */
     const apikeyOpenAi = userWithRelations?.apiUrl as string;
 
-    const sessionStatus = await this.checkOrRegisterSession(remoteJid, instanceId, userId, pushName);
+    const sessionStatus = await this.checkOrRegisterSession(remoteJid, instanceName, userId, pushName);
     const conversationMsg = data?.message?.conversation ?? '';
-    const sessionHistoryId = `${instanceName}-${pureRemoteJid}`;
+    const sessionHistoryId = `${instanceName}-${remoteJid}`;
     const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
 
     /* Validar si el mensaje proviene de un grupo. */
@@ -74,7 +84,7 @@ export class WebhookService {
     /* Validar quién está escribiendo y ejecutar pausas, reactivaciones o seguimientos */
     if (this.messageDirectionService.isFromMe(fromMe)) {
       /* Encargada de reanudar o pausar el chat */
-      await this.stopOrResumeConversation(conversationMsg, remoteJid, instanceId, sessionStatus, userWithRelations);
+      await this.stopOrResumeConversation({ conversationMsg, remoteJid, instanceId, sessionStatus, userWithRelations, instanceName });
       return;
     }
 
@@ -110,12 +120,12 @@ export class WebhookService {
           server_url,
           apikey,
           instanceName,
-          pureRemoteJid,
+          remoteJid,
         };
 
         const aiResponse = await this.aiAgentService.processInput(dataProccessInput);
         if (!aiResponse || aiResponse === '') return;
-        await this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, pureRemoteJid, aiResponse);
+        await this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, remoteJid, aiResponse);
       })
   }
 
@@ -130,16 +140,16 @@ export class WebhookService {
    */
   private async checkOrRegisterSession(
     remoteJid: string,
-    instanceId: string,
+    instanceName: string,
     userId: string,
     pushName: string,
   ): Promise<boolean> {
-    const session = await this.sessionService.getSession(remoteJid, instanceId, userId);
+    const session = await this.sessionService.getSession(remoteJid, instanceName, userId);
 
     if (session) {
       this.logger.log(`[SESSION] Usuario ya registrado: ${remoteJid}`, 'WebhookService');
     } else {
-      await this.sessionService.registerSession(userId, remoteJid, pushName, instanceId);
+      await this.sessionService.registerSession(userId, remoteJid, pushName, instanceName);
       this.logger.log(`✅ Registro exitoso`, 'WebhookService');
     }
 
@@ -158,12 +168,14 @@ export class WebhookService {
    * @returns {Promise<void>} - No retorna ningún valor. Lanza logs en caso de éxito o error.
    */
   private async stopOrResumeConversation(
-    conversationMsg: string,
-    remoteJid: string,
-    instanceId: string,
-    sessionStatus: boolean,
-    userWithRelations: User & { pausar: Pausar[] },
-  ) {
+    {
+      conversationMsg,
+      remoteJid,
+      instanceId,
+      sessionStatus,
+      userWithRelations,
+      instanceName,
+    }: stopOrResumeConversation) {
 
     if (!sessionStatus) {
       // Monitoreo de PAUSA: buscar palabra clave para reactivación
@@ -190,6 +202,24 @@ export class WebhookService {
         return;
       }
     }
+    const pharaseToDelSeguimiento = userWithRelations.del_seguimiento ?? '';
+
+    //Eliminar seguimiento
+    if (conversationMsg.trim().toLowerCase() === pharaseToDelSeguimiento.trim().toLowerCase()) {
+      this.logger.log('Frase correcta detectada. Eliminando seguimiento...', 'WebhookService');
+      try {
+        const { count } = await this.seguimientosService.deleteSeguimientosByRemoteJid(remoteJid, instanceName);
+        if (count && count > 0) {
+          this.logger.log('Seguimiento eliminado con exito.', 'WebhookService');
+        } else {
+          this.logger.log('No se encontró un seguimiento relacionado.', 'WebhookService');
+        }
+      } catch (error) {
+        this.logger.error('ERROR_SEGUIMIENTOS', error);
+      }
+    };
+
+
     // Poner el estado del chat en falso
     await this.sessionService.updateSessionStatus(remoteJid, instanceId, false);
     this.logger.log(`Chat pausado.`, 'WebhookService');

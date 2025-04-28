@@ -4,8 +4,14 @@ import { NodeSenderService } from '../node-sender.service.ts/node-sender.service
 import { LoggerService } from 'src/core/logger/logger.service';
 import { SeguimientosService } from 'src/modules/seguimientos/seguimientos.service';
 import { convertDelayToSeconds } from 'src/modules/webhook/utils/convert-delay-to-seconds.helper';
+import { Session, seguimientos } from '@prisma/client';
+import { SessionService } from 'src/modules/session/session.service';
 
-
+interface getSessionInterface {
+    remoteJid: string
+    instanceName: string
+    userId: string
+}
 @Injectable()
 export class WorkflowService {
     constructor(
@@ -13,6 +19,7 @@ export class WorkflowService {
         private nodeSenderService: NodeSenderService,
         private seguimientosService: SeguimientosService,
         private logger: LoggerService,
+        private sessionService: SessionService
     ) { }
 
     /**
@@ -32,6 +39,7 @@ export class WorkflowService {
         apikey: string,
         instanceName: string,
         remoteJid: string,
+        userId: string,
     ) {
         const result = await this.prisma.workflow.findFirst({ where: { name: name_flujo } });
 
@@ -85,7 +93,25 @@ export class WorkflowService {
                             name_file: node.name_file,
                             consecutivo: '',
                         };
-                        await this.seguimientosService.createSeguimiento(seguimientoData)
+                        // 1. Registrar seguimiento en la tabla Seguimientos
+                        const { id } = await this.seguimientosService.createSeguimiento(seguimientoData);
+
+                        // 2. Obtener la sesión actual
+                        const res = await this.getSession({ remoteJid, instanceName, userId });
+                        if (!res) {
+                            this.logger.warn(`No se pudo registrar el seguimiento porque la sesión no existe: ${remoteJid}`, 'WorkflowService');
+                            return;
+                        }
+
+                        // 3. Construir la nueva cadena de IDs de seguimiento
+                        const seguimientos = this.buildSeguimientoID({
+                            seguimientos: res.seguimientos,
+                            current: id.toString(),
+                        });
+
+                        // 4. Registrar el nuevo ID de seguimiento en la sesión
+                        await this.registerIdSeguimientoInSession(id.toString(), remoteJid, instanceName, userId, seguimientos);
+
                     } else {
                         this.logger.warn(`Tipo de nodo desconocido: ${node.tipo} (ID: ${node.id})`, 'WorkflowService');
                     }
@@ -139,4 +165,70 @@ export class WorkflowService {
             return [];
         }
     }
+
+    /**
+    * Obtiene el campo seguimientos de Session y concatena el nuevo ID. 
+    *
+    * @param {string} id - ID de seguimiento nuevo a agregar.
+    * @param {string} remoteJid - RemoteJID de la sesión.
+    * @param {string} instanceId - InstanceID de la sesión.
+    * @param {string} userId - UserID del usuario.
+    * @returns {Promise<void>}
+    */
+    private async registerIdSeguimientoInSession(
+        id: string,
+        remoteJid: string,
+        instanceId: string,
+        userId: string,
+        seguimientos: string,
+    ): Promise<void> {
+        this.logger.log(`Almacenando nuevo ID de seguimiento: ${id} en sesión ${remoteJid}`, 'WorkflowService');
+        try {
+            await this.sessionService.registerSeguimientos(
+                seguimientos,
+                remoteJid,
+                instanceId,
+                userId,
+            );
+            this.logger.debug(`ID de seguimiento ${id} almacenado exitosamente en sesión ${remoteJid}`, 'WorkflowService');
+        } catch (error) {
+            this.logger.error(`Error almacenando ID de seguimiento ${id} en sesión ${remoteJid}: ${error.message}`, 'WorkflowService');
+        }
+    }
+
+    private async getSession({ remoteJid, instanceName, userId }: getSessionInterface): Promise<Session | null> {
+        try {
+            const session = await this.sessionService.getSession(remoteJid, instanceName, userId);
+
+            if (!session) {
+                return null;
+            }
+
+            return session;
+        } catch (error) {
+            this.logger.error(
+                `Error obteniendo la sesión de ${remoteJid} en la instancia ${instanceName}`,
+                error?.message || error,
+                'WorkflowService',
+            );
+            return null;
+        }
+    }
+
+    private buildSeguimientoID({
+        seguimientos,
+        current,
+    }: {
+        seguimientos: string | null;
+        current: string;
+    }): string {
+        if (!seguimientos || seguimientos.trim() === '') {
+            // No había seguimientos anteriores, retornamos solo el nuevo
+            return current;
+        }
+
+        // Si ya había seguimientos, concatenamos el nuevo al final
+        return `${seguimientos}-${current}`;
+    }
+
 }

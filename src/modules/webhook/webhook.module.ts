@@ -15,6 +15,7 @@ import { ChatHistoryService } from '../chat-history/chat-history.service';
 import { WorkflowModule } from '../workflow/workflow.module';
 import { IntentionService } from '../ai-agent/services/intention/intention.service';
 import { NodeSenderService } from '../workflow/services/node-sender.service.ts/node-sender.service';
+import { SeguimientosService } from '../seguimientos/seguimientos.service';
 
 @Module({
   imports: [HttpModule, WorkflowModule],
@@ -35,7 +36,8 @@ import { NodeSenderService } from '../workflow/services/node-sender.service.ts/n
     MessageBufferService,
     ChatHistoryService,
     IntentionService,
-    NodeSenderService
+    NodeSenderService,
+    SeguimientosService,
   ]
 })
 export class WebhookModule { }

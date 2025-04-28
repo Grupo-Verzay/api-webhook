@@ -41,9 +41,9 @@ export class SeguimientosService {
      * Elimina todos los seguimientos de un remoteJid específico.
      * @param remoteJid Número de WhatsApp.
      */
-    async deleteSeguimientosByRemoteJid(remoteJid: string): Promise<{ count: number }> {
+    async deleteSeguimientosByRemoteJid(remoteJid: string, instanceName: string): Promise<{ count: number }> {
         return this.prisma.seguimientos.deleteMany({
-            where: { remoteJid },
+            where: { remoteJid, instancia: instanceName },
         });
     }
 

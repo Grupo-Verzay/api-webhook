@@ -78,9 +78,43 @@ export class SessionService {
   // Consulta el estado del chat
   async isSessionActive(remoteJid: string): Promise<boolean> {
     const session = await this.prisma.session.findFirst({
-        where: { remoteJid },
-        select: { status: true },
+      where: { remoteJid },
+      select: { status: true },
     });
     return session?.status ?? false;
-}
+  }
+
+  async registerSeguimientos(
+    seguimientos: string,
+    remoteJid: string,
+    instanceId: string,
+    userId: string,
+  ) {
+    try {
+      const updatedSession = await this.prisma.session.updateMany({
+        where: {
+          remoteJid,
+          instanceId,
+          userId,
+        },
+        data: { seguimientos },
+      });
+
+      if (updatedSession.count === 0) {
+        return null;
+      }
+
+
+      // Opcional: Puedes hacer un findUnique después si quieres retornar el objeto actualizado
+      const session = await this.prisma.session.findFirst({
+        where: { remoteJid, instanceId, userId },
+      });
+
+      return session;
+    } catch (error) {
+      return null;
+    }
+  }
+
+
 }

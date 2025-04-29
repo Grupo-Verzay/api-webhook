@@ -9,11 +9,13 @@ import { InstancesService } from '../instances/instances.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
 import { UserService } from '../user/user.service';
 import { isGroupChat } from './utils/is-group-chat';
-import { Pausar, User } from '@prisma/client';
+import { Pausar, rr, User } from '@prisma/client';
 import { MessageBufferService } from './services/message-buffer/message-buffer.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
 import { NodeSenderService } from '../workflow/services/node-sender.service.ts/node-sender.service';
 import { SeguimientosService } from '../seguimientos/seguimientos.service';
+import { AutoRepliesService } from '../auto-replies/auto-replies.service';
+import { WorkflowService } from '../workflow/services/workflow.service.ts/workflow.service';
 
 interface stopOrResumeConversation {
   conversationMsg: string,
@@ -22,6 +24,17 @@ interface stopOrResumeConversation {
   sessionStatus: boolean,
   userWithRelations: User & { pausar: Pausar[] },
   instanceName: string,
+  apikey: string,
+  server_url: string
+};
+
+interface onAutoRepliesInterface {
+  userId: string
+  conversationMsg: string
+  server_url: string
+  apikey: string
+  instanceName: string
+  remoteJid: string
 };
 
 @Injectable()
@@ -38,6 +51,8 @@ export class WebhookService {
     private readonly chatHistoryService: ChatHistoryService,
     private readonly nodeSenderService: NodeSenderService,
     private readonly seguimientosService: SeguimientosService,
+    private readonly autoRepliesService: AutoRepliesService,
+    private readonly workflowService: WorkflowService,
   ) { }
 
   /**
@@ -69,7 +84,8 @@ export class WebhookService {
     const apikeyOpenAi = userWithRelations?.apiUrl as string;
 
     const sessionStatus = await this.checkOrRegisterSession(remoteJid, instanceName, userId, pushName);
-    const conversationMsg = data?.message?.conversation ?? '';
+    const msgChat = data?.message?.conversation ?? '';
+    const conversationMsg = msgChat.trim().toLowerCase();
     const sessionHistoryId = `${instanceName}-${remoteJid}`;
     const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
 
@@ -84,7 +100,7 @@ export class WebhookService {
     /* Validar quién está escribiendo y ejecutar pausas, reactivaciones o seguimientos */
     if (this.messageDirectionService.isFromMe(fromMe)) {
       /* Encargada de reanudar o pausar el chat */
-      await this.stopOrResumeConversation({ conversationMsg, remoteJid, instanceId, sessionStatus, userWithRelations, instanceName });
+      await this.stopOrResumeConversation({ conversationMsg, remoteJid, instanceId, sessionStatus, userWithRelations, instanceName, apikey, server_url });
       return;
     }
 
@@ -175,8 +191,11 @@ export class WebhookService {
       sessionStatus,
       userWithRelations,
       instanceName,
+      apikey,
+      server_url
     }: stopOrResumeConversation) {
 
+    //Pausar chat  
     if (!sessionStatus) {
       // Monitoreo de PAUSA: buscar palabra clave para reactivación
       if (!userWithRelations) {
@@ -196,7 +215,7 @@ export class WebhookService {
       this.logger.log(`Frase de reactivación del usuario: "${phraseToReactivateChat}"`, 'WebhookService');
 
       // 3. Verificar si el cliente escribió la frase correcta para reactivar
-      if (conversationMsg.trim().toLowerCase() === phraseToReactivateChat.trim().toLowerCase()) {
+      if (conversationMsg === phraseToReactivateChat.trim().toLowerCase()) {
         this.logger.log('Frase correcta detectada. Reactivando chat...', 'WebhookService');
         await this.sessionService.updateSessionStatus(remoteJid, instanceId, true);
         return;
@@ -205,7 +224,7 @@ export class WebhookService {
     const pharaseToDelSeguimiento = userWithRelations.del_seguimiento ?? '';
 
     //Eliminar seguimiento
-    if (conversationMsg.trim().toLowerCase() === pharaseToDelSeguimiento.trim().toLowerCase()) {
+    if (conversationMsg === pharaseToDelSeguimiento.trim().toLowerCase()) {
       this.logger.log('Frase correcta detectada. Eliminando seguimiento...', 'WebhookService');
       try {
         const { count } = await this.seguimientosService.deleteSeguimientosByRemoteJid(remoteJid, instanceName);
@@ -220,8 +239,66 @@ export class WebhookService {
     };
 
 
+    //Flujo de respuestas rapidas
+    await this.onAutoReplies({
+      userId: userWithRelations.id.toString(),
+      conversationMsg,
+      server_url,
+      apikey,
+      instanceName,
+      remoteJid,
+    });
+
     // Poner el estado del chat en falso
     await this.sessionService.updateSessionStatus(remoteJid, instanceId, false);
     this.logger.log(`Chat pausado.`, 'WebhookService');
   }
+
+  /**
+   * Busca coincidencias de mensajes automáticos configurados para un usuario
+   * y ejecuta el workflow correspondiente si encuentra una coincidencia exacta.
+   *
+   * @private
+   * @param {string} userId - ID del usuario que posee las respuestas automáticas configuradas.
+   * @param {string} conversationMsg - Mensaje de conversación recibido que se comparará con las respuestas automáticas.
+   * @param {string} server_url - URL base del servidor Evolution API para la ejecución del workflow.
+   * @param {string} apikey - Clave API para autorización en el servidor Evolution.
+   * @param {string} instanceName - Nombre de la instancia de Evolution asociada a la sesión del usuario.
+   * @param {string} remoteJid - Identificador remoto del cliente de WhatsApp (por ejemplo, número de teléfono en formato JID).
+   * @returns {Promise<void>} - No retorna ningún valor. Ejecuta el workflow asociado o registra errores en el sistema de logs.
+   */
+
+  private async onAutoReplies({ userId, conversationMsg, server_url, apikey, instanceName, remoteJid, }: onAutoRepliesInterface): Promise<void> {
+    try {
+      const autoReplies = await this.autoRepliesService.getAutoRepliesByUserId(userId);
+
+      if (!autoReplies || autoReplies.length === 0) return;
+
+      const matchedReply = autoReplies.find(
+        reply => reply.mensaje?.trim().toLowerCase() === conversationMsg
+      );
+
+      if (matchedReply) {
+        // Aquí puedes ejecutar lo que desees con matchedReply
+        // Por ejemplo: enviar la respuesta automática
+        this.logger.log(`AutoReply encontrada: ${matchedReply.mensaje}`);
+        this.logger.log(`WorkflowID: ${matchedReply.workflowId}`);
+        //Obtener workflow by ID
+        const workflow = await this.workflowService.getWorkflowById(matchedReply.workflowId);
+        if (!workflow) return;
+
+        await this.workflowService.executeWorkflow(
+          workflow?.name ?? '',
+          server_url,
+          apikey,
+          instanceName,
+          remoteJid,
+          userId
+        );
+      }
+    } catch (error) {
+      this.logger.error('Error al procesar autoReplies', error);
+    }
+  }
+
 }

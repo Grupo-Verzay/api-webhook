@@ -11,6 +11,7 @@ import { AiAgentModule } from './modules/ai-agent/ai-agent.module';
 import { UserService } from './modules/user/user.service';
 import { ChatHistoryService } from './modules/chat-history/chat-history.service';
 import { SeguimientosService } from './modules/seguimientos/seguimientos.service';
+import { AutoRepliesService } from './modules/auto-replies/auto-replies.service';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { SeguimientosService } from './modules/seguimientos/seguimientos.service
     UserService,
     ChatHistoryService,
     SeguimientosService,
+    AutoRepliesService,
   ],
 })
 export class AppModule { }

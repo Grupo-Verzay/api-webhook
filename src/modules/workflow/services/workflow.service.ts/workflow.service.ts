@@ -231,4 +231,21 @@ export class WorkflowService {
         return `${seguimientos}-${current}`;
     }
 
+    async getWorkflowById(workflowId: string) {
+        this.logger.log('Obteniendo lista de workflows disponibles...', 'WorkflowService');
+        try {
+            const workflows = await this.prisma.workflow.findFirst({
+                where: {
+                    id: workflowId,
+                },
+                orderBy: {
+                    createdAt: "asc",
+                },
+            });
+            return workflows;
+        } catch (error) {
+            this.logger.error('Error al obtener los workflows:"', error, 'WorkflowService');
+            return null;
+        }
+    }
 }

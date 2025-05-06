@@ -89,11 +89,9 @@ export class AiAgentService {
       ).join('\n');
 
       const systemPrompt = `
-      Eres un agente inteligente que debe ejecutar flujos según lo que el usuario pida. Esta es la lista de flujos disponibles:
+      Esta es la lista de flujos reales disponibles:
       
       ${formattedList}
-      
-      Responde indicando cuál flujo ejecutar, usando el nombre exacto si lo reconoces.
       `;
 
       const historyMessages: ChatCompletionMessageParam[] = chatHistory.map((text) => ({
@@ -102,7 +100,7 @@ export class AiAgentService {
       }));
 
       const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: `${systemPromptWorkflow} ${systemPrompt}` },
         ...historyMessages,
         { role: 'user', content: input },
       ];
@@ -354,7 +352,7 @@ export class AiAgentService {
     // }
 
     // return mensajesEnviados.join('\n');
-    
+
   };
 
   /**

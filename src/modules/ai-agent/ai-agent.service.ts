@@ -113,7 +113,7 @@ export class AiAgentService {
         model: 'gpt-4o-mini',
         messages,
         // tools,
-        tool_choice: 'auto',
+        // tool_choice: 'auto',
       });
 
       this.logger.debug(`openAIToolDetection respuesta segundo agente ========>: ${JSON.stringify(response)}`);

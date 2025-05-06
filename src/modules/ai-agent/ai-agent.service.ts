@@ -85,7 +85,8 @@ export class AiAgentService {
 
       const workflows = await this.workflowService.getWorkflow(userId);
       const formattedList = workflows.map(
-        (flow) => `- ${flow.name}: ${flow.description ?? 'sin descripción'}`
+        // (flow) => `- ${flow.name}: ${flow.description ?? 'sin descripción'}`
+        (flow) => `- ${flow.name}`
       ).join('\n');
 
       this.logger.log(`OpenAIToolDetection workflows ========>: ${JSON.stringify(workflows)}`);

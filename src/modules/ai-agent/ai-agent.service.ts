@@ -112,13 +112,16 @@ export class AiAgentService {
       const response = await this.openAiClient.chat.completions.create({
         model: 'gpt-4o-mini',
         messages,
+        // tools,
         tool_choice: 'auto',
       });
 
+      this.logger.debug(`openAIToolDetection respuesta segundo agente ========>: ${JSON.stringify(response)}`);
+
       const choice: any = response.choices?.[0];
       const toolCall = choice?.message?.tool_calls?.[0];
-      this.logger.debug(`OpenAIToolDetection Choice ========>: ${JSON.stringify(choice)}`);
-      this.logger.debug(`OpenAIToolDetection ToolCall ========>: ${JSON.stringify(toolCall)}`);
+      // this.logger.debug(`OpenAIToolDetection Choice ========>: ${JSON.stringify(choice)}`);
+      // this.logger.debug(`OpenAIToolDetection ToolCall ========>: ${JSON.stringify(toolCall)}`);
 
       if (!toolCall || !toolCall.function?.name) {
         return { choice, toolCall: null };

@@ -277,21 +277,20 @@ export class AiAgentService {
       userId
     });
 
-    // const flujoDetectado = detectionResult.toolCall?.function?.arguments;
-    const flujoDetectado = detectionResult.choice?.message;
+    const flujoDetectado = detectionResult.toolCall?.function?.arguments;
 
     if (!flujoDetectado) {
       return 'Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?';
     }
 
-    let nombreFlujo = flujoDetectado?.content ?? '';
-    // try {
-    //   const parsed = JSON.parse(flujoDetectado);
-    //   nombreFlujo = parsed.nombre_flujo;
-    // } catch (e) {
-    //   this.logger.error('Error al interpretar nombre_flujo desde toolCall', e.message);
-    //   return '[ERROR_PARSE_NOMBRE_FLUJO]';
-    // }
+    let nombreFlujo: string;
+    try {
+      const parsed = JSON.parse(flujoDetectado);
+      nombreFlujo = parsed.nombre_flujo;
+    } catch (e) {
+      this.logger.error('Error al interpretar nombre_flujo desde toolCall', e.message);
+      return '[ERROR_PARSE_NOMBRE_FLUJO]';
+    }
 
     this.logger.log(`Workflow info ========>: ${JSON.stringify(flujoDetectado)}`);
 
@@ -299,7 +298,8 @@ export class AiAgentService {
     const currentWorkflow = workflows.find(w => w.name.toLowerCase() === nombreFlujo.toLowerCase());
 
     if (!currentWorkflow) {
-      return `El flujo "${nombreFlujo}" no está disponible actualmente.`;
+      this.logger.debug(`El flujo "${nombreFlujo}" no está disponible actualmente.`);
+      return "";
     }
 
     const alreadyExecuted = await this.chatHistoryService.hasIntentionBeenExecuted(sessionId, currentWorkflow.name);

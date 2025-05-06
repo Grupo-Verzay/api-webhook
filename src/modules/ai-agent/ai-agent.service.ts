@@ -10,8 +10,10 @@ import { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { NodeSenderService } from '../workflow/services/node-sender.service.ts/node-sender.service';
 import { WorkflowService } from '../workflow/services/workflow.service.ts/workflow.service';
 import { IntentionService } from './services/intention/intention.service';
-import { IntentionItem, proccessInput } from 'src/types/open-ai';
+import { IntentionItem, OpenAIDetectionResult, openAIToolDetection, proccessInput } from 'src/types/open-ai';
 import { NotificacionToolService } from './tools/notificacion/notificacion.service';
+import { tools } from './utils/tools';
+import { extraRules, systemPromptWorkflow } from './utils/rulesPrompt';
 
 @Injectable()
 export class AiAgentService {
@@ -37,7 +39,7 @@ export class AiAgentService {
       this.logger.error('API Key inválida o no proporcionada.', '', 'AiAgentService');
     }
     this.openAiClient = new OpenAI({ apiKey: apikeyOpenAi });
-  }
+  };
 
   /**
    * Valida si una API Key parece válida.
@@ -47,7 +49,7 @@ export class AiAgentService {
    */
   private isValidApiKey(apikeyOpenAi: string): boolean {
     return typeof apikeyOpenAi === 'string' && apikeyOpenAi.startsWith('sk-') && apikeyOpenAi.length >= 40;
-  }
+  };
 
   /**
    * Procesa la entrada de texto del usuario.
@@ -62,7 +64,78 @@ export class AiAgentService {
   private async getWeather(location: string): Promise<string> {
     // Aquí podrías hacer una llamada real a una API de clima
     return `Soleado y 25°C en ${location}`; // Respuesta simulada
-  }
+  };
+
+  /**
+   * Se procesa la tool con openAI - segundo agente
+   *
+   * @private
+   * @param input - msg
+   * @param sessionId - Nombre de la instancia en Evolution API
+   * @param userId - Identificador del usuario
+   * @returns {Promise<string>}
+   */
+  private async openAIToolDetection({
+    input,
+    sessionId,
+    userId
+  }: openAIToolDetection): Promise<OpenAIDetectionResult> {
+    try {
+      const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
+
+      const workflows = await this.workflowService.getWorkflow(userId);
+      const formattedList = workflows.map(
+        (flow) => `- ${flow.name}: ${flow.description ?? 'sin descripción'}`
+      ).join('\n');
+
+      const systemPrompt = `
+      Eres un agente inteligente que debe ejecutar flujos según lo que el usuario pida. Esta es la lista de flujos disponibles:
+      
+      ${formattedList}
+      
+      Responde indicando cuál flujo ejecutar, usando el nombre exacto si lo reconoces.
+      `;
+
+      const historyMessages: ChatCompletionMessageParam[] = chatHistory.map((text) => ({
+        role: 'user',
+        content: text,
+      }));
+
+      const messages: ChatCompletionMessageParam[] = [
+        { role: 'system', content: systemPrompt },
+        ...historyMessages,
+        { role: 'user', content: input },
+      ];
+
+      const response = await this.openAiClient.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages,
+        tools,
+        tool_choice: 'auto',
+      });
+
+      const choice: any = response.choices?.[0];
+      const toolCall = choice?.message?.tool_calls?.[0];
+      this.logger.debug(`Choice ========>: ${JSON.stringify(choice)}`);
+      this.logger.debug(`ToolCall ========>: ${JSON.stringify(toolCall)}`);
+
+      if (!toolCall || !toolCall.function?.name) {
+        return { choice, toolCall: null };
+      }
+      // return choice?.message?.content?.trim() ?? '[ERROR_OPENAI_EMPTY_RESPONSE]';
+      return {
+        choice,
+        toolCall
+      }
+
+    } catch (error) {
+      this.logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
+      return {
+        choice: null,
+        toolCall: null
+      }
+    }
+  };
 
   /**
    * Se procesa el texto 
@@ -76,7 +149,7 @@ export class AiAgentService {
    * @param apikey - API Key para autorización con Evolution
    * @param instanceName - Nombre de la instancia en Evolution API
    * @param remoteJid - Número del cliente en formato WhatsApp
-   * @returns {Promise<void>}
+   * @returns {Promise<string>}
    */
   async processInput({
     input,
@@ -91,30 +164,6 @@ export class AiAgentService {
     try {
       this.initializeClient(apikeyOpenAi);
 
-      const extraRules = `🎯 TU ROL Y FUNCIONES:
-      Eres un asistente de IA avanzado, experto en ventas y atención al cliente. Utilizas técnicas de neuroventas, persuasión y cierres estratégicos. Tu objetivo es guiar y ayudar al usuario de manera efectiva, adaptando el tono y contenido a su perfil e intención.
-      
-      ⚙️ PRIORIDAD DE HERRAMIENTAS:
-      1. Siempre debes **verificar internamente** si la herramienta "execute_workflow" está disponible y se puede ejecutar según la intención del usuario.
-      2. Si la herramienta "execute_workflow" **no está disponible o no es aplicable**, **debes ignorarla completamente y continuar la conversación normalmente**, como si no existiera.
-      3. También puedes usar "notificacion" si el usuario solicita atención humana directa.
-      
-      📌 POLÍTICA DE RESPUESTA:
-      - **Nunca menciones flujos ni herramientas al usuario.**
-      - Si hay un flujo aplicable, ejecútalo.
-      - Si no hay ninguno, **no debes informar al usuario que no existe el flujo**. En su lugar, responde de manera natural, útil y sin interrupciones.
-      - Evita cualquier mención a limitaciones internas. Tu enfoque debe mantenerse fluido y profesional.
-      
-      ✅ EJEMPLOS:
-      - Si hay flujo aplicable: *El sistema lo ejecuta sin notificar explícitamente al usuario.*
-      - Si no hay flujo: *Responde normalmente con recomendaciones, ayuda u otra respuesta coherente con la intención del usuario.*
-      
-      📒 IMPORTANTE:
-      - Tus respuestas deben ser claras, concretas y útiles.
-      - Nunca expliques la lógica interna del sistema ni hables de herramientas o flujos con el usuario.
-      ---`;
-      
-
       const systemPrompt = await this.promptService.getPromptUserId(userId);
       const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
 
@@ -122,48 +171,11 @@ export class AiAgentService {
         role: 'user',
         content: text,
       }));
-    
+
       const messages: ChatCompletionMessageParam[] = [
         { role: 'system', content: `${extraRules} ${systemPrompt}` },
         ...historyMessages,
         { role: 'user', content: input },
-      ];
-
-      const tools: any[] = [
-        {
-          type: 'function',
-          function: {
-            name: 'notificacion',
-            description: 'Utiliza esta herramienta cuando un usuario necesite la asesoría de un asesor, haga una solicitud, reclamo o agendamiento.',
-            parameters: {
-              type: 'object',
-              properties: {
-                nombre: { type: 'string', description: 'Nombre del usuario' },
-                detalles: { type: 'string', description: 'Detalle de la notificación o solicitud' },
-              },
-              required: ['nombre', 'detalles'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'execute_workflow',
-            description: `Utiliza siempres esta herramienta debe ejecutarse para verificar si existe un flujo automatizado en la base de datos relacionado 
-            con la intención del usuario. Si se encuentra un flujo coincidente, se ejecuta automáticamente. Si no se encuentra ningún flujo, la IA debe continuar 
-            la conversación de forma natural sin interrumpir al usuario.`,
-            parameters: {
-              type: 'object',
-              properties: {
-                nombre_flujo: {
-                  type: 'string',
-                  description: 'Nombre del flujo a ejecutar',
-                },
-              },
-              required: ['nombre_flujo'],
-            },
-          },
-        }
       ];
 
       const response = await this.openAiClient.chat.completions.create({
@@ -180,9 +192,16 @@ export class AiAgentService {
 
 
       if (toolCall) {
-        const args = JSON.parse(toolCall.function.arguments);
+        let args;
+        try {
+          args = JSON.parse(toolCall.function.arguments);
+        } catch (e) {
+          this.logger.error('Error al parsear los argumentos del toolCall', e.message);
+          return '[ERROR_TOOL_ARGS_PARSING]';
+        }
+
         const toolName = toolCall.function.name;
-      
+
         switch (toolName) {
           case 'notificacion':
             // Ejecutar la tool sin retornar nada al usuario
@@ -194,7 +213,7 @@ export class AiAgentService {
               instanceName,
               remoteJid
             );
-      
+
             // Luego continuar la conversación con una respuesta generada por la IA
             const followUp = await this.openAiClient.chat.completions.create({
               model: 'gpt-4o-mini',
@@ -211,9 +230,9 @@ export class AiAgentService {
                 },
               ],
             });
-      
+
             return followUp.choices?.[0]?.message?.content?.trim() ?? '✅ Solicitud enviada. En breve te contactará un asesor.';
-      
+
           case 'execute_workflow':
             return await this.handleExecuteWorkflowTool(
               args,
@@ -225,12 +244,12 @@ export class AiAgentService {
               instanceName,
               remoteJid
             );
-      
+
           default:
             this.logger.warn(`Tool no soportada: ${toolCall.function.name}`, 'AiAgentService');
         }
       }
-      
+
       return choice?.message?.content?.trim() ?? '[ERROR_OPENAI_EMPTY_RESPONSE]';
     } catch (error) {
       this.logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
@@ -248,15 +267,9 @@ export class AiAgentService {
     instanceName: string,
     remoteJid: string
   ): Promise<string> {
-    const workflows = await this.workflowService.getWorkflow(userId);
-    const dataWorkflow: IntentionItem[] = workflows.map((flow) => ({
-      name: flow.name,
-      tipo: 'flujo',
-      frase: flow.description ?? flow.name,
-      umbral: flow.umbral,
-    }));
 
-    const decisions = await this.intentionService.detectIntent(args.nombre_flujo, dataWorkflow, apikeyOpenAi);
+    /* OLD 
+    // const decisions = await this.intentionService.detectIntent(args.nombre_flujo, dataWorkflow, apikeyOpenAi);
     this.logger.debug(`decisions ========>: ${JSON.stringify(decisions)}`);
 
     if (!decisions.length) {
@@ -264,35 +277,85 @@ export class AiAgentService {
     }
 
     let mensajesEnviados: string[] = [];
+    */
+    /* NEW */
 
-    for (const decision of decisions) {
-      const alreadyExecuted = await this.chatHistoryService.hasIntentionBeenExecuted(sessionId, decision.name);
-      this.logger.debug(`alreadyExecuted ========>: ${alreadyExecuted} para ${decision.name}`);
+    const detectionResult = await this.openAIToolDetection({
+      input: args.nombre_flujo,
+      sessionId,
+      userId
+    });
 
-      // if (alreadyExecuted) {
-      //   //TODO: VALIDAR MSG  
-      //   // mensajesEnviados.push(`Ya te compartí "${decision.name}". ¿Te puedo ayudar en algo más?`);
-      //   mensajesEnviados.push(``);
-      //   this.logger.log(`El flujo ${decision.name} ya fue ejecutado, revise el historial para ejecutar nuevamente.`);
-      //   continue;
-      // }
+    const flujoDetectado = detectionResult.toolCall?.function?.arguments;
 
-      await this.chatHistoryService.registerExecutedIntention(sessionId, decision.name, decision.tipo);
-      await this.workflowService.executeWorkflow(
-        decision.name,
-        server_url,
-        apikey,
-        instanceName,
-        remoteJid,
-        userId
-      );
-      //TODO: VALIDAR MSG 
-      // mensajesEnviados.push(`Te he enviado la información sobre "${decision.name}". ¿Deseas algo más?`);
-      mensajesEnviados.push(``);
+    if (!flujoDetectado) {
+      return 'Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?';
     }
 
-    return mensajesEnviados.join('\n');
-  }
+    let nombreFlujo: string;
+    try {
+      const parsed = JSON.parse(flujoDetectado);
+      nombreFlujo = parsed.nombre_flujo;
+    } catch (e) {
+      this.logger.error('Error al interpretar nombre_flujo desde toolCall', e.message);
+      return '[ERROR_PARSE_NOMBRE_FLUJO]';
+    }
+
+    const workflows = await this.workflowService.getWorkflow(userId);
+    const decision = workflows.find(w => w.name.toLowerCase() === nombreFlujo.toLowerCase());
+
+    if (!decision) {
+      return `El flujo "${nombreFlujo}" no está disponible actualmente.`;
+    }
+
+    const alreadyExecuted = await this.chatHistoryService.hasIntentionBeenExecuted(sessionId, decision.name);
+    this.logger.debug(`alreadyExecuted ========>: ${alreadyExecuted} para ${decision.name}`);
+
+    // if (alreadyExecuted) {
+    //   return `Ya ejecutamos el flujo *${decision.name}*. ¿Deseas otra ayuda?`;
+    // }
+
+    await this.chatHistoryService.registerExecutedIntention(sessionId, decision.name, 'intention');
+    await this.workflowService.executeWorkflow(
+      decision.name,
+      server_url,
+      apikey,
+      instanceName,
+      remoteJid,
+      userId
+    );
+
+    return `✅ He ejecutado el flujo *${decision.name}*. ¿Puedo ayudarte con algo más?`;
+
+    // for (const decision of decisions) {
+    // const alreadyExecuted = await this.chatHistoryService.hasIntentionBeenExecuted(sessionId, decision.name);
+    // this.logger.debug(`alreadyExecuted ========>: ${alreadyExecuted} para ${decision.name}`);
+
+    // if (alreadyExecuted) {
+    //   //TODO: VALIDAR MSG  
+    //   // mensajesEnviados.push(`Ya te compartí "${decision.name}". ¿Te puedo ayudar en algo más?`);
+    //   mensajesEnviados.push(``);
+    //   this.logger.log(`El flujo ${decision.name} ya fue ejecutado, revise el historial para ejecutar nuevamente.`);
+    //   continue;
+    // }
+
+    // await this.chatHistoryService.registerExecutedIntention(sessionId, decision.name, decision.tipo);
+    // await this.workflowService.executeWorkflow(
+    //   decision.name,
+    //   server_url,
+    //   apikey,
+    //   instanceName,
+    //   remoteJid,
+    //   userId
+    // );
+    //TODO: VALIDAR MSG 
+    // mensajesEnviados.push(`Te he enviado la información sobre "${decision.name}". ¿Deseas algo más?`);
+    // mensajesEnviados.push(``);
+    // }
+
+    // return mensajesEnviados.join('\n');
+    
+  };
 
   /**
    * Descarga un archivo de audio desde una URL.
@@ -316,7 +379,7 @@ export class AiAgentService {
       writer.on('finish', resolve);
       writer.on('error', reject);
     });
-  }
+  };
 
   /**
    * Transcribe un archivo de audio utilizando OpenAI Whisper.
@@ -343,7 +406,7 @@ export class AiAgentService {
       this.logger.error('Error transcribiendo audio con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
       return '[ERROR_TRANSCRIBING_AUDIO]';
     }
-  }
+  };
 
   /**
    * Describe una imagen utilizando OpenAI GPT-4 con input de imagen.
@@ -377,5 +440,5 @@ export class AiAgentService {
       this.logger.error('Error describiendo imagen con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
       return '[ERROR_DESCRIBING_IMAGE]';
     }
-  }
+  };
 }

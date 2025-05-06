@@ -112,7 +112,6 @@ export class AiAgentService {
       const response = await this.openAiClient.chat.completions.create({
         model: 'gpt-4o-mini',
         messages,
-        tools,
         tool_choice: 'auto',
       });
 

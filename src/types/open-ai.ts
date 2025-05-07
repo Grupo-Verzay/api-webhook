@@ -47,6 +47,7 @@ export interface ChoiceWithToolCall {
     };
 }
 export interface OpenAIDetectionResult {
-    choice: ChoiceWithToolCall | null;
-    toolCall: ChatCompletionMessageToolCall | null;
+    // choice: ChoiceWithToolCall | null;
+    // toolCall: ChatCompletionMessageToolCall | null;
+    content: string | null;
 }

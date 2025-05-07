@@ -40,7 +40,7 @@ export class IntentionService {
      * @param dataWorkflow Lista de intenciones posibles (flujos, seguimientos, notificaciones).
      */
     async detectIntent(input: string, dataWorkflow: IntentionItem[], apikeyOpenAi: string): Promise<IntentionItem[]> {
-        this.logger.debug(`input =>>>${input}, dataWorkflow =>>>${JSON.stringify(dataWorkflow)}, apikeyOpenAi =>>>${JSON.stringify(apikeyOpenAi)}`, 'detectIntent');
+        // this.logger.debug(`input =>>>${input}, dataWorkflow =>>>${JSON.stringify(dataWorkflow)}, apikeyOpenAi =>>>${JSON.stringify(apikeyOpenAi)}`, 'detectIntent');
         this.initializeClient(apikeyOpenAi);
 
         const inputEmbedding = await this.createEmbedding(input);
@@ -50,7 +50,7 @@ export class IntentionService {
         for (const item of dataWorkflow) {
             const itemEmbedding = await this.createEmbedding(item.frase);
             const similarity = this.cosineSimilarity(inputEmbedding, itemEmbedding);
-            this.logger.debug(`Comparando con: ${item.name} → Similaridad: ${similarity.toFixed(4)}`);
+            this.logger.log(`Comparando con: ${item.name} → Similaridad: ${similarity.toFixed(4)}`);
 
             const umbral = item.umbral ?? 0.5;
 
@@ -62,7 +62,7 @@ export class IntentionService {
         // Ordenar por el score más alto primero
         matches.sort((a, b) => b.score - a.score);
 
-        this.logger.debug(`Total de coincidencias encontradas: ${matches.length}`, 'detectIntent');
+        this.logger.log(`Total de coincidencias encontradas: ${matches.length}`, 'detectIntent');
         
         // Retornar sólo los items
         return matches.map((m) => m.item);

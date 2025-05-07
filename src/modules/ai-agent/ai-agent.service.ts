@@ -81,30 +81,26 @@ export class AiAgentService {
     userId
   }: openAIToolDetection): Promise<OpenAIDetectionResult> {
     try {
+      this.logger.debug(`openAIToolDetection INPUT ===>: ${input}}`);
       const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
-
       const workflows = await this.workflowService.getWorkflow(userId);
       const formattedList = workflows.map(
         // (flow) => `- ${flow.name}: ${flow.description ?? 'sin descripción'}`
         (flow) => `- ${flow.name}`
       ).join('\n');
 
-      this.logger.log(`OpenAIToolDetection workflows ========>: ${JSON.stringify(workflows)}`);
-      this.logger.log(`OpenAIToolDetection formattedList ========>: ${JSON.stringify(formattedList)}`);
-
-      const systemPrompt = `
-      Esta es la lista de flujos reales disponibles:
-      
-      ${formattedList}
-      `;
+      this.logger.log(`Lista de flujos: ${JSON.stringify(formattedList)}`);
 
       const historyMessages: ChatCompletionMessageParam[] = chatHistory.map((text) => ({
         role: 'user',
         content: text,
       }));
 
+      const customSystemPrompt = `${systemPromptWorkflow} ${formattedList}`;
+      this.logger.debug(`customSystemPrompt: ${customSystemPrompt}}`);
+
       const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: `${systemPromptWorkflow} ${systemPrompt}` },
+        { role: 'system', content: customSystemPrompt },
         ...historyMessages,
         { role: 'user', content: input },
       ];
@@ -112,31 +108,24 @@ export class AiAgentService {
       const response = await this.openAiClient.chat.completions.create({
         model: 'gpt-4o-mini',
         messages,
-        // tools,
-        // tool_choice: 'auto',
       });
 
-      this.logger.debug(`openAIToolDetection respuesta segundo agente ========>: ${JSON.stringify(response)}`);
-
       const choice: any = response.choices?.[0];
-      const toolCall = choice?.message?.tool_calls?.[0];
-      // this.logger.debug(`OpenAIToolDetection Choice ========>: ${JSON.stringify(choice)}`);
-      // this.logger.debug(`OpenAIToolDetection ToolCall ========>: ${JSON.stringify(toolCall)}`);
+      const content = choice?.message?.content?.trim();
 
-      if (!toolCall || !toolCall.function?.name) {
-        return { choice, toolCall: null };
+      if (!choice || !content) {
+        this.logger.warn('Content inválido o vacío');
+        return { content: null };
       }
-      // return choice?.message?.content?.trim() ?? '[ERROR_OPENAI_EMPTY_RESPONSE]';
+
       return {
-        choice,
-        toolCall
+        content
       }
 
     } catch (error) {
       this.logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
       return {
-        choice: null,
-        toolCall: null
+        content: null
       }
     }
   };
@@ -191,8 +180,6 @@ export class AiAgentService {
 
       const choice: any = response.choices?.[0];
       const toolCall = choice?.message?.tool_calls?.[0];
-      this.logger.debug(`ProcessInput Choice ========>: ${JSON.stringify(choice)}`);
-      this.logger.debug(`ProcessInput ToolCall ========>: ${JSON.stringify(toolCall)}`);
 
       if (toolCall) {
         let args;
@@ -270,58 +257,71 @@ export class AiAgentService {
     instanceName: string,
     remoteJid: string
   ): Promise<string> {
-    this.logger.log(`Entrando a handleExecuteWorkflowTool...`);
-    this.logger.log(`HandleExecuteWorkflowTool ARGS =======> ${JSON.stringify(args)}`);
-
     const detectionResult = await this.openAIToolDetection({
       input: args.nombre_flujo,
       sessionId,
       userId
     });
 
-    const flujoDetectado = detectionResult.toolCall?.function?.arguments;
+    const res = detectionResult.content;
+    const rawContent = res?.trim().toUpperCase();
 
-    if (!flujoDetectado) {
-      return 'Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?';
+    this.logger.debug(`handleExecuteWorkflowTool rawContent: ${JSON.stringify(rawContent)}`);
+
+
+    if (!rawContent || rawContent === 'NINGUNO') {
+      this.logger.log(`No se encontró ningun flujo asociado al input.`);
+      return "Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?";
     }
 
-    let nombreFlujo: string;
-    try {
-      const parsed = JSON.parse(flujoDetectado);
-      nombreFlujo = parsed.nombre_flujo;
-    } catch (e) {
-      this.logger.error('Error al interpretar nombre_flujo desde toolCall', e.message);
-      return '[ERROR_PARSE_NOMBRE_FLUJO]';
-    }
+    const nombresDetectados = rawContent
+      .split('\n')
+      .map((n) => n.trim())
+      .filter(Boolean);
 
-    this.logger.log(`Workflow info ========>: ${JSON.stringify(flujoDetectado)}`);
+    this.logger.log(`Flujos detectados: ${JSON.stringify(nombresDetectados)}`);
 
     const workflows = await this.workflowService.getWorkflow(userId);
-    const currentWorkflow = workflows.find(w => w.name.toLowerCase() === nombreFlujo.toLowerCase());
+    let mensajes: string[] = [];
 
-    if (!currentWorkflow) {
-      this.logger.debug(`El flujo "${nombreFlujo}" no está disponible actualmente.`);
-      return "";
+    for (const nombre of nombresDetectados) {
+      const currentWorkflow = workflows.find(
+        (w) => w.name.toLowerCase() === nombre.toLowerCase()
+      );
+
+      if (!currentWorkflow) {
+        this.logger.warn(`El flujo "${nombre}" no fue encontrado.`);
+        continue;
+      }
+
+      const yaEjecutado = await this.chatHistoryService.hasIntentionBeenExecuted(
+        sessionId,
+        currentWorkflow.name
+      );
+
+      if (!yaEjecutado) {
+        await this.chatHistoryService.registerExecutedIntention(
+          sessionId,
+          currentWorkflow.name,
+          'intention'
+        );
+        await this.workflowService.executeWorkflow(
+          currentWorkflow.name,
+          server_url,
+          apikey,
+          instanceName,
+          remoteJid,
+          userId
+        );
+        mensajes.push(`✅ Se ejecutó: *${currentWorkflow.name}*`);
+      } else {
+        mensajes.push(`ℹ️ Ya ejecutado: *${currentWorkflow.name}*`);
+      }
     }
 
-    const alreadyExecuted = await this.chatHistoryService.hasIntentionBeenExecuted(sessionId, currentWorkflow.name);
-    this.logger.debug(`alreadyExecuted ========>: ${alreadyExecuted} para ${currentWorkflow.name}`);
+    this.logger.log(`Workflow result: ${JSON.stringify(mensajes.join('\n'))}`);
 
-    // if (alreadyExecuted) {
-    //   return `Ya ejecutamos el flujo *${currentWorkflow.name}*. ¿Deseas otra ayuda?`;
-    // }
-
-    await this.chatHistoryService.registerExecutedIntention(sessionId, currentWorkflow.name, 'intention');
-    await this.workflowService.executeWorkflow(
-      currentWorkflow.name,
-      server_url,
-      apikey,
-      instanceName,
-      remoteJid,
-      userId
-    );
-
-    return "";
+    return "¿Te puedo ayudar con algo más? Estoy aquí para ayudarte con lo que necesites.";
   };
 
   /**

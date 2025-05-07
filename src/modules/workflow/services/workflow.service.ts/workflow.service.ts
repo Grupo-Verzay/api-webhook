@@ -61,7 +61,7 @@ export class WorkflowService {
         this.logger.log(`Iniciando ejecución de workflow "${result.name}" con ${nodes.length} nodos`, 'WorkflowService');
 
         for (const [index, node] of nodes.entries()) {
-            this.logger.debug(`Procesando nodo ${index + 1}/${nodes.length} (ID: ${node.id})`);
+            this.logger.log(`Procesando nodo ${index + 1}/${nodes.length} (ID: ${node.id})`);
 
             try {
                 const sendNode = async () => {
@@ -190,7 +190,7 @@ export class WorkflowService {
                 instanceId,
                 userId,
             );
-            this.logger.debug(`ID de seguimiento ${id} almacenado exitosamente en sesión ${remoteJid}`, 'WorkflowService');
+            this.logger.log(`ID de seguimiento ${id} almacenado exitosamente en sesión ${remoteJid}`, 'WorkflowService');
         } catch (error) {
             this.logger.error(`Error almacenando ID de seguimiento ${id} en sesión ${remoteJid}: ${error.message}`, 'WorkflowService');
         }

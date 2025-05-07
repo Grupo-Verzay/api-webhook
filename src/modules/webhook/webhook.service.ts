@@ -95,7 +95,7 @@ export class WebhookService {
       return;
     }
 
-    this.logger.debug(`Is from me: ${fromMe}`);
+    this.logger.log(`Is from me: ${fromMe}`);
 
     /* Validar quién está escribiendo y ejecutar pausas, reactivaciones o seguimientos */
     if (this.messageDirectionService.isFromMe(fromMe)) {
@@ -122,7 +122,7 @@ export class WebhookService {
       incomingMessage,
       delayConversation,
       async (mergedText) => {
-        this.logger.debug(`Merged text ready for AI processing: ${mergedText}`);
+        this.logger.log(`Merged text ready for AI processing: ${mergedText}`);
 
         // Guardar historial
         await this.chatHistoryService.saveMessage(sessionHistoryId, mergedText, 'human');

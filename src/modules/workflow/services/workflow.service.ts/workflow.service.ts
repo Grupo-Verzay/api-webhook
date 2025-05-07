@@ -78,6 +78,7 @@ export class WorkflowService {
                         await this.nodeSenderService.sendMediaNode(url, apikey, remoteJid, node.tipo, node.message, node.url as string);
                         this.logger.log(`${node.tipo} enviado correctamente (nodo ID: ${node.id})`, 'WorkflowService');
                     } else if (node.tipo.startsWith('seguimiento-')) {
+                        //TODO: INACTIVIDAD
                         const delaySeguimiento = convertDelayToSeconds(node.delay ?? '');
 
                         const seguimientoData = {

@@ -178,9 +178,10 @@ export class AiAgentService {
         "descripcion": "${flow.description || 'Sin descripción'}"
       }`;
       }).join(',\n');
+     
+      const workflowTrigger = `lista de flujos disponibles ${formattedList}`
 
-      const customWorkflowPrompt = systemPromptWorkflow(input, JSON.stringify(formattedList));
-      const promptAI =  `${extraRules} ${systemPrompt} ${customWorkflowPrompt}`
+      const promptAI =  `${extraRules} ${workflowTrigger} ${systemPrompt} `
       this.logger.debug(`promptAI =======>: ${JSON.stringify(promptAI)}}`);
 
       const messages: ChatCompletionMessageParam[] = [

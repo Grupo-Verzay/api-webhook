@@ -84,9 +84,10 @@ export class AiAgentService {
       this.logger.debug(`openAIToolDetection INPUT ===>: ${input}}`);
       const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
       const workflows = await this.workflowService.getWorkflow(userId);
+
+
       const formattedList = workflows.map(
-        // (flow) => `- ${flow.name}: ${flow.description ?? 'sin descripción'}`
-        (flow) => `- ${flow.name}`
+        (flow) => `- ${flow.name}: ${flow.description ?? 'sin descripción'}`
       ).join('\n');
 
       this.logger.log(`Lista de flujos: ${JSON.stringify(formattedList)}`);
@@ -97,7 +98,7 @@ export class AiAgentService {
       }));
 
       const customSystemPrompt = `${systemPromptWorkflow} ${formattedList}`;
-      this.logger.debug(`customSystemPrompt: ${customSystemPrompt}}`);
+      this.logger.debug(`customSystemPrompt: ${JSON.stringify(customSystemPrompt)}}`);
 
       const messages: ChatCompletionMessageParam[] = [
         { role: 'system', content: customSystemPrompt },

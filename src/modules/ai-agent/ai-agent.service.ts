@@ -7,11 +7,10 @@ import { LoggerService } from 'src/core/logger/logger.service';
 import { PromptService } from '../prompt/prompt.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import { NodeSenderService } from '../workflow/services/node-sender.service.ts/node-sender.service';
 import { WorkflowService } from '../workflow/services/workflow.service.ts/workflow.service';
-import { IntentionService } from './services/intention/intention.service';
-import { inputWorkflow, IntentionItem, OpenAIDetectionResult, openAIToolDetection, proccessInput } from 'src/types/open-ai';
+import { inputWorkflow, OpenAIDetectionResult, openAIToolDetection, proccessInput } from 'src/types/open-ai';
 import { NotificacionToolService } from './tools/notificacion/notificacion.service';
+import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { tools } from './utils/tools';
 import { extraRules, systemPromptWorkflow } from './utils/rulesPrompt';
 
@@ -23,10 +22,9 @@ export class AiAgentService {
     private readonly logger: LoggerService,
     private readonly promptService: PromptService,
     private readonly chatHistoryService: ChatHistoryService,
-    private readonly nodeSenderService: NodeSenderService,
     private readonly workflowService: WorkflowService,
-    private readonly intentionService: IntentionService,
     private readonly notificacionTool: NotificacionToolService,
+    private readonly aiCredits: AiCreditsService,
   ) { }
 
   /**
@@ -81,7 +79,6 @@ export class AiAgentService {
     userId
   }: openAIToolDetection): Promise<OpenAIDetectionResult> {
     try {
-      this.logger.debug(`openAIToolDetection INPUT ===>: ${JSON.stringify(input)}}`);
       const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
       const workflows = await this.workflowService.getWorkflow(userId);
 
@@ -102,8 +99,6 @@ export class AiAgentService {
 
       const customWorkflowPrompt = systemPromptWorkflow(input, JSON.stringify(formattedList));
 
-      // this.logger.debug(`customSystemPrompt: ${JSON.stringify(customWorkflowPrompt)}}`);
-
       const messages: ChatCompletionMessageParam[] = [
         { role: 'system', content: customWorkflowPrompt },
         ...historyMessages,
@@ -117,6 +112,10 @@ export class AiAgentService {
 
       const choice: any = response.choices?.[0];
       const content = choice?.message?.content?.trim();
+
+      //Registro de créditos por usuario
+      const tokensUsed = response.usage?.total_tokens ?? 0;
+      await this.aiCredits.trackTokens(userId, tokensUsed);
 
       if (!choice || !content) {
         this.logger.warn('Content inválido o vacío');
@@ -170,7 +169,7 @@ export class AiAgentService {
         role: 'user',
         content: text,
       }));
-      
+
       const formattedList = workflows.map((flow, index) => {
         return `{
         "id": ${index + 1},
@@ -178,11 +177,10 @@ export class AiAgentService {
         "descripcion": "${flow.description || 'Sin descripción'}"
       }`;
       }).join(',\n');
-     
+
       const workflowTrigger = `lista de flujos disponibles ${formattedList}`
 
-      const promptAI =  `${extraRules} ${workflowTrigger} ${systemPrompt} `
-      this.logger.debug(`promptAI =======>: ${JSON.stringify(promptAI)}}`);
+      const promptAI = `${extraRules} ${workflowTrigger} ${systemPrompt} `
 
       const messages: ChatCompletionMessageParam[] = [
         { role: 'system', content: promptAI },
@@ -199,6 +197,11 @@ export class AiAgentService {
 
       const choice: any = response.choices?.[0];
       const toolCall = choice?.message?.tool_calls?.[0];
+
+      //Registro de créditos por usuario
+      const tokensUsed = response.usage?.total_tokens ?? 0;
+      await this.aiCredits.trackTokens(userId, tokensUsed);
+
 
       if (toolCall) {
         let args;
@@ -239,8 +242,13 @@ export class AiAgentService {
                 },
               ],
             });
+            
+            //Registro de créditos por usuario
+            const tokensUsed = followUp.usage?.total_tokens ?? 0;
+            await this.aiCredits.trackTokens(userId, tokensUsed);
 
             return followUp.choices?.[0]?.message?.content?.trim() ?? '✅ Solicitud enviada. En breve te contactará un asesor.';
+
 
           case 'execute_workflow':
             return await this.handleExecuteWorkflowTool(
@@ -285,7 +293,6 @@ export class AiAgentService {
     const res = detectionResult.content;
     const rawContent = res?.trim().toUpperCase();
 
-    this.logger.debug(`detectionResult: ${JSON.stringify(detectionResult)}`);
 
     if (!rawContent || rawContent === 'NINGUNO') {
       this.logger.log(`No se encontró ningun flujo asociado al input.`);
@@ -297,7 +304,7 @@ export class AiAgentService {
     try {
       const parsed = JSON.parse(rawContent);
       nombresDetectados = parsed?.NOMBRE_FLUJO || [];
-    
+
       if (!Array.isArray(nombresDetectados) || nombresDetectados.length === 0) {
         this.logger.warn('No se encontraron flujos válidos en la respuesta.');
         return 'No se detectó ningún flujo compatible con tu solicitud.';
@@ -306,7 +313,7 @@ export class AiAgentService {
       this.logger.error('Error al parsear el contenido JSON de OpenAI', e.message);
       return '[ERROR_PARSE_RAW_CONTENT]';
     }
-    
+
     this.logger.log(`Flujos detectados: ${JSON.stringify(nombresDetectados)}`);
 
     const workflows = await this.workflowService.getWorkflow(userId);

@@ -19,6 +19,7 @@ import { SeguimientosService } from '../seguimientos/seguimientos.service';
 import { AutoRepliesService } from '../auto-replies/auto-replies.service';
 import { WorkflowService } from '../workflow/services/workflow.service.ts/workflow.service';
 import { NotificacionToolService } from '../ai-agent/tools/notificacion/notificacion.service';
+import { AiCreditsService } from '../ai-credits/ai-credits.service';
 
 @Module({
   imports: [HttpModule, WorkflowModule],
@@ -43,7 +44,8 @@ import { NotificacionToolService } from '../ai-agent/tools/notificacion/notifica
     SeguimientosService,
     AutoRepliesService,
     WorkflowService,
-    NotificacionToolService
+    NotificacionToolService,
+    AiCreditsService
   ]
 })
 export class WebhookModule { }

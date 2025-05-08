@@ -13,6 +13,7 @@ import { ChatHistoryService } from './modules/chat-history/chat-history.service'
 import { SeguimientosService } from './modules/seguimientos/seguimientos.service';
 import { AutoRepliesService } from './modules/auto-replies/auto-replies.service';
 import { NotificacionToolService } from './modules/ai-agent/tools/notificacion/notificacion.service';
+import { AiCreditsService } from './modules/ai-credits/ai-credits.service';
 
 @Module({
   imports: [
@@ -33,7 +34,8 @@ import { NotificacionToolService } from './modules/ai-agent/tools/notificacion/n
     ChatHistoryService,
     SeguimientosService,
     AutoRepliesService,
-    NotificacionToolService
+    NotificacionToolService,
+    AiCreditsService
   ],
 })
 export class AppModule { }

@@ -40,7 +40,6 @@ export class IntentionService {
      * @param dataWorkflow Lista de intenciones posibles (flujos, seguimientos, notificaciones).
      */
     async detectIntent(input: string, dataWorkflow: IntentionItem[], apikeyOpenAi: string): Promise<IntentionItem[]> {
-        // this.logger.debug(`input =>>>${input}, dataWorkflow =>>>${JSON.stringify(dataWorkflow)}, apikeyOpenAi =>>>${JSON.stringify(apikeyOpenAi)}`, 'detectIntent');
         this.initializeClient(apikeyOpenAi);
 
         const inputEmbedding = await this.createEmbedding(input);

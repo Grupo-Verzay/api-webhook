@@ -36,6 +36,7 @@ model User {
   systemMessages     SystemMessage[]
   tools              Tools[]
   apiKey             ApiKey?         @relation(fields: [apiKeyId], references: [id])
+  iaCredit           IaCredit?
   // Relaciones inversas
   clientesAsignados  reseller[]      @relation("RevendedorAsignador")
   esClienteDe        reseller[]      @relation("ClienteAsignado")
@@ -230,4 +231,17 @@ model Log {
   message   String
   context   String?
   timestamp DateTime @default(now())
+}
+
+model IaCredit {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  total       Int      @default(0)
+  used        Int      @default(0)
+  renewalDate DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("ia_credits")
 }

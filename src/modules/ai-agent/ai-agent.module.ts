@@ -11,14 +11,27 @@ import { SeguimientosService } from '../seguimientos/seguimientos.service';
 import { SessionService } from '../session/session.service';
 import { NotificacionToolService } from './tools/notificacion/notificacion.service';
 import { WorkflowModule } from '../workflow/workflow.module';
+import { AiCreditsService } from '../ai-credits/ai-credits.service';
 
 @Module({
   imports: [
-    HttpModule, 
+    HttpModule,
     ConfigModule,
     WorkflowModule // necesario porque usas ConfigService
   ],
-  providers: [AiAgentService, PromptService, ChatHistoryService, IntentionService, NodeSenderService, WorkflowService, IntentionService, SeguimientosService, SessionService, NotificacionToolService],
-  exports: [AiAgentService, NotificacionToolService, NodeSenderService],
+  providers: [AiAgentService,
+    PromptService,
+    ChatHistoryService,
+    IntentionService,
+    NodeSenderService,
+    WorkflowService,
+    IntentionService,
+    SeguimientosService,
+    SessionService,
+    NotificacionToolService,
+    AiCreditsService
+  ],
+
+  exports: [AiAgentService, NotificacionToolService, NodeSenderService, AiCreditsService ],
 })
-export class AiAgentModule {}
+export class AiAgentModule { }

@@ -9,6 +9,6 @@ async function bootstrap() {
   app.use(json({ limit: '50mb' })); // para JSON
   app.use(urlencoded({ limit: '5  0mb', extended: true })); // para formularios x-www-form-urlencoded
 
-  await app.listen(3000);
+  await app.listen(process.env.PORT || 3000);
 }
 bootstrap();

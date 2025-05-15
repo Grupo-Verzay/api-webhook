@@ -15,9 +15,6 @@ type CreditResult = {
 
 @Injectable()
 export class AiCreditsService {
-
-    private readonly TOKENS_PER_CREDIT = 1000;
-
     constructor(
         private readonly logger: LoggerService,
         private readonly prisma: PrismaService
@@ -100,7 +97,7 @@ export class AiCreditsService {
                 };
             }
 
-            const TOKENS_PER_CREDIT = 1000;
+            const TOKENS_PER_CREDIT = 3085;
             const usedCredits = Math.floor(credit.used / TOKENS_PER_CREDIT);
             const availableCredits = Math.max(credit.total - usedCredits, 0);
 

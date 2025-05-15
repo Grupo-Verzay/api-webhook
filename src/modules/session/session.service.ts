@@ -32,14 +32,6 @@ export class SessionService {
     });
   }
 
-  // Get all sessions for a user
-  async getSessionsByUser(userId: string) {
-    return this.prisma.session.findMany({
-      where: { userId },
-      orderBy: { updatedAt: 'desc' },
-    });
-  }
-
   // Get a specific session by remoteJid and instanceId
   async getSession(remoteJid: string, instanceId: string, userId: string) {
     return this.prisma.session.findFirst({
@@ -51,26 +43,10 @@ export class SessionService {
     });
   }
 
-  // Update the "inactivity" field of a session
-  async updateInactivity(remoteJid: string, instanceId: string, text: string) {
-    return this.prisma.session.updateMany({
-      where: { remoteJid, instanceId },
-      data: { inactividad: text },
-    });
-  }
-
-  // Close a session (set status to false)
-  async closeSession(remoteJid: string, instanceId: string) {
-    return this.prisma.session.updateMany({
-      where: { remoteJid, instanceId },
-      data: { status: false },
-    });
-  }
-
   // Update state session by remoteJid y instanceId
-  async updateSessionStatus(remoteJid: string, instanceId: string, status: boolean) {
+  async updateSessionStatus(remoteJid: string, instanceId: string, status: boolean, userId: string) {
     return this.prisma.session.updateMany({
-      where: { remoteJid, instanceId },
+      where: { remoteJid, instanceId, userId },
       data: { status },
     });
   }
@@ -115,6 +91,4 @@ export class SessionService {
       return null;
     }
   }
-
-
 }

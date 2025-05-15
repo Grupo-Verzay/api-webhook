@@ -15,7 +15,6 @@ model User {
   emailVerified      DateTime?
   image              String?
   role               Role            @default(user)
-  plan               Plan            @default(pymes)
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
   apiUrl             String          @default("https://api.openAI.co")
@@ -27,6 +26,7 @@ model User {
   openingPhrase      String?         @default("DEPRECATED")
   apiKeyId           String?
   del_seguimiento    String?         @default("Estamos para servirle.")
+  plan               Plan            @default(pymes)
   autoReactivate     String?
   webhookUrl         String?         @default("https://n8npro.verzay.co/webhook")
   accounts           Account[]
@@ -52,8 +52,8 @@ model Session {
   id           Int      @id @default(autoincrement())
   seguimientos String?  @default("")
   inactividad  String?  @default("")
-  flujos       String?  @default("")
   sessionDelay String?
+  flujos       String?  @default("")
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -175,19 +175,19 @@ model seguimientos {
   remoteJid   String?
   mensaje     String?
   tipo        String?
-  media       String?
   time        String?
   name_file   String?
   consecutivo String?
+  media       String?
 }
 
 model rr {
   id         Int      @id @default(autoincrement())
   workflowId String
   mensaje    String?
-  userId     String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  userId     String
 }
 
 model reseller {
@@ -208,6 +208,7 @@ model GuidesUrl {
   url         String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  tipo        String?
 }
 
 model Log {
@@ -231,6 +232,33 @@ model IaCredit {
   @@map("ia_credits")
 }
 
+model Reminders {
+  id           String     @id
+  title        String
+  description  String?
+  time         String
+  repeatType   RepeatType @default(NONE)
+  repeatEvery  Int?
+  endsAt       DateTime?
+  instanceName String
+  serverUrl    String
+  apikey       String
+  userId       String
+  workflowId   String
+  remoteJid    String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime
+  pushName     String
+}
+
+model SessionTrigger {
+  id        Int      @id @default(autoincrement())
+  sessionId String
+  time      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+}
+
 enum Role {
   user
   admin
@@ -241,4 +269,14 @@ enum Plan {
   empresarial
   business
   pymes
+}
+
+enum RepeatType {
+  NONE
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+  WEEKDAYS
+  EVERYDAY
 }

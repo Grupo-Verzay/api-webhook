@@ -252,6 +252,10 @@ export class WebhookService {
       server_url
     }: stopOrResumeConversation) {
 
+    // Poner el estado del chat en falso
+    await this.sessionService.updateSessionStatus(remoteJid, instanceName, false, userWithRelations.id);
+    this.logger.log(`Chat pausado.`, 'WebhookService');
+
     //Pausar chat  
     if (!sessionStatus) {
       // Monitoreo de PAUSA: buscar palabra clave para reactivación
@@ -274,10 +278,11 @@ export class WebhookService {
       // 3. Verificar si el cliente escribió la frase correcta para reactivar
       if (conversationMsg === phraseToReactivateChat.trim().toLowerCase()) {
         this.logger.log('Frase correcta detectada. Reactivando chat...', 'WebhookService');
-        await this.sessionService.updateSessionStatus(remoteJid, instanceId, true);
+        await this.sessionService.updateSessionStatus(remoteJid, instanceName, true, userWithRelations.id);
         return;
       }
     }
+
     const pharaseToDelSeguimiento = userWithRelations.del_seguimiento ?? '';
 
     //Eliminar seguimiento
@@ -304,10 +309,6 @@ export class WebhookService {
       instanceName,
       remoteJid,
     });
-
-    // Poner el estado del chat en falso
-    await this.sessionService.updateSessionStatus(remoteJid, instanceId, false);
-    this.logger.log(`Chat pausado.`, 'WebhookService');
   };
 
   /**

@@ -40,8 +40,8 @@ model User {
   clientesAsignados  reseller[]      @relation("RevendedorAsignador")
   esClienteDe        reseller[]      @relation("ClienteAsignado")
 }
-
 model Session {
+  id           Int      @id @default(autoincrement())
   userId       String
   remoteJid    String
   pushName     String
@@ -49,14 +49,15 @@ model Session {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   status       Boolean
-  id           Int      @id @default(autoincrement())
   seguimientos String?  @default("")
   inactividad  String?  @default("")
   sessionDelay String?
   flujos       String?  @default("")
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
 
+  // Relación inversa
+  triggers     SessionTrigger[]
+}
 model Pausar {
   userId      String
   mensaje     String   @default("Fue un gusto ayudarte.")
@@ -253,10 +254,13 @@ model Reminders {
 
 model SessionTrigger {
   id        Int      @id @default(autoincrement())
-  sessionId String
+  sessionId Int      // <- cambiar de String a Int
   time      String
   createdAt DateTime @default(now())
-  updatedAt DateTime
+  updatedAt DateTime @updatedAt
+
+  // Relación con Session
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
 enum Role {

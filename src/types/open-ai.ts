@@ -71,6 +71,11 @@ export interface stopOrResumeConversation {
     server_url: string
 };
 
+
+export interface getReactivateDate {
+    userWithRelations: User & { pausar: Pausar[] },
+};
+
 export interface onAutoRepliesInterface {
     userId: string
     conversationMsg: string

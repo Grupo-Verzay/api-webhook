@@ -16,7 +16,8 @@ import { SeguimientosService } from '../seguimientos/seguimientos.service';
 import { AutoRepliesService } from '../auto-replies/auto-replies.service';
 import { WorkflowService } from '../workflow/services/workflow.service.ts/workflow.service';
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
-import { CreditValidationInput, onAutoRepliesInterface, stopOrResumeConversation, flags } from 'src/types/open-ai';
+import { SessionTriggerService } from '../session-trigger/session-trigger.service';
+import { CreditValidationInput, onAutoRepliesInterface, stopOrResumeConversation, flags, getReactivateDate } from 'src/types/open-ai';
 
 @Injectable()
 export class WebhookService {
@@ -35,6 +36,7 @@ export class WebhookService {
     private readonly autoRepliesService: AutoRepliesService,
     private readonly workflowService: WorkflowService,
     private readonly aiCreditsService: AiCreditsService,
+    private readonly sessionTriggerService: SessionTriggerService,
   ) { }
 
   /**
@@ -65,7 +67,7 @@ export class WebhookService {
     /* apikey */
     const apikeyOpenAi = userWithRelations?.apiUrl as string;
 
-    const sessionStatus = await this.checkOrRegisterSession(remoteJid, instanceName, userId, pushName);
+    const sessionStatus = await this.checkOrRegisterSession(remoteJid, instanceName, userId, pushName, userWithRelations);
     const msgChat = data?.message?.conversation ?? '';
     const conversationMsg = msgChat.trim().toLowerCase();
     const sessionHistoryId = `${instanceName}-${remoteJid}`;
@@ -103,6 +105,7 @@ export class WebhookService {
     /* Validar si la session está activa */
     const sessionActive = await this.sessionService.isSessionActive(remoteJid, userId);
     this.logger.log(`Estado de la session: ${sessionActive}`, 'WebhookService');
+
     if (!sessionActive) {
       // Terminar flujo
       return;
@@ -205,29 +208,83 @@ export class WebhookService {
   /**
    * Verifica si una sesión existe o registra una nueva si no existe.
    *
-   * @private
-   * @param {string} remoteJid
-   * @param {string} instanceId
-   * @param {string} userId
-   * @param {string} pushName
+   * @param remoteJid - ID del usuario remoto (JID de WhatsApp).
+   * @param instanceName - Nombre de la instancia.
+   * @param userId - ID del usuario interno.
+   * @param pushName - Nombre mostrado en WhatsApp.
+   * @param userWithRelations - Usuario con relaciones (ej. pausar) para lógica de reactivación.
+   * @returns true si la sesión está activa, false si no.
    */
   private async checkOrRegisterSession(
     remoteJid: string,
     instanceName: string,
     userId: string,
     pushName: string,
+    userWithRelations: User & { pausar: Pausar[] }
   ): Promise<boolean> {
     const session = await this.sessionService.getSession(remoteJid, instanceName, userId);
 
     if (session) {
       this.logger.log(`[SESSION] Usuario ya registrado: ${remoteJid}`, 'WebhookService');
+
+      const hasTrigger = await this.sessionTriggerService.findBySessionId(session.id);
+
+      if (!hasTrigger) {
+        const dateReactivate = await this.getReactivateDate({ userWithRelations });
+        if (dateReactivate) {
+          await this.sessionTriggerService.create(session.id, dateReactivate);
+          this.logger.log(`[TRIGGER] Reactivación programada para: ${dateReactivate}`, 'WebhookService');
+        }
+      }
+
+      return session.status;
     } else {
       await this.sessionService.registerSession(userId, remoteJid, pushName, instanceName);
-      this.logger.log(`✅ Registro exitoso`, 'WebhookService');
+      this.logger.log(`✅ Registro exitoso para ${remoteJid}`, 'WebhookService');
+      return true;
+    }
+  }
+
+
+  /**
+   * Calcula la fecha futura en la que se debe reactivar el chat para un usuario.
+   * Suma los minutos indicados en `autoReactivate` a la fecha actual.
+   * 
+   * @param userWithRelations - Objeto que contiene la configuración del usuario.
+   * @returns Fecha futura como objeto `Date`, o `null` si hay error.
+   */
+  private async getReactivateDate({ userWithRelations }: getReactivateDate): Promise<string | null> {
+    if (!userWithRelations) {
+      this.logger.error('Se esperaba el userWithRelations para reactivar el chat.');
+      return null;
     }
 
-    return session?.status ?? false;
-  };
+    const minutesToReactivate = parseInt(userWithRelations.autoReactivate ?? '');
+    if (isNaN(minutesToReactivate)) {
+      this.logger.error(`Valor inválido para autoReactivate: "${userWithRelations.autoReactivate}"`);
+      return null;
+    }
+
+    const MILLISECONDS_PER_MINUTE = 60000;
+    const currentDate = new Date();
+    const futureDate = new Date(currentDate.getTime() + minutesToReactivate * MILLISECONDS_PER_MINUTE);
+
+    // Formateamos la fecha como string
+    const formatDate = (date: Date): string => {
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      const day = pad(date.getDate());
+      const month = pad(date.getMonth() + 1);
+      const year = date.getFullYear();
+      const hours = pad(date.getHours());
+      const minutes = pad(date.getMinutes());
+      return `${day}/${month}/${year} ${hours}:${minutes}`;
+    };
+
+    const formatted = formatDate(futureDate);
+    this.logger.debug(`Fecha de reactivación calculada: ${formatted}`);
+
+    return formatted;
+  }
 
   /**
    * Envía un mensaje de texto a un cliente de WhatsApp a través de la Evolution API.
@@ -251,6 +308,7 @@ export class WebhookService {
       apikey,
       server_url
     }: stopOrResumeConversation) {
+
 
     // Poner el estado del chat en falso
     await this.sessionService.updateSessionStatus(remoteJid, instanceName, false, userWithRelations.id);

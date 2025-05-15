@@ -14,6 +14,7 @@ import { SeguimientosService } from './modules/seguimientos/seguimientos.service
 import { AutoRepliesService } from './modules/auto-replies/auto-replies.service';
 import { NotificacionToolService } from './modules/ai-agent/tools/notificacion/notificacion.service';
 import { AiCreditsService } from './modules/ai-credits/ai-credits.service';
+import { SessionTriggerService } from './modules/session-trigger/session-trigger.service';
 
 @Module({
   imports: [
@@ -35,7 +36,8 @@ import { AiCreditsService } from './modules/ai-credits/ai-credits.service';
     SeguimientosService,
     AutoRepliesService,
     NotificacionToolService,
-    AiCreditsService
+    AiCreditsService,
+    SessionTriggerService
   ],
 })
 export class AppModule { }

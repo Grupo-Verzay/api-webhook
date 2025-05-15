@@ -20,9 +20,6 @@ export class NotificacionToolService {
     remoteJid: string
   ): Promise<string> {
     try {
-
-      console.log("IDUSER: " + sessionId);
-
       // 🔍 Buscar el número de notificación desde la sesión
       const user = await this.prisma.user.findUnique({
         where: { id: sessionId },

@@ -21,6 +21,7 @@ import { WorkflowService } from '../workflow/services/workflow.service.ts/workfl
 import { NotificacionToolService } from '../ai-agent/tools/notificacion/notificacion.service';
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { WebhookControlService } from './services/webhook-control/webhook-control.service';
+import { SessionTriggerService } from '../session-trigger/session-trigger.service';
 
 @Module({
   imports: [HttpModule, WorkflowModule],
@@ -47,7 +48,8 @@ import { WebhookControlService } from './services/webhook-control/webhook-contro
     WorkflowService,
     NotificacionToolService,
     AiCreditsService,
-    WebhookControlService
+    WebhookControlService,
+    SessionTriggerService
   ]
 })
 export class WebhookModule { }

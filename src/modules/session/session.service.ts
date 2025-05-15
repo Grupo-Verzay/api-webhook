@@ -8,7 +8,7 @@ export class SessionService {
   // Create or update a session based on remoteJid + instanceId
   async registerSession(userId: string, remoteJid: string, pushName: string, instanceId: string) {
     const existingSession = await this.prisma.session.findFirst({
-      where: { remoteJid, instanceId },
+      where: { remoteJid, userId },
     });
 
     if (existingSession) {

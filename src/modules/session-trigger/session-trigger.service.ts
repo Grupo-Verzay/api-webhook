@@ -65,6 +65,35 @@ export class SessionTriggerService {
     }
 
     /**
+     * Actualiza el campo `time` del trigger según el sessionId.
+     * 
+     * @param sessionId - ID de la sesión asociada.
+     * @param newTime - Nueva hora formateada.
+     * @returns El registro actualizado.
+     */
+    async updateTimeBySessionId(sessionId: number, newTime: string): Promise<SessionTrigger> {
+        if (!Number.isInteger(sessionId) || !newTime?.trim()) {
+            this.logger.warn('updateTimeBySessionId: Parámetros inválidos');
+            throw new BadRequestException('sessionId y newTime son obligatorios.');
+        }
+
+        const existing = await this.findBySessionId(sessionId);
+
+        if (!existing) {
+            this.logger.warn(`updateTimeBySessionId: No existe trigger con sessionId=${sessionId}`);
+            throw new NotFoundException('No se puede actualizar: trigger no encontrado');
+        }
+
+        const updated = await this.prisma.sessionTrigger.update({
+            where: { id: existing.id },
+            data: { time: newTime },
+        });
+
+        this.logger.log(`updateTimeBySessionId: time actualizado para sessionId=${sessionId}`);
+        return updated;
+    }
+
+    /**
      * Busca un trigger por su sessionId.
      * 
      * @param sessionId - ID único de la sesión.

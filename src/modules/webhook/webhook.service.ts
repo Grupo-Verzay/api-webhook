@@ -228,23 +228,27 @@ export class WebhookService {
       this.logger.log(`[SESSION] Usuario ya registrado: ${remoteJid}`, 'WebhookService');
 
       const hasTrigger = await this.sessionTriggerService.findBySessionId(session.id);
+      const dateReactivate = await this.getReactivateDate({ userWithRelations });
 
       if (!hasTrigger) {
-        const dateReactivate = await this.getReactivateDate({ userWithRelations });
         if (dateReactivate) {
           await this.sessionTriggerService.create(session.id, dateReactivate);
           this.logger.log(`[TRIGGER] Reactivación programada para: ${dateReactivate}`, 'WebhookService');
         }
+      } else {
+        if (dateReactivate) {
+          await this.sessionTriggerService.updateTimeBySessionId(session.id, dateReactivate);
+          this.logger.log(`[TRIGGER] Fecha actualizada a: ${dateReactivate}`, 'WebhookService');
+        }
       }
 
       return session.status;
-    } else {
-      await this.sessionService.registerSession(userId, remoteJid, pushName, instanceName);
-      this.logger.log(`✅ Registro exitoso para ${remoteJid}`, 'WebhookService');
-      return true;
     }
-  }
 
+    await this.sessionService.registerSession(userId, remoteJid, pushName, instanceName);
+    this.logger.log(`✅ Registro exitoso para ${remoteJid}`, 'WebhookService');
+    return true;
+  }
 
   /**
    * Calcula la fecha futura en la que se debe reactivar el chat para un usuario.

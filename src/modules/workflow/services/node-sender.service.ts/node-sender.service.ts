@@ -29,7 +29,8 @@ export class NodeSenderService {
         text,
       };
 
-      this.logger.log(`Enviando texto a ${remoteJid}: "${text}"`, 'NodeSenderService');
+      // this.logger.log(`Enviando texto a ${remoteJid}: "${text}"`, 'NodeSenderService');
+      this.logger.log(`Enviando texto a ${remoteJid}`, 'NodeSenderService');
 
       const response = await firstValueFrom(
         this.http.post(url, body, {
@@ -37,7 +38,7 @@ export class NodeSenderService {
         }),
       );
 
-      this.logger.log(`Respuesta ${remoteJid}: ${JSON.stringify(response.data)}`, 'NodeSenderService');
+      // this.logger.log(`Respuesta ${remoteJid}: ${JSON.stringify(response.data)}`, 'NodeSenderService');
     } catch (error) {
       this.logger.error(`Error enviando texto a ${remoteJid}`, error?.response?.data || error.message, 'NodeSenderService');
     }

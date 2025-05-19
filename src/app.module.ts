@@ -37,7 +37,7 @@ import { SessionTriggerService } from './modules/session-trigger/session-trigger
     AutoRepliesService,
     NotificacionToolService,
     AiCreditsService,
-    SessionTriggerService
+    SessionTriggerService,
   ],
 })
 export class AppModule { }

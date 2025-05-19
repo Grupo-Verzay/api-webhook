@@ -22,6 +22,7 @@ import { NotificacionToolService } from '../ai-agent/tools/notificacion/notifica
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { WebhookControlService } from './services/webhook-control/webhook-control.service';
 import { SessionTriggerService } from '../session-trigger/session-trigger.service';
+import { AntifloodService } from './services/antiflood/antiflood.service';
 
 @Module({
   imports: [HttpModule, WorkflowModule],
@@ -49,7 +50,8 @@ import { SessionTriggerService } from '../session-trigger/session-trigger.servic
     NotificacionToolService,
     AiCreditsService,
     WebhookControlService,
-    SessionTriggerService
+    SessionTriggerService,
+    AntifloodService
   ]
 })
 export class WebhookModule { }

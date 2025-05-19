@@ -18,6 +18,7 @@ import { WorkflowService } from '../workflow/services/workflow.service.ts/workfl
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { SessionTriggerService } from '../session-trigger/session-trigger.service';
 import { CreditValidationInput, onAutoRepliesInterface, stopOrResumeConversation, flags, getReactivateDate } from 'src/types/open-ai';
+import { AntifloodService } from './services/antiflood/antiflood.service';
 
 @Injectable()
 export class WebhookService {
@@ -37,6 +38,7 @@ export class WebhookService {
     private readonly workflowService: WorkflowService,
     private readonly aiCreditsService: AiCreditsService,
     private readonly sessionTriggerService: SessionTriggerService,
+    private readonly antifloodService: AntifloodService,
   ) { }
 
   /**
@@ -115,14 +117,45 @@ export class WebhookService {
     const extractedContent = await this.messageTypeHandlerService.extractContentByType(messageType, apikeyOpenAi, data);
     const incomingMessage = extractedContent.toString().trim().toLowerCase();
 
+
+    /* Registra un nuevo mensaje y evalúa si hay un patrón robótico de sincronía */
+    // Primero registramos
+    this.antifloodService.registerMessageTimestamp(remoteJid);
+
+    // Luego evaluamos
+    if (this.antifloodService.isSynchronizedPattern(remoteJid)) {
+      this.logger.warn(`🚫 Patrón de IA detectado para ${remoteJid}. Posible bot.`, 'WebhookService');
+      await this.sessionService.updateSessionStatus(remoteJid, instanceName, false, userWithRelations.id);
+      return;
+    }
+
+
+    // if (this.antifloodService.isSynchronizedPattern(remoteJid)) {
+    //   this.logger.warn(`🚨 Patrón de sincronía detectado para ${remoteJid}. Posible bot.`, 'WebhookService');
+    //   await this.sessionService.updateSessionStatus(remoteJid, instanceName, false, userWithRelations.id);
+    //   return; // Cancelamos procesamiento
+    // }
+
+    /* Valida spam o multiple mensajería por parte de una IA */
+    // if (this.antifloodService.isFlooding(remoteJid)) {
+    //   await this.sessionService.updateSessionStatus(remoteJid, instanceName, false, userWithRelations.id);
+    //   this.logger.warn(`🚫 Flood detectado para ${remoteJid}. Ignorando mensaje.`, 'WebhookService');
+    //   return;
+    // };
+
+    /* valida si el mensaje proviene de una IA */
+    // if (this.antifloodService.isMessageFromIA(incomingMessage)) {
+    //   await this.sessionService.updateSessionStatus(remoteJid, instanceName, false, userWithRelations.id);
+    //   this.logger.warn(`🚫 Mensaje tipo IA detectado: "${incomingMessage}"`, 'WebhookService');
+    //   return;
+    // }
+
     /* Get data to process text by Open AI */
     this.messageBufferService.handleIncomingMessage(
       remoteJid,
       incomingMessage,
       delayConversation,
       async (mergedText) => {
-        this.logger.log(`Merged text ready for AI processing: ${mergedText}`);
-
         // Guardar historial
         await this.chatHistoryService.saveMessage(sessionHistoryId, mergedText, 'human');
 
@@ -156,13 +189,16 @@ export class WebhookService {
         };
 
         for (const [index, msgBlock] of msgBlocks.entries()) {
-          this.logger.log(`📤 Enviando bloque ${index + 1}/${msgBlocks.length} a ${remoteJid}: "${msgBlock}"`, 'NodeSenderService');
+          // this.logger.log(`📤 Enviando bloque ${index + 1}/${msgBlocks.length} a ${remoteJid}: "${msgBlock}"`, 'NodeSenderService');
+          this.logger.log(`📤 Enviando bloque ${index + 1}/${msgBlocks.length} a ${remoteJid}`, 'NodeSenderService');
 
           await this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, remoteJid, msgBlock);
 
           await new Promise((res) => setTimeout(res, 1200)); // delay entre mensajes
         };
 
+        // ✅ Conversación exitosa: reiniciar contador de flood
+        // this.antifloodService.clear(remoteJid);
       })
   };
 
@@ -418,8 +454,7 @@ export class WebhookService {
       if (matchedReply) {
         // Aquí puedes ejecutar lo que desees con matchedReply
         // Por ejemplo: enviar la respuesta automática
-        this.logger.log(`AutoReply encontrada: ${matchedReply.mensaje}`);
-        this.logger.log(`WorkflowID: ${matchedReply.workflowId}`);
+        this.logger.log(`Respuesta rápida encontrada: ${matchedReply.mensaje}`);
         //Obtener workflow by ID
         const workflow = await this.workflowService.getWorkflowByWorkflowId(matchedReply.workflowId);
         if (!workflow) return;

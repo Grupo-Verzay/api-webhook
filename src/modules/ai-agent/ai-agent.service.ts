@@ -12,7 +12,7 @@ import { inputWorkflow, OpenAIDetectionResult, openAIToolDetection, proccessInpu
 import { NotificacionToolService } from './tools/notificacion/notificacion.service';
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { tools } from './utils/tools';
-import { extraRules, systemPromptWorkflow } from './utils/rulesPrompt';
+import { ERROR_OPENAI_EMPTY_RESPONSE, extraRules, systemPromptWorkflow } from './utils/rulesPrompt';
 
 @Injectable()
 export class AiAgentService {
@@ -267,7 +267,7 @@ export class AiAgentService {
         }
       }
 
-      return choice?.message?.content?.trim() ?? '[ERROR_OPENAI_EMPTY_RESPONSE]';
+      return choice?.message?.content?.trim() ?? ERROR_OPENAI_EMPTY_RESPONSE;
     } catch (error) {
       this.logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
       return '[ERROR_PROCESSING_OPENAI_INPUT]';

@@ -21,6 +21,9 @@ Eres un asistente de IA avanzado, experto en ventas y atención al cliente. Util
 - Nunca expliques la lógica interna del sistema ni hables de herramientas o flujos con el usuario.
 ---`;
 
+export const ERROR_OPENAI_EMPTY_RESPONSE = `¡Ups! Algo salió mal 😅
+Parece que hubo un problema al procesar tu mensaje. ¿Podrías intentarlo de nuevo?`;
+
 export const extraRules = `
 Eres un asistente virtual especializado en ayudar a los usuarios de forma clara, amigable y estructurada.
 

@@ -229,7 +229,6 @@ export class WebhookService {
         }
       }
 
-
       // 2. Detener el flujo si no hay créditos
       if (available <= 0) {
         this.logger.error(`❌ SIN CRÉDITOS: Deteniendo flujo para userId=${userId}`);

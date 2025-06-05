@@ -204,6 +204,8 @@ export class AiAgentService {
 
 
       if (toolCall) {
+        this.logger.log(`Tool encontrada, preparando ejecución...`);
+
         let args;
         try {
           args = JSON.parse(toolCall.function.arguments);
@@ -242,7 +244,7 @@ export class AiAgentService {
                 },
               ],
             });
-            
+
             //Registro de créditos por usuario
             const tokensUsed = followUp.usage?.total_tokens ?? 0;
             await this.aiCredits.trackTokens(userId, tokensUsed);

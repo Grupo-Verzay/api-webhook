@@ -267,6 +267,9 @@ export class AiAgentService {
           default:
             this.logger.warn(`Tool no soportada: ${toolCall.function.name}`, 'AiAgentService');
         }
+
+        /* Se corta el ciclo  para evitar que el agente conteste despues de ejecutar una tool*/
+        return;
       }
 
       return choice?.message?.content?.trim() ?? ERROR_OPENAI_EMPTY_RESPONSE;

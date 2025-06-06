@@ -211,7 +211,7 @@ export class AiAgentService {
           args = JSON.parse(toolCall.function.arguments);
         } catch (e) {
           this.logger.error('Error al parsear los argumentos del toolCall', e.message);
-          return '';
+          return '[ERROR_TOOL_ARGS_PARSING]';
         }
 
         const toolName = toolCall.function.name;
@@ -272,7 +272,7 @@ export class AiAgentService {
       return choice?.message?.content?.trim() ?? ERROR_OPENAI_EMPTY_RESPONSE;
     } catch (error) {
       this.logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
-      return '';
+      return '[ERROR_PROCESSING_OPENAI_INPUT]';
     }
   };
 
@@ -297,9 +297,8 @@ export class AiAgentService {
 
 
     if (!rawContent || rawContent === 'NINGUNO') {
-      this.logger.warn(`No se encontró ningun flujo asociado al input.`);
-      // return "Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?";
-      return '';
+      this.logger.log(`No se encontró ningun flujo asociado al input.`);
+      return "Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?";
     }
 
     let nombresDetectados: string[];
@@ -310,14 +309,11 @@ export class AiAgentService {
 
       if (!Array.isArray(nombresDetectados) || nombresDetectados.length === 0) {
         this.logger.warn('No se encontraron flujos válidos en la respuesta.');
-        // return 'No se detectó ningún flujo compatible con tu solicitud.';
-        return '';
+        return 'No se detectó ningún flujo compatible con tu solicitud.';
       }
     } catch (e) {
       this.logger.error('Error al parsear el contenido JSON de OpenAI', e.message);
-      // return '[ERROR_PARSE_RAW_CONTENT]';
-      return '';
-
+      return '[ERROR_PARSE_RAW_CONTENT]';
     }
 
     this.logger.log(`Flujos detectados: ${JSON.stringify(nombresDetectados)}`);
@@ -340,7 +336,7 @@ export class AiAgentService {
         currentWorkflow.name
       );
 
-
+      
       if (!yaEjecutado) {
         await this.chatHistoryService.registerExecutedIntention(
           sessionId,
@@ -414,7 +410,7 @@ export class AiAgentService {
       return transcription.text;
     } catch (error) {
       this.logger.error('Error transcribiendo audio con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
-      return '';
+      return '[ERROR_TRANSCRIBING_AUDIO]';
     }
   };
 
@@ -448,7 +444,7 @@ export class AiAgentService {
       return response.output_text ?? '[ERROR_DESCRIBING_IMAGE]';
     } catch (error) {
       this.logger.error('Error describiendo imagen con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
-      return '';
+      return '[ERROR_DESCRIBING_IMAGE]';
     }
   };
 }

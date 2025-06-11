@@ -200,6 +200,7 @@ export class AiAgentService {
             tool_choice: 'auto',
           });
         } catch (err: any) {
+          this.logger.error(`[PROCESS_INPUT_ERR_OPENAICLIENT]`);
           if (err.code === 'rate_limit_exceeded' && err.type === 'tokens') {
             this.logger.warn(`Rate limit excedido por tokens, esperando 60s para reintentar...`);
             await new Promise((res) => setTimeout(res, 60000));

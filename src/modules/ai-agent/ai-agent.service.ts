@@ -179,23 +179,55 @@ export class AiAgentService {
       const workflowTrigger = `lista de flujos disponibles ${formattedList}`
       promptAI = `${extraRules} ${workflowTrigger} ${systemPrompt}`;
 
+      const estimateTokens = (text: any): number => {
+        if (typeof text === 'string') return Math.ceil(text.length / 4);
+        if (Array.isArray(text)) return JSON.stringify(text).length / 4;
+        return 0;
+      };
+
       const historyMessages: ChatCompletionMessageParam[] = chatHistory.map((text) => ({
         role: 'user',
         content: text,
       }));
 
-      const messages: ChatCompletionMessageParam[] = [
+
+      let safeMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         { role: 'system', content: promptAI },
         ...historyMessages,
         { role: 'user', content: input },
       ];
+
+
+      /* Función auxiliar */
+      const getTotalEstimatedTokens = (
+        msgs: OpenAI.Chat.Completions.ChatCompletionMessageParam[]
+      ): number => {
+        return msgs.reduce((sum, msg) => {
+          const content = (msg as any).content;
+          return typeof content === 'string' ? sum + estimateTokens(content) : sum;
+        }, 0);
+      };
+
+      let totalEstimatedTokens = getTotalEstimatedTokens(safeMessages);
+      const maxAllowedTokens = 8192 - 300; // 300 reservados para respuesta
+
+      // 🧠 Si se pasa, recorta el historial hacia atrás (lo más antiguo primero)
+      while (totalEstimatedTokens > maxAllowedTokens && historyMessages.length > 0) {
+        historyMessages.shift(); // elimina el mensaje más antiguo
+        safeMessages = [
+          { role: 'system', content: promptAI },
+          ...historyMessages,
+          { role: 'user', content: input },
+        ];
+        totalEstimatedTokens = getTotalEstimatedTokens(safeMessages);
+      }
 
       // Función auxiliar con retry automático
       const createChatCompletion = async (): Promise<OpenAI.Chat.Completions.ChatCompletion> => {
         try {
           return await this.openAiClient.chat.completions.create({
             model: 'gpt-4o-mini',
-            messages,
+            messages: safeMessages,
             tools,
             tool_choice: 'auto',
             max_tokens: 300
@@ -207,9 +239,10 @@ export class AiAgentService {
             await new Promise((res) => setTimeout(res, 60000));
             return await this.openAiClient.chat.completions.create({
               model: 'gpt-4o-mini',
-              messages,
+              messages: safeMessages,
               tools,
               tool_choice: 'auto',
+              max_tokens: 300
             });
           } else {
             throw err;
@@ -224,7 +257,6 @@ export class AiAgentService {
       //Registro de créditos por usuario
       const tokensUsed = response.usage?.total_tokens ?? 0;
       await this.aiCredits.trackTokens(userId, tokensUsed);
-
 
       // Procesamiento de tool
       if (toolCall) {
@@ -259,7 +291,7 @@ export class AiAgentService {
             const followUp = await this.openAiClient.chat.completions.create({
               model: 'gpt-4o-mini',
               messages: [
-                ...messages,
+                ...safeMessages,
                 {
                   role: 'assistant',
                   tool_calls: [toolCall],

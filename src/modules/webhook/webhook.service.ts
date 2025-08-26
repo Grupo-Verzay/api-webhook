@@ -321,8 +321,6 @@ export class WebhookService {
     };
 
     const formatted = formatDate(futureDate);
-    // this.logger.debug(`Fecha de reactivación calculada: ${formatted}`);
-
     return formatted;
   }
 

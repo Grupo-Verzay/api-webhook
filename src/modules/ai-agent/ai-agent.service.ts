@@ -206,10 +206,6 @@ export class AiAgentService {
         return '';
       }
 
-      this.logger.debug(`workflows =======> ${JSON.stringify(workflows)}`);
-      this.logger.debug(`noHistory =======> ${JSON.stringify(noHistory)}`);
-      this.logger.debug(`hasInicioBienvenida =======> ${JSON.stringify(hasInicioBienvenida)}`);
-
       const workflowTrigger = `lista de flujos disponibles ${formattedList}`
       promptAI = `${extraRules} ${workflowTrigger} ${systemPrompt}`;
 
@@ -264,7 +260,8 @@ export class AiAgentService {
         });
       }
 
-      // this.logger.debug(`HISTORIAL =======> ${JSON.stringify(historyMessages)}`);
+      this.logger.debug(`PROMPT AI =======> ${JSON.stringify(promptAI)}`);
+      this.logger.debug(`HISTORY MESSAGES =======> ${JSON.stringify(historyMessages)}`);
 
       const messages: ChatCompletionMessageParam[] = [
         { role: 'system', content: promptAI },
@@ -420,15 +417,11 @@ export class AiAgentService {
       return aiResponse;
     }
 
-    // this.logger.debug(`RAW =======> ${JSON.stringify(raw)}`);
-
     let nombresDetectados: string[] = [];
     try {
       // Intenta parsear tal cual
       const parsed = JSON.parse(raw);
-      // this.logger.debug(`PARSED =======> ${JSON.stringify(parsed)}`);
       nombresDetectados = parsed?.nombre_flujo || [];
-      // this.logger.debug(`nombresDetectados =======> ${JSON.stringify(nombresDetectados)}`);
 
       if (!Array.isArray(nombresDetectados) || nombresDetectados.length === 0) {
         this.logger.warn('No se encontraron flujos válidos en la respuesta.');

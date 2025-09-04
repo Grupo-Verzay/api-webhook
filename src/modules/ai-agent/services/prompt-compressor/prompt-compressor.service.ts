@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import OpenAI from 'openai';
+import { HumanMessage, SystemMessage } from 'node_modules/@langchain/core/messages.cjs';
 
 type CompressorFormat = 'yaml' | 'json';
 
@@ -51,22 +53,46 @@ ${schema}
         maxTokens = 350,
         temperature = 0.1,
     }: {
-        client: OpenAI;
+        client: BaseChatModel;
         input: string;
         format?: CompressorFormat;
         maxTokens?: number;
         temperature?: number;
     }): Promise<string> {
-        const res = await client.chat.completions.create({
-            model: 'gpt-4o-mini', // consistente con tu stack
-            temperature,
-            max_tokens: maxTokens,
-            messages: [
-                { role: 'system', content: this.SYSTEM(format) },
-                { role: 'user', content: input },
-            ],
-        });
-        return res.choices?.[0]?.message?.content?.trim() ?? '';
+        const messages = [
+            new SystemMessage({
+                content: [
+                    { type: "text", text: this.SYSTEM(format) }
+                ]
+            }),
+            new HumanMessage({
+                content: [
+                    { type: "text", text: input }
+                ]
+            })
+        ]
+        // const res = await client.chat.completions.create({
+        //     model: 'gpt-4o-mini', // consistente con tu stack
+        //     temperature,
+        //     max_tokens: maxTokens,
+        //     messages: [
+        //         { role: 'system', content: this.SYSTEM(format) },
+        //         { role: 'user', content: input },
+        //     ],
+        // });
+        client.withConfig({ runName: "tempModel" });
+        const resR = await client.invoke(messages, {
+            configurable: {
+                "tempModel": {
+                    temperature,
+                    max_tokens: maxTokens,
+                },
+            },
+        })
+
+
+        // return res.choices?.[0]?.message?.content?.trim() ?? '';
+        return resR.content.toString().trim() ?? '';
     }
 
     /**
@@ -78,7 +104,7 @@ ${schema}
         messages,
         maxTokens = 400,
     }: {
-        client: OpenAI;
+        client: BaseChatModel,
         messages: string[];
         maxTokens?: number;
     }): Promise<string> {
@@ -99,17 +125,33 @@ Devuelve texto plano conciso (no más de ~400 tokens).
 No agregues nada que no esté en el historial.
 `.trim();
 
-        const res = await client.chat.completions.create({
-            model: 'gpt-4o-mini',
-            temperature: 0.0,
-            max_tokens: maxTokens,
-            messages: [
-                { role: 'system', content: sys },
-                { role: 'user', content: joined },
-            ],
-        });
+        // const res = await client.chat.completions.create({
+        //     model: 'gpt-4o-mini',
+        //     temperature: 0.0,
+        //     max_tokens: maxTokens,
+        //     messages: [
+        //         { role: 'system', content: sys },
+        //         { role: 'user', content: joined },
+        //     ],
+        // });
+        client.withConfig({ runName: "tempModel" });
+        const resR = await client.invoke([
+            new SystemMessage({
+                content: [{ type: "text", text: sys }]
+            }),
+            new HumanMessage({
+                content: [{ type: "text", text: joined }]
+            })
+        ], {
+            configurable: {
+                "tempModel": {
+                    max_tokens: maxTokens,
+                },
+            },
+        })
+        
 
-        return res.choices?.[0]?.message?.content?.trim() ?? '';
+        return resR.content.toString().trim() ?? '';
     }
 
     /**

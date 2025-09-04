@@ -6,7 +6,6 @@ import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 
 export type LlmProvider = 'openai' | 'google' | 'anthropic';
 
-
 @Injectable()
 export class LlmClientFactory {
   private readonly clients: Map<string, BaseChatModel> = new Map();
@@ -23,7 +22,7 @@ export class LlmClientFactory {
         client = new ChatOpenAI({ apiKey, model: modelName });
         break;
       case 'google':
-        client = new ChatGoogleGenerativeAI({ apiKey, model: modelName,temperature:0 });
+        client = new ChatGoogleGenerativeAI({ apiKey, model: modelName });
         break;
       default:
         throw new Error(`Unsupported LLM provider: ${provider}`);

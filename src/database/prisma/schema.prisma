@@ -36,6 +36,7 @@ model User {
   instancias         Instancias[]
   pausar             Pausar[]
   Service            Service[]
+  aiConfigs          UserAiConfig[]
   sessions           Session[]
   systemMessages     SystemMessage[]
   tools              Tools[]
@@ -45,6 +46,42 @@ model User {
   clientesAsignados  reseller[]         @relation("RevendedorAsignador")
   esClienteDe        reseller[]         @relation("ClienteAsignado")
   modules            Module[]           @relation("UserModules")
+}
+
+model AiProvider {
+  id          String         @id @default(cuid())
+  name        String         @unique
+  description String?
+  aiModels    AiModel[]
+  configs     UserAiConfig[]
+
+  @@map("ai_providers")
+}
+
+model AiModel {
+  id          String         @id @default(cuid())
+  providerId  String
+  name        String
+  description String?
+  provider    AiProvider     @relation(fields: [providerId], references: [id])
+
+  @@unique([providerId, name])
+  @@map("ai_models")
+}
+
+model UserAiConfig {
+  id         String     @id @default(cuid())
+  userId     String
+  providerId String
+  apiKey     String
+  isActive   Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider   AiProvider @relation(fields: [providerId], references: [id])
+
+  @@unique([userId, providerId])
+  @@map("user_ai_configs")
 }
 
 model Module {

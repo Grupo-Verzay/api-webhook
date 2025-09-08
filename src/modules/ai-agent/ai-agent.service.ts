@@ -25,7 +25,7 @@ export class AiAgentService {
   private aiClient;
   // Refactor
   private readonly initWorkflowName: string = 'INICIO_BIENVENIDA';
-
+  
   constructor(
     private readonly logger: LoggerService,
     private readonly promptService: PromptService,

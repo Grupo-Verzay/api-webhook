@@ -19,6 +19,8 @@ import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { SessionTriggerService } from '../session-trigger/session-trigger.service';
 import { CreditValidationInput, onAutoRepliesInterface, stopOrResumeConversation, flags, getReactivateDate } from 'src/types/open-ai';
 import { AntifloodService } from './services/antiflood/antiflood.service';
+//refactor
+import { WebhookOrchestatorService } from './services/orchestator/WebhookOrchestator.service';
 
 @Injectable()
 export class WebhookService {
@@ -40,6 +42,7 @@ export class WebhookService {
     private readonly aiCreditsService: AiCreditsService,
     private readonly sessionTriggerService: SessionTriggerService,
     private readonly antifloodService: AntifloodService,
+    private readonly webhookOrchestatorService: WebhookOrchestatorService
   ) { }
 
   /**
@@ -49,43 +52,36 @@ export class WebhookService {
    * @returns {Promise<void>}
    */
   async processWebhook(body: WebhookBodyDto): Promise<void> {
-    
+
 
     // Tiempo de respuesta del bot para mayor naturalidad
     const delayConversation = WebhookService.DELAYCONVERSATION;
 
-    // Se extraen los datos de la llamada del webhook
+    // Se extraen los datos de la llamada del webhook    
+    const { clientInfo, userInfo, requestInfo } = await this.webhookOrchestatorService.extractRequestInfo(body)
+
+    
+    // Datos de la llamada
     const {
       instance: instanceName,
       server_url,
       apikey,
-      data,
-    } = body;
-
-    //Se extraen los datos del usuario emisor dentro de "data" de la llamada del webhook
-    const remoteJid = data?.key?.remoteJid ?? '';
-    const pushName = data?.pushName || 'Desconocido';
-
-    //Se busca la informacion del usuario en la aplicacion a partir de su instancia en evolution api
-    const prismaInstancia = await this.instancesService.getUserId(instanceName);
-    const userId = prismaInstancia?.userId ?? '';
-    const instanceId = prismaInstancia?.instanceId ?? '';
-
-    /* user information */
-    const userWithRelations = await this.userService.getUserWithPausar(userId) as User & { pausar: Pausar[] };
-    /* apikey */
-    const apikeyOpenAi = userWithRelations?.apiUrl as string;
+      data } = requestInfo
     
-    //Informacion del tipo de mensaje 
-    const fromMe = data?.key?.fromMe ?? false;
-    const messageType = data?.messageType ?? '';
+      // Datos del cliente 
+    const { remoteJid, pushName,
+      fromMe, messageType,
+      msgChat, conversationMsg,
+      sessionHistoryId, apiMsgUrl } = clientInfo
     
+      // Datos del usuario
+    const { userId, instanceId,
+      userWithRelations, apikeyOpenAi } = userInfo
     
+      
     const sessionStatus = await this.checkOrRegisterSession(remoteJid, instanceName, userId, pushName, userWithRelations);
-    const msgChat = data?.message?.conversation ?? '';
-    const conversationMsg = msgChat.trim().toLowerCase();
-    const sessionHistoryId = `${instanceName}-${remoteJid}`;
-    const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
+
+
 
     /* Validar créditos */
     const creditOk = await this.creditValidation({

@@ -10,6 +10,7 @@ import { inputWorkflow, OpenAIDetectionResult, openAIToolDetection, proccessInpu
 import { NotificacionToolService } from './tools/notificacion/notificacion.service';
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { tools } from './utils/tools';
+import { langchainTools } from './utils/langchainTools';
 import { ERROR_OPENAI_EMPTY_RESPONSE, extraRules, systemPromptWorkflow } from './utils/rulesPrompt';
 import { PromptCompressorService } from './services/prompt-compressor/prompt-compressor.service';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
@@ -318,7 +319,7 @@ export class AiAgentService {
         const maxAttempts = 3;
         while (true) {
           try {
-            this.aiClient.bindTools(tools)
+            this.aiClient.bindTools(langchainTools)
             const clientResp = await this.aiClient.invoke([
               { role: 'system', content: promptAI },
               {
@@ -342,6 +343,7 @@ export class AiAgentService {
       const response = await createChatCompletion();
       const choice = response;
       const toolCall = choice.tool_calls?.shift();
+      console.log('tool calls, are...',toolCall)
 
       //Registro de créditos por usuario
       const tokensUsed = response.lc_kwargs.response_metadata.token_usage ?? 0;

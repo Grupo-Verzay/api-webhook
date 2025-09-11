@@ -11,7 +11,7 @@ export type LlmProvider = 'openai' | 'google' | 'anthropic';
 export class LlmClientFactory {
   private readonly clients: Map<string, BaseChatModel> = new Map();
 
-  public getClient <P extends Provider>(config: ModelConfig<P>) {
+  public getClient <P extends Provider>(config: ModelConfig<P>):BaseChatModel {
     const {provider,model,apiKey} = config
     const clientKey = `${provider}:${model}`;
     // if (this.clients.has(clientKey)) {

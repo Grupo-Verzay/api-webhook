@@ -29,7 +29,7 @@ export type Provider = keyof typeof providersConfig;
  */
 export type ModelConfig<P extends Provider> = {
   provider: P;
-  model: (typeof providersConfig)[P][number];
+  model:  (typeof providersConfig)[P];
   apiKey: string;
 };
 
@@ -59,4 +59,5 @@ const exampleFactoryClient = <P extends Provider>(config: ModelConfig<P>) => {
 // Ejemplo de uso: La llamada a la función es segura y el autocompletado funciona.
 // Si intentas usar un modelo que no es de OpenAI (por ejemplo, 'gemini-pro'),
 // TypeScript te mostrará un error de compilación.
-exampleFactoryClient({ provider: "openai", model: "gpt-3.5-turbo", apiKey: "ejemplo_api_key_openai" });
+exampleFactoryClient({ provider: "openai", model: "gpt-4o", apiKey: "ejemplo_api_key_openai" });
+exampleFactoryClient({provider:"google",model:"gemini-2.5-flash",apiKey:''})

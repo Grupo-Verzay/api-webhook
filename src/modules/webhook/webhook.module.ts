@@ -26,6 +26,9 @@ import { AntifloodService } from './services/antiflood/antiflood.service';
 import { PromptCompressorService } from '../ai-agent/services/prompt-compressor/prompt-compressor.service';
 import { LlmClientFactory } from '../ai-agent/services/llmClientFactory/llmClientFactory.service';
 import { AiAgentModule } from '../ai-agent/ai-agent.module';
+import { WebhookOrchestatorService } from './services/orchestator/WebhookOrchestator.service';
+import { WebhookExtractDataService } from './services/orchestator/WebhookExtractData.service';
+import { WebhookValidatorService } from './services/orchestator/WebhookValidator.service';
 
 @Module({
   imports: [HttpModule,
@@ -57,6 +60,10 @@ import { AiAgentModule } from '../ai-agent/ai-agent.module';
     AntifloodService,
     MessageBufferService,
     MessageTypeHandlerService,
+    //Orquestador
+    WebhookOrchestatorService,
+    WebhookExtractDataService ,
+    WebhookValidatorService,
   ]
 })
 export class WebhookModule { }

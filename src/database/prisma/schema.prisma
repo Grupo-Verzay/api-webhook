@@ -14,6 +14,7 @@ model User {
   password           String?
   emailVerified      DateTime?
   image              String?
+  timezone           String?
   role               Role               @default(user)
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
@@ -31,12 +32,13 @@ model User {
   webhookUrl         String?            @default("https://n8npro.verzay.co/webhook")
   theme              ThemeApp?          @default(Default)
   muteAgentResponses Boolean            @default(false)
+  defaultProviderId  String?
   accounts           Account[]
   Appointment        Appointment[]
   instancias         Instancias[]
   pausar             Pausar[]
   Service            Service[]
-  aiConfigs          UserAiConfig[]
+  aiConfig           UserAiConfig[]
   sessions           Session[]
   systemMessages     SystemMessage[]
   tools              Tools[]
@@ -46,27 +48,18 @@ model User {
   clientesAsignados  reseller[]         @relation("RevendedorAsignador")
   esClienteDe        reseller[]         @relation("ClienteAsignado")
   modules            Module[]           @relation("UserModules")
+  defaultProvider  AiProvider?        @relation(fields: [defaultProviderId], references: [id])
 }
 
 model AiProvider {
   id          String         @id @default(cuid())
   name        String         @unique
   description String?
-  aiModels    AiModel[]
+  aiModel     String
   configs     UserAiConfig[]
+  users User[]
 
   @@map("ai_providers")
-}
-
-model AiModel {
-  id          String         @id @default(cuid())
-  providerId  String
-  name        String
-  description String?
-  provider    AiProvider     @relation(fields: [providerId], references: [id])
-
-  @@unique([providerId, name])
-  @@map("ai_models")
 }
 
 model UserAiConfig {
@@ -370,8 +363,8 @@ model Appointment {
   updatedAt DateTime          @updatedAt
   serviceId String?
   service   Service?          @relation(fields: [serviceId], references: [id])
-  session   Session           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session   Session           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
 model Service {

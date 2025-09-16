@@ -4,6 +4,7 @@ import { ClientData } from '../../dto/client-data';
 import { UserContext } from '../../dto/user-context';
 import { InstancesService } from 'src/modules/instances/instances.service';
 import { UserService } from 'src/modules/user/user.service';
+import { Pausar, User } from '@prisma/client';
 
 
 @Injectable()
@@ -35,8 +36,29 @@ class WebhookOrchestatorService {
         // Lógica para obtener el usuario y la instancia
         const prismaInstancia = await this.instancesService.getUserId(instanceName);
         if (!prismaInstancia) throw new Error('Instancia no encontrada');
+        //Se busca la informacion del usuario en la aplicacion a partir de su instancia en evolution api
+        const userId = prismaInstancia?.userId ?? '';
+        const instanceId = prismaInstancia?.instanceId ?? '';
+        /* user information */
+        const user = await this.userService.getUserById(userId) as User;
 
-        const userContext = new UserContext()
+        const userContext = new UserContext(
+            //Datos del usuario
+            userId,
+            instanceId,
+            instanceName,
+            apikey,
+            `${server_url}/message/sendText/${instanceName}`,
+            user?.webhookUrl ?? '' ,
+            user.notificationNumber,
+            user.muteAgentResponses,
+            user.del_seguimiento ?? '',
+            user.autoReactivate ?? '' ,
+
+            //Inyeccion de servicio del usuario e instancia
+            this.instancesService,
+            this.userService,
+        )
         return {
             clientData,
             userContext,

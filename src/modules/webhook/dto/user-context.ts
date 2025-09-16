@@ -8,12 +8,11 @@ export class UserContext {
         public readonly id: string,
         public readonly instanceId: string,
         public readonly instanceName: string,
-        public readonly apikey: string,
+        public readonly evoApikey: string,
         public readonly apiUrl: string,
         public readonly webhookUrl: string,
         public readonly notificationNumber: string,
         public readonly muteAgentResponses: boolean,
-        public pausar: Pausar[],
         public readonly del_seguimiento: string,
         public readonly autoReactivate: string,
 

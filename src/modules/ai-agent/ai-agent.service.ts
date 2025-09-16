@@ -50,7 +50,7 @@ export class AiAgentService {
     }
     this.openAiClient = new OpenAI({ apiKey: apikeyOpenAi });
     const apiKey = 'AIzaSyAD9lijxH_RCeKTOi0YEuTI4CznvKdP3jA'
-    this.aiClient = this.llmClientFactory.getClient({provider:'google',apiKey,model:'gemini-2.5-flash'})  
+    this.aiClient = this.llmClientFactory.getClient({provider:'openai',apiKey,model:'o4-mini'})  
     return this.aiClient
   };
 
@@ -381,22 +381,6 @@ export class AiAgentService {
               remoteJid
             );
 
-            // Luego continuar la conversación con una respuesta generada por la IA
-            /*  const followUpr = await this.openAiClient.chat.completions.create({
-               model: 'gpt-4o-mini',
-               messages: [
-                 ...messages,
-                 {
-                   role: 'assistant',
-                   tool_calls: [toolCall],
-                 },
-                 {
-                   role: 'tool',
-                   tool_call_id: toolCall.id,
-                   content: '',
-                 },
-               ],
-             });             */
             const followUp = await this.aiClient.invoke([
               ...[
                 { role: 'system', content: promptAI },

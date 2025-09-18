@@ -50,6 +50,7 @@ export class AiAgentService {
     }
     this.openAiClient = new OpenAI({ apiKey: apikeyOpenAi });
     const apiKey = 'AIzaSyAD9lijxH_RCeKTOi0YEuTI4CznvKdP3jA'
+    //Modelo de ia a utilizar
     this.aiClient = this.llmClientFactory.getClient({provider:'openai',apiKey:apikeyOpenAi,model:'o4-mini'})  
     return this.aiClient
   };

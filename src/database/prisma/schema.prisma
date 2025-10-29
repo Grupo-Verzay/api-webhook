@@ -31,20 +31,26 @@ model User {
   webhookUrl         String?            @default("https://n8npro.verzay.co/webhook")
   theme              ThemeApp?          @default(Default)
   muteAgentResponses Boolean            @default(false)
+  defaultProviderId  String?
+  timezone           String?
+  onFacebook         Boolean            @default(false)
+  onInstagran        Boolean            @default(false)
   accounts           Account[]
   Appointment        Appointment[]
   instancias         Instancias[]
   pausar             Pausar[]
+  PromptInstancia    PromptInstancia[]
   Service            Service[]
-  aiConfigs          UserAiConfig[]
   sessions           Session[]
   systemMessages     SystemMessage[]
   tools              Tools[]
   apiKey             ApiKey?            @relation(fields: [apiKeyId], references: [id])
+  ai_providers       AiProvider?        @relation(fields: [defaultProviderId], references: [id])
   UserAvailability   UserAvailability[]
   iaCredit           IaCredit?
   clientesAsignados  reseller[]         @relation("RevendedorAsignador")
   esClienteDe        reseller[]         @relation("ClienteAsignado")
+  aiConfigs          UserAiConfig[]
   modules            Module[]           @relation("UserModules")
 }
 
@@ -52,21 +58,11 @@ model AiProvider {
   id          String         @id @default(cuid())
   name        String         @unique
   description String?
-  aiModels    AiModel[]
+  aiModel     String
+  User        User[]
   configs     UserAiConfig[]
 
   @@map("ai_providers")
-}
-
-model AiModel {
-  id          String         @id @default(cuid())
-  providerId  String
-  name        String
-  description String?
-  provider    AiProvider     @relation(fields: [providerId], references: [id])
-
-  @@unique([providerId, name])
-  @@map("ai_models")
 }
 
 model UserAiConfig {
@@ -77,8 +73,8 @@ model UserAiConfig {
   isActive   Boolean    @default(true)
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
-  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   provider   AiProvider @relation(fields: [providerId], references: [id])
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, providerId])
   @@map("user_ai_configs")
@@ -178,11 +174,12 @@ model VerificationToken {
 }
 
 model Instancias {
-  id           Int    @id @default(autoincrement())
-  instanceName String
-  userId       String
-  instanceId   String
-  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            Int     @id @default(autoincrement())
+  instanceName  String
+  userId        String
+  instanceId    String
+  tipoInstancia String? @default("Whatsapp")
+  user          User    @relation(fields: [userId], references: [id])
 }
 
 model SystemMessage {
@@ -393,6 +390,16 @@ model SessionTrigger {
   sessionId String
 }
 
+model PromptInstancia {
+  id            Int     @id @default(autoincrement())
+  tipoInstancia String?
+  description   String?
+  contenido     String?
+  instanciaId   Int?
+  userId        String
+  User          User    @relation(fields: [userId], references: [id])
+}
+
 enum RepeatType {
   NONE
   DAILY
@@ -449,4 +456,13 @@ enum AppointmentStatus {
   PENDIENTE
   CONFIRMADA
   CANCELADA
+}
+
+enum tipoInstancia {
+  WHATSAPP
+  WHATSAPP_OFICIAL
+  FACEBOOK_MESSAGE
+  FACEBOOK_COMMENTS
+  INSTAGRAM_MESSAGE
+  INSTAGRAM_COMMENTS
 }

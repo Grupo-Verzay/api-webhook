@@ -49,7 +49,7 @@ export class WebhookService {
    * @returns {Promise<void>}
    */
   async processWebhook(body: WebhookBodyDto): Promise<void> {
-    
+
 
     // Tiempo de respuesta del bot para mayor naturalidad
     const delayConversation = WebhookService.DELAYCONVERSATION;
@@ -75,12 +75,12 @@ export class WebhookService {
     const userWithRelations = await this.userService.getUserWithPausar(userId) as User & { pausar: Pausar[] };
     /* apikey */
     const apikeyOpenAi = userWithRelations?.apiUrl as string;
-    
+
     //Informacion del tipo de mensaje 
     const fromMe = data?.key?.fromMe ?? false;
     const messageType = data?.messageType ?? '';
-    
-    
+
+
     const sessionStatus = await this.checkOrRegisterSession(remoteJid, instanceName, userId, pushName, userWithRelations);
     const msgChat = data?.message?.conversation ?? '';
     const conversationMsg = msgChat.trim().toLowerCase();
@@ -337,16 +337,16 @@ export class WebhookService {
   }
 
   /**
-   * Envía un mensaje de texto a un cliente de WhatsApp a través de la Evolution API.
-   *
-   * @private
-   * @param {string} conversationMsg - Número de teléfono del destinatario en formato internacional.
-   * @param {string} remoteJid - Contenido del mensaje de texto que se desea enviar.
-   * @param {string} instanceId - Nombre de la instancia de Evolution asociada al envío.
-   * @param {boolean} sessionStatus - URL base del servidor Evolution API para el envío de mensajes.
-   * @param {User & {pausar: Pausar[]}} userWithRelations - Clave API para autorización en el servidor Evolution.
-   * @returns {Promise<void>} - No retorna ningún valor. Lanza logs en caso de éxito o error.
-   */
+ * Envía un mensaje de texto a un cliente de WhatsApp a través de la Evolution API.
+ *
+ * @private
+ * @param {string} conversationMsg - Número de teléfono del destinatario en formato internacional.
+ * @param {string} remoteJid - Contenido del mensaje de texto que se desea enviar.
+ * @param {string} instanceId - Nombre de la instancia de Evolution asociada al envío.
+ * @param {boolean} sessionStatus - URL base del servidor Evolution API para el envío de mensajes.
+ * @param {User & {pausar: Pausar[]}} userWithRelations - Clave API para autorización en el servidor Evolution.
+ * @returns {Promise<void>} - No retorna ningún valor. Lanza logs en caso de éxito o error.
+ */
   private async stopOrResumeConversation(
     {
       conversationMsg,
@@ -364,7 +364,7 @@ export class WebhookService {
     await this.sessionService.updateSessionStatus(remoteJid, instanceName, false, userWithRelations.id);
     this.logger.log(`Chat pausado.`, 'WebhookService');
 
-    //Pausar chat  
+    //Pausar chat 
     if (!sessionStatus) {
       // Monitoreo de PAUSA: buscar palabra clave para reactivación
       if (!userWithRelations) {
@@ -406,17 +406,31 @@ export class WebhookService {
       } catch (error) {
         this.logger.error('ERROR_SEGUIMIENTOS', error);
       }
+      return; // Si fue un comando de control, salimos aquí.
     };
 
-    //Flujo de respuestas rapidas
-    await this.onAutoReplies({
-      userId: userWithRelations.id.toString(),
-      conversationMsg,
-      server_url,
-      apikey,
-      instanceName,
-      remoteJid,
-    });
+
+    // 🛑 INICIO DE LA CORRECCIÓN CLAVE 🛑
+
+    // Consulta el estado más reciente, ya que la lógica anterior pudo haberlo cambiado (o no).
+    // Si la sesión está inactiva, no debe ejecutar auto-respuestas/workflows.
+    const isSessionActiveNow = await this.sessionService.isSessionActive(remoteJid, userWithRelations.id);
+
+    if (isSessionActiveNow) {
+      //Flujo de respuestas rapidas SOLO si la sesión está activa
+      await this.onAutoReplies({
+        userId: userWithRelations.id.toString(),
+        conversationMsg,
+        server_url,
+        apikey,
+        instanceName,
+        remoteJid,
+      });
+    } else {
+      this.logger.log(`[AutoReplies] Sesión inactiva. Se ignorarán las respuestas rápidas para ${remoteJid}.`, 'WebhookService');
+    }
+
+    // 🛑 FIN DE LA CORRECCIÓN CLAVE 🛑
   };
 
   /**

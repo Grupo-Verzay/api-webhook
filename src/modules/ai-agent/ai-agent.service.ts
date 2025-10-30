@@ -2,6 +2,7 @@ import axios from 'axios';
 import OpenAI from 'openai';
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/core/logger/logger.service';
+
 import { PromptService } from '../prompt/prompt.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
@@ -27,7 +28,7 @@ export class AiAgentService {
   private aiClient;
   // Refactor
   private readonly initWorkflowName: string = 'INICIO_BIENVENIDA';
-  
+
   constructor(
     private readonly logger: LoggerService,
     private readonly promptService: PromptService,
@@ -51,7 +52,7 @@ export class AiAgentService {
     this.openAiClient = new OpenAI({ apiKey: apikeyOpenAi });
     const apiKey = 'AIzaSyAD9lijxH_RCeKTOi0YEuTI4CznvKdP3jA'
     //Modelo de ia a utilizar
-    this.aiClient = this.llmClientFactory.getClient({provider:'openai',apiKey:apikeyOpenAi,model:'o4-mini'})  
+    this.aiClient = this.llmClientFactory.getClient({ provider: 'google', apiKey, model: 'gemini-2.5-flash' })
     return this.aiClient
   };
 
@@ -104,15 +105,16 @@ export class AiAgentService {
 
       const formattedList = workflows.map((flow, index) => {
         return `{
-        "id": ${index + 1},
-        "nombre": "${flow.name}",
-        "descripcion": "${flow.description || 'Sin descripción'}"
-      }`
+        "id": ${index + 1},
+        "nombre": "${flow.name}",
+        "descripcion": "${flow.description || 'Sin descripción'}"
+      }`
       }).join(',\n');
 
-      
+
 
       this.logger.log(`Lista de flujos: ${JSON.stringify(formattedList)}`);
+      this.logger.log(`Lista de flujos: ${JSON.stringify(workflows)}`);
 
       const customWorkflowPrompt = systemPromptWorkflow(input, JSON.stringify(formattedList));
 
@@ -158,10 +160,12 @@ export class AiAgentService {
 
       const choice = responseR.content.toString()
       const content = choice.trim()
+      // ⭐ CORRECCIÓN: Eliminar 'await' y validar la ruta de propiedades de forma segura.
+      const totalTokensR = responseR?.usage_metadata?.total_tokens;
+      const tokensUsedR = totalTokensR ? parseInt(totalTokensR.toString(), 10) : 0;
+      console.log('los tokens usados son...', responseR.usage_metadata?.total_tokens, tokensUsedR) // Usar el valor corregido
+      await this.aiCredits.trackTokens(userId, tokensUsedR);
 
-      //Registro de créditos por usuario
-      const tokensUsed = responseR.lc_kwargs.response_metadata.token_usage ?? 0;
-      await this.aiCredits.trackTokens(userId, tokensUsed);
 
       if (!choice || !content) {
         this.logger.warn('Content inválido o vacío');
@@ -205,6 +209,7 @@ export class AiAgentService {
     remoteJid
   }: proccessInput) {
     let promptAI = ''; // Declarar aquí para que esté disponible en el catch
+    console.log('esto son los datos que estoy obteniendo para userId',userId)
 
     try {
       this.initializeClient(apikeyOpenAi);
@@ -217,10 +222,10 @@ export class AiAgentService {
 
       const formattedList = workflows.map((flow, index) => {
         return `{
-        "id": ${index + 1},
-        "nombre": "${flow.name}",
-        "descripcion": "${flow.description || 'Sin descripción'}"
-      }`;
+        "id": ${index + 1},
+        "nombre": "${flow.name}",
+        "descripcion": "${flow.description || 'Sin descripción'}"
+      }`;
       }).join(',\n');
 
       // 2) Validar que en la lista (formattedList/workflows) exista this.initWorkflowName
@@ -246,71 +251,45 @@ export class AiAgentService {
         );
 
         // Importante: corta aquí para que el agente NO responda después de ejecutar el flujo
-        return '';
+        // return '';
       }
 
       const workflowTrigger = `lista de flujos disponibles ${formattedList}`
       promptAI = `${extraRules} ${workflowTrigger} ${systemPrompt}`;
 
 
-      // 1) Comprimir historial a un único bloque
-      let condensedHistory = '';
-      if (chatHistory?.length) {
-        try {
-          condensedHistory = await this.promptCompressor.compressHistory({
-            client: this.aiClient,
-            messages: chatHistory,
-            maxTokens: 350,
-          });
-        } catch (e) {
-          this.logger.warn('No se pudo condensar historial, usando original', 'AiAgentService');
-        }
-      }
+      // =====================================================================
+      // CAMBIO: Se elimina toda lógica de compresión de historial e input.
+      // Se usan los datos crudos directamente.
+      // =====================================================================
 
-      // 2) Comprimir input del usuario
-      let compressedInput = '';
-      try {
-        compressedInput = await this.promptCompressor.compress({
-          client: this.aiClient,
-          input: input,
-          format: 'yaml',         // o 'json' si prefieres
-          maxTokens: 300,
-          temperature: 0.1,
-        });
+      // 1) Historial (NO COMPRIMIDO)
+      const historyMessages = chatHistory.map(text => new HumanMessage({
+          content: [{ type: "text", text: text }],
+      }));
 
-        // Verificar cobertura mínima (números, fechas, términos críticos)
-        const { ok, missing } = this.promptCompressor.verifyCoverage({
-          original: input,
-          compressed: compressedInput,
-          requiredTerms: [], // puedes inyectar endpoints/palabras clave si aplica
-        });
-
-        if (!ok) {
-          this.logger.warn(`Compresión perdió términos críticos: ${missing.join(', ')}`, 'AiAgentService');
-          compressedInput = input; // fallback
-        }
-      } catch (e) {
-        this.logger.warn('Fallo en compresión de input, usando original', 'AiAgentService');
-        compressedInput = input;
-      }
-
-      // 3) Construcción de mensajes (historial condensado + input comprimido)
-      const historyMessages: ChatCompletionMessageParam[] = [];
-      if (condensedHistory) {
-        historyMessages.push({
-          role: 'user',
-          content: `[HISTORIAL-RESUMIDO]\n${condensedHistory}`,
-        });
-      }
+      // 2) Input del usuario (NO COMPRIMIDO)
+      const rawInputMessage = new HumanMessage({
+          content: [{ type: "text", text: input }],
+      });
+      
+      const systemMessage = new SystemMessage({
+          content: [{ type: "text", text: promptAI }],
+      });
 
       this.logger.debug(`PROMPT AI =======> ${JSON.stringify(promptAI)}`);
-      this.logger.debug(`HISTORY MESSAGES =======> ${JSON.stringify(historyMessages)}`);
+      this.logger.debug(`CHAT HISTORY (CRUDE) =======> ${JSON.stringify(chatHistory)}`);
 
-      const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: promptAI },
-        ...historyMessages,
-        { role: 'user', content: compressedInput },
+      // 3) Construcción de mensajes para la invocación (System + History + Input)
+      const messagesForLlm = [
+          systemMessage,
+          ...historyMessages,
+          rawInputMessage,
       ];
+      // =====================================================================
+      // FIN CAMBIO
+      // =====================================================================
+
 
       //Reemplaza el retry fijo de 60s por exponencial con jitter:0
       const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
@@ -321,16 +300,8 @@ export class AiAgentService {
         const maxAttempts = 3;
         while (true) {
           try {
-            
-            
-            const clientResp = await this.aiClient.bindTools(langchainTools).invoke([
-              { role: 'system', content: promptAI },
-              {
-                role: 'user',
-                content: `[HISTORIAL-RESUMIDO]\n${condensedHistory}`,
-              },
-              { role: 'user', content: compressedInput },
-            ])
+            // Se usa messagesForLlm directamente, que contiene los datos crudos.
+            const clientResp = await this.aiClient.bindTools(langchainTools).invoke(messagesForLlm);
             return clientResp
           } catch (err: any) {
             attempt++;
@@ -347,9 +318,11 @@ export class AiAgentService {
       const choice = response;
       const toolCall = choice.tool_calls.shift();
 
-      //Registro de créditos por usuario
-      const tokensUsed = response.usage_metadata.total_tokens ?? 0;
-      await this.aiCredits.trackTokens(userId, tokensUsed);
+      // ⭐ CORRECCIÓN: Eliminar 'await' y validar la ruta de propiedades de forma segura.
+      const totalTokensMain = response?.usage_metadata?.total_tokens;
+      const tokensUsedMain = totalTokensMain ? parseInt(totalTokensMain.toString(), 10) : 0;
+      console.log('los tokens usados son...', response.usage_metadata?.total_tokens, tokensUsedMain) // Usar el valor corregido
+      await this.aiCredits.trackTokens(userId, tokensUsedMain);
 
       // Procesamiento de tool
       if (toolCall) {
@@ -372,7 +345,7 @@ export class AiAgentService {
           case 'notificacion':
             // Ejecutar la tool sin retornar nada al usuario
             console.log('Enviando notificacion a un asesor 😎')
-            this.logger.log('Activada notificacion a...',remoteJid)
+            this.logger.log('Activada notificacion a...', remoteJid)
             await this.notificacionTool.handleNotificacionTool(
               args,
               userId,
@@ -382,15 +355,11 @@ export class AiAgentService {
               remoteJid
             );
 
-            const followUp = await this.aiClient.invoke([
-              ...[
-                { role: 'system', content: promptAI },
-                {
-                  role: 'user',
-                  content: `[HISTORIAL-RESUMIDO]\n${condensedHistory}`,
-                },
-                { role: 'user', content: compressedInput },
-              ],
+            // Reconstruir el contexto para el follow-up sin compresión
+            const followUpMessages = [
+              systemMessage,
+              ...historyMessages,
+              rawInputMessage,
               new AIMessage({
                 content: '',
                 tool_calls: [toolCall]
@@ -399,12 +368,14 @@ export class AiAgentService {
                 content: '',
                 tool_call_id: toolCall.id || ''
               })
-            ])
+            ];
 
-            //Registro de créditos por usuario
-            // const tokensUsed = followUp.usage?.total_tokens ?? 0;
-            const tokensUsed = response.lc_kwargs.response_metadata.token_usage ?? 0;
-            await this.aiCredits.trackTokens(userId, tokensUsed);
+            const followUp = await this.aiClient.invoke(followUpMessages)
+
+            // ⭐ CORRECCIÓN: Eliminar 'await' y validar la ruta de propiedades de forma segura.
+            const totalTokensFollowUp = followUp?.usage_metadata?.total_tokens;
+            const tokensUsedFollowUp = totalTokensFollowUp ? parseInt(totalTokensFollowUp.toString(), 10) : 0;
+            await this.aiCredits.trackTokens(userId, tokensUsedFollowUp);
 
             const followupText = '✅ Solicitud enviada. En breve te contactará un asesor.';
             const aiResponse = this.processAgentFollowup(followupText, promptAI);
@@ -452,7 +423,7 @@ export class AiAgentService {
     instanceName: string,
     remoteJid: string,
     userPrompt: string
-  ): Promise<string> {
+  ): Promise<string|void> {
     this.logger.log('Se esta ejecutando una tool... 😎')
     const detectionResult = await this.openAIToolDetection({
       // input: args.nombre_flujo,
@@ -533,8 +504,8 @@ export class AiAgentService {
 
     this.logger.log(`Workflow result: ${JSON.stringify(workflowMessages.join('\n'))}`);
 
-    /* Se corta el ciclo  para evitar que el agente conteste despues de ejecutar una tool*/
-    return '';
+    /* Se corta el ciclo  para evitar que el agente conteste despues de ejecutar una tool*/
+    // return '';
   };
 
   private async processAgentFollowup(
@@ -635,7 +606,6 @@ export class AiAgentService {
           },
         ],
       })
-
       const response = await this.aiClient.invoke([message])
       return response.content.toString() ?? '[ERROR_DESCRIBING_IMAGE]'
 

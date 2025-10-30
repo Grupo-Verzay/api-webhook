@@ -6,12 +6,13 @@ export class PromptService {
   constructor(private readonly prisma: PrismaService) { }
 
   async getPromptUserId(userId: string): Promise<string> {
-    const systemMessages = await this.prisma.systemMessage.findMany({
+    const systemMessages = await this.prisma.agentPrompt.findMany({
       where: { userId },
       orderBy: { createdAt: 'asc' }, // Opcional: 'asc' si quieres en orden antiguo a nuevo
       select: {
-        title: true,
-        message: true,
+        
+        promptText:true
+        
       },
     });
 
@@ -21,7 +22,7 @@ export class PromptService {
     }
 
     const fullPrompt = systemMessages
-      .map((sm) => `${sm.title}\n${sm.message}`)
+      .map((sm) => `${sm.promptText}`)
       .join('\n\n'); // Doble salto de línea entre cada bloque
 
     return fullPrompt;

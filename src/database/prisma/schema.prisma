@@ -8,58 +8,59 @@ datasource db {
 }
 
 model User {
-  id                 String             @id @default(cuid())
-  name               String?
-  email              String             @unique
-  password           String?
-  emailVerified      DateTime?
-  image              String?
-  role               Role               @default(user)
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  apiUrl             String             @default("https://api.openAI.co")
-  company            String             @default("Empresa Demo")
-  lat                String             @default("0.0000")
-  lng                String             @default("0.0000")
-  mapsUrl            String             @default("https://maps.google.com/?q=0,0")
-  notificationNumber String             @default("0000000000")
-  openingPhrase      String?            @default("DEPRECATED")
-  apiKeyId           String?
-  del_seguimiento    String?            @default("Estamos para servirle.")
-  plan               Plan               @default(basico)
-  autoReactivate     String?
-  webhookUrl         String?            @default("https://n8npro.verzay.co/webhook")
-  theme              ThemeApp?          @default(Default)
-  muteAgentResponses Boolean            @default(false)
-  defaultProviderId  String?
-  timezone           String?
-  onFacebook         Boolean            @default(false)
-  onInstagran        Boolean            @default(false)
-  accounts           Account[]
-  Appointment        Appointment[]
-  instancias         Instancias[]
-  pausar             Pausar[]
-  PromptInstancia    PromptInstancia[]
-  Service            Service[]
-  sessions           Session[]
-  systemMessages     SystemMessage[]
-  tools              Tools[]
-  apiKey             ApiKey?            @relation(fields: [apiKeyId], references: [id])
-  ai_providers       AiProvider?        @relation(fields: [defaultProviderId], references: [id])
-  UserAvailability   UserAvailability[]
-  iaCredit           IaCredit?
-  clientesAsignados  reseller[]         @relation("RevendedorAsignador")
-  esClienteDe        reseller[]         @relation("ClienteAsignado")
-  aiConfigs          UserAiConfig[]
-  modules            Module[]           @relation("UserModules")
+  id                  String                @id @default(cuid())
+  name                String?
+  email               String                @unique
+  password            String?
+  emailVerified       DateTime?
+  image               String?
+  role                Role                  @default(user)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  apiUrl              String                @default("https://api.openAI.co")
+  company             String                @default("Empresa Demo")
+  lat                 String                @default("0.0000")
+  lng                 String                @default("0.0000")
+  mapsUrl             String                @default("https://maps.google.com/?q=0,0")
+  notificationNumber  String                @default("0000000000")
+  openingPhrase       String?               @default("DEPRECATED")
+  apiKeyId            String?
+  del_seguimiento     String?               @default("Estamos para servirle.")
+  plan                Plan                  @default(basico)
+  autoReactivate      String?
+  webhookUrl          String?               @default("https://n8npro.verzay.co/webhook")
+  theme               ThemeApp?             @default(Default)
+  muteAgentResponses  Boolean               @default(false)
+  timezone            String?
+  meetingDuration     Int?
+  onFacebook          Boolean               @default(false)
+  onInstagram         Boolean               @default(false)
+  accounts            Account[]
+  AgentPrompt         AgentPrompt[]
+  AgentPromptRevision AgentPromptRevision[]
+  Appointment         Appointment[]
+  instancias          Instancias[]
+  pausar              Pausar[]
+  Product             Product[]
+  PromptInstance      PromptInstance[]
+  Service             Service[]
+  sessions            Session[]
+  systemMessages      SystemMessage[]
+  tools               Tools[]
+  apiKey              ApiKey?               @relation(fields: [apiKeyId], references: [id])
+  UserAvailability    UserAvailability[]
+  iaCredit            IaCredit?
+  clientesAsignados   reseller[]            @relation("RevendedorAsignador")
+  esClienteDe         reseller[]            @relation("ClienteAsignado")
+  aiConfigs           UserAiConfig[]
+  modules             Module[]              @relation("UserModules")
 }
 
 model AiProvider {
   id          String         @id @default(cuid())
   name        String         @unique
   description String?
-  aiModel     String
-  User        User[]
+  ai_models   ai_models[]
   configs     UserAiConfig[]
 
   @@map("ai_providers")
@@ -174,12 +175,12 @@ model VerificationToken {
 }
 
 model Instancias {
-  id            Int     @id @default(autoincrement())
-  instanceName  String
-  userId        String
-  instanceId    String
-  tipoInstancia String? @default("Whatsapp")
-  user          User    @relation(fields: [userId], references: [id])
+  id           Int     @id @default(autoincrement())
+  instanceName String
+  userId       String
+  instanceId   String
+  instanceType String? @default("Whatsapp")
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model SystemMessage {
@@ -228,7 +229,7 @@ model WorkflowNode {
   delay       String?
   inactividad Boolean?
   name_file   String?
-  order       String?
+  order       Int      @default(0)
 }
 
 model n8n_chat_histories {
@@ -390,14 +391,80 @@ model SessionTrigger {
   sessionId String
 }
 
-model PromptInstancia {
-  id            Int     @id @default(autoincrement())
-  tipoInstancia String?
-  description   String?
-  contenido     String?
-  instanciaId   Int?
-  userId        String
-  User          User    @relation(fields: [userId], references: [id])
+model ai_models {
+  id           String     @id
+  providerId   String
+  name         String
+  description  String?
+  ai_providers AiProvider @relation(fields: [providerId], references: [id])
+
+  @@unique([providerId, name])
+}
+
+model AgentPrompt {
+  id                  String                @id @db.Uuid
+  userId              String
+  agentId             String?
+  status              PromptStatus          @default(draft)
+  version             Int                   @default(1)
+  sections            Json
+  promptText          String
+  businessName        String?
+  businessSector      String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime
+  User                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  AgentPromptRevision AgentPromptRevision[]
+
+  @@index([agentId])
+  @@index([businessName])
+  @@index([businessSector])
+  @@index([sections], type: Gin)
+  @@index([status])
+  @@index([userId])
+}
+
+model AgentPromptRevision {
+  id                 String      @id @db.Uuid
+  promptId           String      @db.Uuid
+  revisionNumber     Int
+  sectionsSnapshot   Json
+  promptTextSnapshot String
+  publishedBy        String
+  publishedAt        DateTime    @default(now())
+  notes              String?
+  AgentPrompt        AgentPrompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  User               User        @relation(fields: [publishedBy], references: [id], onDelete: Cascade)
+
+  @@unique([promptId, revisionNumber])
+  @@index([publishedAt])
+}
+
+model Product {
+  id          String   @id
+  userId      String
+  title       String
+  description String?
+  price       Decimal
+  sku         String?  @unique
+  stock       Int      @default(0)
+  isActive    Boolean  @default(true)
+  images      String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  User        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, title])
+}
+
+model PromptInstance {
+  id           Int     @id @default(autoincrement())
+  instanceType String?
+  description  String?
+  content      String?
+  instanceId   Int?
+  userId       String
+  User         User    @relation(fields: [userId], references: [id])
 }
 
 enum RepeatType {
@@ -435,7 +502,7 @@ enum Role {
 }
 
 enum Plan {
-  admin         @map("empresarial")
+  enterprise
   lite
   unico
   basico
@@ -458,11 +525,7 @@ enum AppointmentStatus {
   CANCELADA
 }
 
-enum tipoInstancia {
-  WHATSAPP
-  WHATSAPP_OFICIAL
-  FACEBOOK_MESSAGE
-  FACEBOOK_COMMENTS
-  INSTAGRAM_MESSAGE
-  INSTAGRAM_COMMENTS
+enum PromptStatus {
+  draft
+  published
 }

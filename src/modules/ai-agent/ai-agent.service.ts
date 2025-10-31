@@ -50,9 +50,9 @@ export class AiAgentService {
       this.logger.error('API Key inválida o no proporcionada.', '', 'AiAgentService');
     }
     this.openAiClient = new OpenAI({ apiKey: apikeyOpenAi });
-    const apiKey = 'AIzaSyAD9lijxH_RCeKTOi0YEuTI4CznvKdP3jA'
+    // const apiKey = 'AIzaSyAD9lijxH_RCeKTOi0YEuTI4CznvKdP3jA' // solo para pruebas con gemini
     //Modelo de ia a utilizar
-    this.aiClient = this.llmClientFactory.getClient({ provider: 'google', apiKey, model: 'gemini-2.5-flash' })
+    this.aiClient = this.llmClientFactory.getClient({ provider: 'openai', apiKey: apikeyOpenAi, model: 'o4-mini' })
     return this.aiClient
   };
 

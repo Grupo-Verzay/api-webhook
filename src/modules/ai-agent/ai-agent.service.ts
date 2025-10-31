@@ -81,7 +81,57 @@ export class AiAgentService {
     return `Soleado y 25°C en ${location}`; // Respuesta simulada
   };
 
+  /**
+   * 🔸 NUEVO: SIEMPRE FINALIZA COMO AGENTE PRINCIPAL
+   * Dado un resultado de tool o de sistema, el agente principal responde al usuario.
+   */
+  private async respondAsMainAgent(params: {
+    userId: string;
+    sessionId: string;
+    userPrompt: string;        // Lo que el usuario dijo originalmente (o contexto relevante)
+    principalSystemPrompt: string; // promptAI ya armado (extraRules + flujos + systemPrompt)
+    followupText: string;      // Resultado crudo de tool / texto a “traducir” para el usuario
+  }): Promise<string> {
+    const { userId, sessionId, userPrompt, principalSystemPrompt, followupText } = params;
 
+    const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
+
+    const systemMessage = new SystemMessage({
+      content: [{
+        type: 'text',
+        text:
+`${principalSystemPrompt}
+
+REGLA CRÍTICA:
+- Si se ejecutó una tool, EL AGENTE PRINCIPAL es quien da la respuesta final al usuario.
+- Responde de forma natural, útil y **sin revelar detalles internos** (IDs, nombres de tools).
+- Usa el resultado siguiente para construir la respuesta final al usuario.
+
+[RESULTADO_TOOL]
+${followupText}`
+      }]
+    });
+
+    const historyMessages = chatHistory.map(text => new HumanMessage({
+      content: [{ type: "text", text }],
+    }));
+
+    const rawUser = new HumanMessage({
+      content: [{ type: 'text', text: userPrompt }]
+    });
+
+    const completion = await this.aiClient.invoke([
+      systemMessage,
+      ...historyMessages,
+      rawUser,
+    ]);
+
+    const totalTokens = completion?.usage_metadata?.total_tokens;
+    const tokensUsed = totalTokens ? parseInt(totalTokens.toString(), 10) : 0;
+    await this.aiCredits.trackTokens(userId, tokensUsed);
+
+    return completion.content?.toString()?.trim() || followupText;
+  }
 
   /**
   * Se procesa la tool con openAI - segundo agente
@@ -101,8 +151,6 @@ export class AiAgentService {
       const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
       const workflows = await this.workflowService.getWorkflow(userId);
 
-
-
       const formattedList = workflows.map((flow, index) => {
         return `{
     "id": ${index + 1},
@@ -111,76 +159,42 @@ export class AiAgentService {
    }`
       }).join(',\n');
 
-
-
       this.logger.log(`Lista de flujos: ${JSON.stringify(formattedList)}`);
       this.logger.log(`Lista de flujos: ${JSON.stringify(workflows)}`);
 
       const customWorkflowPrompt = systemPromptWorkflow(input, JSON.stringify(formattedList));
 
-      const historyMessages: ChatCompletionMessageParam[] = chatHistory.map((text) => ({
-        role: 'user',
-        content: text,
-      }));
-
-      const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: customWorkflowPrompt },
-        ...historyMessages,
-        { role: 'user', content: JSON.stringify(input) },
-      ];
-
       const messagesR = [
         new SystemMessage({
           content: [
-            {
-              type: "text",
-              text: customWorkflowPrompt
-            },
+            { type: "text", text: customWorkflowPrompt },
           ]
         }),
         ...chatHistory.map(text => new HumanMessage({
-          content: [{
-            type: "text",
-            text: text
-          }],
+          content: [{ type: "text", text }],
         })),
         new HumanMessage({
-          content: [{
-            type: "text",
-            text: JSON.stringify(input)
-          }],
+          content: [{ type: "text", text: JSON.stringify(input) }],
         })
       ]
 
       const responseR = await this.aiClient.invoke(messagesR)
 
-      // const choice: any = response.choices?.[0];
-      // const choice: any = response.choices?.[0];
-      // const content = choice?.message?.content?.trim();
-
       const choice = responseR.content.toString()
       const content = choice.trim()
-      // ⭐ CORRECCIÓN: Eliminar 'await' y validar la ruta de propiedades de forma segura.
       const totalTokensR = responseR?.usage_metadata?.total_tokens;
       const tokensUsedR = totalTokensR ? parseInt(totalTokensR.toString(), 10) : 0;
-      console.log('los tokens usados son...', responseR.usage_metadata?.total_tokens, tokensUsedR) // Usar el valor corregido
       await this.aiCredits.trackTokens(userId, tokensUsedR);
-
 
       if (!choice || !content) {
         this.logger.warn('Content inválido o vacío');
         return { content: null };
       }
 
-      return {
-        content
-      }
-
+      return { content }
     } catch (error) {
       this.logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
-      return {
-        content: null
-      }
+      return { content: null }
     }
   };
 
@@ -209,14 +223,11 @@ export class AiAgentService {
     remoteJid
   }: proccessInput): Promise<string> {
     let promptAI = ''; // Declarar aquí para que esté disponible en el catch
-    console.log('esto son los datos que estoy obteniendo para userId', userId)
-
     try {
       this.initializeClient(apikeyOpenAi);
 
       const systemPrompt = await this.promptService.getPromptUserId(userId);
       const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
-      // 1) Validar la respuesta de chatHistory (sin historial)
       const noHistory = !Array.isArray(chatHistory) || chatHistory.length === 0;
       const workflows = await this.workflowService.getWorkflow(userId);
 
@@ -228,27 +239,25 @@ export class AiAgentService {
    }`;
       }).join(',\n');
 
-      // ** Lógica para extraer la respuesta literal de la BD **
-      // Busca el texto que sigue a la regla "Comportamiento: Después de ejecutar el flujo, tu única respuesta es la que se te indique en Regla/parámetro."
+      // Extrae respuesta literal post-flujo (si existe) desde el system prompt
       const match = systemPrompt.match(/Comportamiento: Después de ejecutar el flujo, tu única respuesta es la que se te indique en Regla\/parámetro\.\n\n\*\s*([^\n]+)/i);
-      // Usa la respuesta extraída (ej: "Ya te ayudo.") o un fallback por defecto
       const workflowSuccessResponse = match ? match[1].trim() : "¡Hola! ¿En qué puedo ayudarte?";
       this.logger.log(`Respuesta literal de workflow extraída: ${workflowSuccessResponse}`);
-      // ** Fin Lógica para extraer la respuesta literal de la BD **
 
-      // 2) Validar que en la lista (formattedList/workflows) exista this.initWorkflowName
       const hasInicioBienvenida = workflows?.some(
         (w: any) =>
           typeof w?.name === 'string' &&
           w.name.trim().toLowerCase() === this.initWorkflowName.toLowerCase()
       );
 
-      // 3) Si NO hay historial y existe el flujo, ejecutarlo vía tool "execute_workflow"
-      if (noHistory && hasInicioBienvenida) {
+      // 🔹 prompt del AGENTE PRINCIPAL (se reutiliza para toda respuesta final)
+      const workflowTrigger = `lista de flujos disponibles ${formattedList}`
+      promptAI = `${extraRules} ${workflowTrigger} ${systemPrompt}`;
 
-        // Ejecuta y retorna la respuesta (será la literal si fue exitoso)
-        return await this.handleExecuteWorkflowTool(
-          { nombre_flujo: [this.initWorkflowName] } as any, // <- args esperados por tu tool
+      // Si es primer mensaje y hay INICIO_BIENVENIDA -> ejecutar tool y responder como Agente Principal
+      if (noHistory && hasInicioBienvenida) {
+        const result = await this.handleExecuteWorkflowTool(
+          { nombre_flujo: [this.initWorkflowName] } as any,
           userId,
           apikeyOpenAi,
           sessionId,
@@ -256,25 +265,21 @@ export class AiAgentService {
           apikey,
           instanceName,
           remoteJid,
-          this.initWorkflowName, // userPrompt (no se usa para responder; handle... retorna '')
-          workflowSuccessResponse // <-- **Pasando la respuesta literal**
+          this.initWorkflowName,
+          workflowSuccessResponse
         );
+
+        // result ya es “final” como agente principal (por la ruta común)
+        return result;
       }
-
-      const workflowTrigger = `lista de flujos disponibles ${formattedList}`
-      promptAI = `${extraRules} ${workflowTrigger} ${systemPrompt}`;
-
 
       // =====================================================================
       // INICIO - Construcción de mensajes para el LLM
       // =====================================================================
-
-      // 1) Historial (NO COMPRIMIDO)
       const historyMessages = chatHistory.map(text => new HumanMessage({
-        content: [{ type: "text", text: text }],
+        content: [{ type: "text", text }],
       }));
 
-      // 2) Input del usuario (NO COMPRIMIDO)
       const rawInputMessage = new HumanMessage({
         content: [{ type: "text", text: input }],
       });
@@ -286,7 +291,6 @@ export class AiAgentService {
       this.logger.debug(`PROMPT AI =======> ${JSON.stringify(promptAI)}`);
       this.logger.debug(`CHAT HISTORY (CRUDE) =======> ${JSON.stringify(chatHistory)}`);
 
-      // 3) Construcción de mensajes para la invocación (System + History + Input)
       const messagesForLlm = [
         systemMessage,
         ...historyMessages,
@@ -296,24 +300,20 @@ export class AiAgentService {
       // FIN - Construcción de mensajes para el LLM
       // =====================================================================
 
-
-      //Reemplaza el retry fijo de 60s por exponencial con jitter:0
       const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
 
-      // Función auxiliar con retry automático
       const createChatCompletion = async (): Promise<any> => {
         let attempt = 0;
         const maxAttempts = 3;
         while (true) {
           try {
-            // Se usa messagesForLlm directamente, que contiene los datos crudos.
             const clientResp = await this.aiClient.bindTools(langchainTools).invoke(messagesForLlm);
             return clientResp
           } catch (err: any) {
             attempt++;
             const isRate = err?.code === 'rate_limit_exceeded' || err?.status === 429;
             if (!isRate || attempt >= maxAttempts) throw err;
-            const backoff = Math.floor((2 ** attempt) * 1000 + Math.random() * 1000); // 2s,4s,8s + jitter
+            const backoff = Math.floor((2 ** attempt) * 1000 + Math.random() * 1000);
             this.logger.warn(`Rate limit: reintento #${attempt} en ${backoff}ms`);
             await sleep(backoff);
           }
@@ -322,78 +322,51 @@ export class AiAgentService {
 
       const response = await createChatCompletion();
       const choice = response;
-      const toolCall = choice.tool_calls.shift();
+      const toolCall = choice.tool_calls?.shift?.();
 
-      // ⭐ CORRECCIÓN: Eliminar 'await' y validar la ruta de propiedades de forma segura.
       const totalTokensMain = response?.usage_metadata?.total_tokens;
       const tokensUsedMain = totalTokensMain ? parseInt(totalTokensMain.toString(), 10) : 0;
-      console.log('los tokens usados son...', response.usage_metadata?.total_tokens, tokensUsedMain) // Usar el valor corregido
       await this.aiCredits.trackTokens(userId, tokensUsedMain);
 
-      // Procesamiento de tool
+      // Procesamiento de tool -> SIEMPRE responde el agente principal
       if (toolCall) {
         this.logger.log(`Tool encontrada, preparando ejecución...`);
-
         let args;
         try {
           args = toolCall.args;
         } catch (e) {
           this.logger.error('Error al parsear los argumentos del toolCall', e.message);
-          const followupText = '[ERROR_TOOL_ARGS_PARSING]';
-          const aiResponse = this.processAgentFollowup(followupText, promptAI);
-
-          return aiResponse;
+          // Pasar error al principal para que él responda
+          return await this.respondAsMainAgent({
+            userId,
+            sessionId,
+            userPrompt: input,
+            principalSystemPrompt: promptAI,
+            followupText: '[ERROR_TOOL_ARGS_PARSING]'
+          });
         }
 
         const toolName = toolCall.name;
 
         switch (toolName) {
-          case 'notificacion':
-            // Ejecutar la tool sin retornar nada al usuario
-            console.log('Enviando notificacion a un asesor 😎')
-            this.logger.log('Activada notificacion a...', remoteJid)
-
-            // 1. Ejecutar la lógica de la herramienta (asíncrona)
+          case 'notificacion': {
+            this.logger.log('Activada notificacion a...', remoteJid);
             await this.notificacionTool.handleNotificacionTool(
-              args,
-              userId,
-              server_url,
-              apikey,
-              instanceName,
-              remoteJid
+              args, userId, server_url, apikey, instanceName, remoteJid
             );
 
-            // ** 2. Define el resultado/notificación para el LLM (el ToolMessage content) **
             const toolExecutionResult = "Notificación a asesor enviada exitosamente.";
+            return await this.respondAsMainAgent({
+              userId,
+              sessionId,
+              userPrompt: input,
+              principalSystemPrompt: promptAI,
+              followupText: toolExecutionResult
+            });
+          }
 
-            // 3. Reconstruir el contexto para el follow-up 
-            const followUpMessages = [
-              systemMessage,
-              ...historyMessages,
-              rawInputMessage,
-              new AIMessage({ // Mensaje original del LLM llamando a la tool
-                content: '',
-                tool_calls: [toolCall]
-              }),
-              new ToolMessage({ // ** El mensaje de notificación del resultado al LLM **
-                content: toolExecutionResult,
-                tool_call_id: toolCall.id || ''
-              })
-            ];
-
-            // 4. Invocar al LLM por segunda vez (follow-up)
-            const followUp = await this.aiClient.invoke(followUpMessages)
-
-            // ⭐ Manejo de Créditos
-            const totalTokensFollowUp = followUp?.usage_metadata?.total_tokens;
-            const tokensUsedFollowUp = totalTokensFollowUp ? parseInt(totalTokensFollowUp.toString(), 10) : 0;
-            await this.aiCredits.trackTokens(userId, tokensUsedFollowUp);
-
-            // Retorna la respuesta generada por el LLM o un fallback
-            return followUp.content.toString().trim() ?? 'Tu solicitud ha sido procesada.';
-
-
-          case 'execute_workflow':
+          case 'execute_workflow': {
+            // Se encarga internamente y regresa YA como agente principal
             return await this.handleExecuteWorkflowTool(
               args,
               userId,
@@ -403,24 +376,58 @@ export class AiAgentService {
               apikey,
               instanceName,
               remoteJid,
-              promptAI,
-              workflowSuccessResponse // <-- Pasando la respuesta literal
+              input,                 // userPrompt real
+              workflowSuccessResponse
             );
+          }
 
           default:
             this.logger.warn(`Tool no soportada: ${toolCall.name}`, 'AiAgentService');
+            return await this.respondAsMainAgent({
+              userId,
+              sessionId,
+              userPrompt: input,
+              principalSystemPrompt: promptAI,
+              followupText: `La herramienta "${toolCall.name}" no está soportada.`
+            });
         }
       }
-      const followupText = ERROR_OPENAI_EMPTY_RESPONSE;
-      const aiResponse = this.processAgentFollowup(followupText, promptAI);
 
-      return choice.content?.toString().trim() ?? aiResponse;
+      // Si no hubo tool, responde normal (contenido directo)
+      const direct = choice?.content?.toString()?.trim();
+      if (direct) return direct;
+
+      // Fallback
+      return await this.respondAsMainAgent({
+        userId,
+        sessionId,
+        userPrompt: input,
+        principalSystemPrompt: promptAI,
+        followupText: ERROR_OPENAI_EMPTY_RESPONSE
+      });
+
     } catch (error) {
       this.logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
-      const followupText = '[ERROR_PROCESSING_OPENAI_INPUT]';
-      const aiResponse = this.processAgentFollowup(followupText, promptAI);
+      // Fallback también como agente principal
+      const systemPrompt = await this.promptService.getPromptUserId(userId).catch(() => '');
+      const workflows = await this.workflowService.getWorkflow(userId).catch(() => []);
+      const formattedList = Array.isArray(workflows) ? workflows.map((flow, index) => {
+        return `{
+    "id": ${index + 1},
+    "nombre": "${flow?.name || ''}",
+    "descripcion": "${flow?.description || 'Sin descripción'}"
+   }`;
+      }).join(',\n') : '';
 
-      return aiResponse;
+      const promptAI = `${extraRules} lista de flujos disponibles ${formattedList} ${systemPrompt}`;
+
+      return await this.respondAsMainAgent({
+        userId,
+        sessionId,
+        userPrompt: '[ERROR_PROCESSING_OPENAI_INPUT]',
+        principalSystemPrompt: promptAI,
+        followupText: 'Ocurrió un error procesando tu solicitud. ¿Deseas intentarlo de nuevo?'
+      });
     }
   };
 
@@ -434,59 +441,76 @@ export class AiAgentService {
     instanceName: string,
     remoteJid: string,
     userPrompt: string,
-    successResponseLiteral?: string // <-- Nuevo parámetro para la respuesta literal
+    successResponseLiteral?: string
   ): Promise<string> {
     this.logger.log('Se esta ejecutando una tool... 😎')
+
+    // Prepara el prompt principal para la respuesta final
+    const systemPrompt = await this.promptService.getPromptUserId(userId).catch(() => '');
+    const workflows = await this.workflowService.getWorkflow(userId).catch(() => []);
+    const formattedList = Array.isArray(workflows) ? workflows.map((flow, index) => {
+      return `{
+    "id": ${index + 1},
+    "nombre": "${flow?.name || ''}",
+    "descripcion": "${flow?.description || 'Sin descripción'}"
+   }`;
+    }).join(',\n') : '';
+    const principalPrompt = `${extraRules} lista de flujos disponibles ${formattedList} ${systemPrompt}`;
+
     const detectionResult = await this.openAIToolDetection({
-      // input: args.nombre_flujo,
       input: args,
       sessionId,
       userId
     });
-    const res = detectionResult.content?.toString();
-    const raw = res?.trim();
+    const raw = detectionResult.content?.toString()?.trim();
 
     if (!raw || raw.toLowerCase() === 'ninguno') {
-      this.logger.log(`No se encontró ningun flujo asociado al input.`);
-      const followupText = 'Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?';
-      const aiResponse = this.processAgentFollowup(followupText, userPrompt);
-      return aiResponse;
+      return await this.respondAsMainAgent({
+        userId,
+        sessionId,
+        userPrompt,
+        principalSystemPrompt: principalPrompt,
+        followupText: 'Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?'
+      });
     }
 
     let nombresDetectados: string[] = [];
     try {
-      // Intenta parsear tal cual
       const parsed = JSON.parse(raw);
       nombresDetectados = parsed?.nombre_flujo || [];
 
       if (!Array.isArray(nombresDetectados) || nombresDetectados.length === 0) {
-        this.logger.warn('No se encontraron flujos válidos en la respuesta.');
-        const followupText = 'No se detectó ningún flujo compatible con tu solicitud.';
-        const aiResponse = this.processAgentFollowup(followupText, userPrompt);
-        return aiResponse;
+        return await this.respondAsMainAgent({
+          userId,
+          sessionId,
+          userPrompt,
+          principalSystemPrompt: principalPrompt,
+          followupText: 'No se detectó ningún flujo compatible con tu solicitud.'
+        });
       }
     } catch (e) {
       this.logger.error('Error al parsear el contenido JSON de OpenAI', e.message);
-      const followupText = '[ERROR_PARSE_RAW_CONTENT]';
-      const aiResponse = this.processAgentFollowup(followupText, userPrompt);
-      return aiResponse;
+      return await this.respondAsMainAgent({
+        userId,
+        sessionId,
+        userPrompt,
+        principalSystemPrompt: principalPrompt,
+        followupText: '[ERROR_PARSE_RAW_CONTENT]'
+      });
     }
 
     this.logger.log(`Flujos detectados: ${JSON.stringify(nombresDetectados)}`);
 
-    const workflows = await this.workflowService.getWorkflow(userId);
-    let workflowMessages: string[] = [];
-    // let executedFlowsCount = 0; // Se remueve ya que la lógica retorna en el primer flujo
-
     for (const nombre of nombresDetectados) {
       const currentWorkflow = workflows.find(
-        (w) => w.name.toLowerCase() === nombre.toLowerCase()
+        (w) => w.name?.toLowerCase?.() === nombre?.toLowerCase?.()
       );
 
       if (!currentWorkflow) {
         this.logger.warn(`El flujo "${nombre}" no fue encontrado.`);
         continue;
       }
+
       const alreadyExecuted = await this.chatHistoryService.hasIntentionBeenExecuted(
         sessionId,
         currentWorkflow.name
@@ -498,6 +522,7 @@ export class AiAgentService {
           currentWorkflow.name,
           'intention'
         );
+
         await this.workflowService.executeWorkflow(
           currentWorkflow.name,
           server_url,
@@ -506,33 +531,54 @@ export class AiAgentService {
           remoteJid,
           userId
         );
-        workflowMessages.push(`✅ Se ejecutó: *${currentWorkflow.name}*`);
 
-        // ** Lógica de Respuesta Literal para INICIO_BIENVENIDA (corregida previamente) **
-        if (currentWorkflow.name.trim().toUpperCase() === this.initWorkflowName.toUpperCase() && successResponseLiteral) {
-          this.logger.log(`Devolviendo respuesta literal de la BD para ${this.initWorkflowName}: ${successResponseLiteral}`);
-          return successResponseLiteral; // <-- Retorno Inmediato del texto exacto
+        // Si es INICIO_BIENVENIDA y tenemos literal → lo usa el Agente Principal
+        if (currentWorkflow.name.trim().toUpperCase() === this.initWorkflowName.toUpperCase()
+            && successResponseLiteral) {
+          return await this.respondAsMainAgent({
+            userId,
+            sessionId,
+            userPrompt,
+            principalSystemPrompt: principalPrompt,
+            followupText: successResponseLiteral
+          });
         }
 
-        // Para cualquier otro flujo, usamos el LLM para seguimiento
-        const followupText = `✅ Flujo *${currentWorkflow.name}* iniciado correctamente.`;
-        return this.processAgentFollowup(followupText, userPrompt);
-
+        // Para otros flujos, mensaje estándar hacia el principal
+        const follow = `✅ Flujo *${currentWorkflow.name}* iniciado correctamente.`;
+        return await this.respondAsMainAgent({
+          userId,
+          sessionId,
+          userPrompt,
+          principalSystemPrompt: principalPrompt,
+          followupText: follow
+        });
       } else {
-        const followupText = `ℹ️ Ya ejecutado: *${currentWorkflow.name}*`;
-        workflowMessages.push(followupText);
-        const aiResponse = this.processAgentFollowup(followupText, userPrompt);
-        return aiResponse
+        const follow = `ℹ️ Ya ejecutado: *${currentWorkflow.name}*`;
+        return await this.respondAsMainAgent({
+          userId,
+          sessionId,
+          userPrompt,
+          principalSystemPrompt: principalPrompt,
+          followupText: follow
+        });
       }
     }
 
-    this.logger.log(`Workflow result: ${JSON.stringify(workflowMessages.join('\n'))}`);
-
-    // Fallback por si no se encontró o se pudo ejecutar nada.
-    const fallbackText = 'No pude iniciar ningún flujo en este momento. ¿Te puedo ayudar con otra cosa?';
-    return this.processAgentFollowup(fallbackText, userPrompt);
+    // Si ninguno aplicó
+    return await this.respondAsMainAgent({
+      userId,
+      sessionId,
+      userPrompt,
+      principalSystemPrompt: principalPrompt,
+      followupText: 'No pude iniciar ningún flujo en este momento. ¿Te puedo ayudar con otra cosa?'
+    });
   };
 
+  /**
+   * (Queda por compatibilidad — ya no se usa directamente desde tools;
+   *  toda finalización va por respondAsMainAgent)
+   */
   private async processAgentFollowup(
     followupText: string,
     userPrompt: string,
@@ -561,10 +607,7 @@ export class AiAgentService {
     ]
 
     const completionR = await this.aiClient.invoke(messages)
-
-
     const finalMessageR = completionR.content.toString() || followupText;
-
     return finalMessageR;
   }
 
@@ -582,23 +625,16 @@ export class AiAgentService {
       const base64Audio = Buffer.from(axiosRes.data).toString("base64");
       const message = new HumanMessage({
         content: [
-          {
-            type: "text",
-            text: "Transcribe de forma clara y detallada este audio.",
-          },
+          { type: "text", text: "Transcribe de forma clara y detallada este audio." },
           {
             "type": "media",
-            "data": base64Audio, // Use base64 string directly
+            "data": base64Audio,
             "mimeType": `${audioType}`
           },
         ],
       })
       const state = await this.aiClient.invoke([message])
-
-
-      // fs.unlinkSync(tempFilePath);
       return state.content.toString()
-      // return transcription.text;
     } catch (error) {
       this.logger.error('Error transcribiendo audio.', error?.response?.data || error.message, 'AiAgentService');
       return '[ERROR_TRANSCRIBING_AUDIO]';
@@ -613,27 +649,18 @@ export class AiAgentService {
   */
   async describeImage(data: any, imageBase64: string, imageType: string, apikeyOpenAi: string): Promise<string> {
     try {
-
-
-
       this.initializeClient(apikeyOpenAi);
-      // Refactor
       const message = new HumanMessage({
         content: [
-          {
-            type: "text",
-            text: "Describe de forma clara y detallada el contenido de esta imagen.",
-          },
+          { type: "text", text: "Describe de forma clara y detallada el contenido de esta imagen." },
           {
             type: "image_url",
             image_url: { url: `data:${imageType == '' ? 'image/jpeg' : imageType};base64,${imageBase64}` },
-
           },
         ],
       })
       const response = await this.aiClient.invoke([message])
       return response.content.toString() ?? '[ERROR_DESCRIBING_IMAGE]'
-
     } catch (error) {
       this.logger.error('Error describiendo imagen.', error?.response?.data || error.message, 'AiAgentService');
       return '[ERROR_DESCRIBING_IMAGE]';

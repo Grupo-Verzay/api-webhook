@@ -45,14 +45,16 @@ export class AiAgentService {
   *
   * @param {string} apikeyOpenAi
   */
-  private initializeClient(apikeyOpenAi: string): BaseChatModel {
+  private initializeClient(apikeyOpenAi: string,  model:string,provider:string): BaseChatModel {
+    console.log('error? busca los...',provider,model,'fueron los modelos')
     if (!this.isValidApiKey(apikeyOpenAi)) {
       this.logger.error('API Key inválida o no proporcionada.', '', 'AiAgentService');
     }
     this.openAiClient = new OpenAI({ apiKey: apikeyOpenAi });
     //const apiKey = 'AIzaSyAD9lijxH_RCeKTOi0YEuTI4CznvKdP3jA' // solo para pruebas con gemini
+    const apikeyAlternativa = 'AIzaSyD-Llg1QYeLc39gM02FEA_TdxGpsInfclQ'
     //Modelo de ia a utilizar
-    this.aiClient = this.llmClientFactory.getClient({ provider: 'openai', apiKey: apikeyOpenAi, model: 'o4-mini' })
+    this.aiClient = this.llmClientFactory.getClient({ provider: provider,apiKey:apikeyAlternativa, model:model })
     return this.aiClient
   };
 
@@ -216,6 +218,8 @@ ${followupText}`
     input,
     userId,
     apikeyOpenAi,
+    defaultModel,
+    defaultProvider,
     sessionId,
     server_url,
     apikey,
@@ -224,7 +228,7 @@ ${followupText}`
   }: proccessInput): Promise<string> {
     let promptAI = ''; // Declarar aquí para que esté disponible en el catch
     try {
-      this.initializeClient(apikeyOpenAi);
+      this.initializeClient(apikeyOpenAi,defaultModel,defaultProvider);
 
       const systemPrompt = await this.promptService.getPromptUserId(userId);
       const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
@@ -618,9 +622,11 @@ ${followupText}`
   * @param {string} audioUrl
   * @returns {Promise<string>
   */
-  async transcribeAudio(audioUrl: string, audioType: string, apikeyOpenAi: string, data: any): Promise<string> {
+  async transcribeAudio(audioUrl: string, audioType: string, apikeyOpenAi: string, data: any,defaultModel,
+    defaultProvider,): Promise<string> {
     try {
-      this.initializeClient(apikeyOpenAi);
+      this.initializeClient(apikeyOpenAi,defaultModel,
+    defaultProvider,);
       const axiosRes = await axios.get(audioUrl, { responseType: "arraybuffer" });
       const base64Audio = Buffer.from(axiosRes.data).toString("base64");
       const message = new HumanMessage({
@@ -647,9 +653,11 @@ ${followupText}`
   * @param {string} imageUrl
   * @returns {Promise<string>}
   */
-  async describeImage(data: any, imageBase64: string, imageType: string, apikeyOpenAi: string): Promise<string> {
+  async describeImage(data: any, imageBase64: string, imageType: string, apikeyOpenAi: string,defaultModel:string,
+    defaultProvider:string): Promise<string> {
     try {
-      this.initializeClient(apikeyOpenAi);
+      this.initializeClient(apikeyOpenAi,defaultModel,
+    defaultProvider,);
       const message = new HumanMessage({
         content: [
           { type: "text", text: "Describe de forma clara y detallada el contenido de esta imagen." },

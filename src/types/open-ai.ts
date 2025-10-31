@@ -28,6 +28,8 @@ export interface proccessInput {
     apikey: string,
     instanceName: string,
     remoteJid: string,
+    defaultModel:string,
+    defaultProvider:string,
 }
 
 export interface inputWorkflow {

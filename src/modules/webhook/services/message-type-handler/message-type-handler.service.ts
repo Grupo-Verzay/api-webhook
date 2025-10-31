@@ -15,7 +15,7 @@ export class MessageTypeHandlerService {
    * @param {any} data - Objeto data recibido en el webhook.
    * @returns {Promise<string>} - El contenido extraído (texto conversacional).
    */
-  async extractContentByType(messageType: string, userApiKey: string, data: WebhookDataDto): Promise<string> {
+  async extractContentByType(messageType: string, userApiKey: string, data: WebhookDataDto,defaultAiModel:string,defaultProvider:string): Promise<string> {
 
     switch (messageType) {
       case 'conversation':
@@ -26,7 +26,7 @@ export class MessageTypeHandlerService {
         const audioType = data?.message?.audioMessage?.mimetype ?? ''
         
         if (audioUrl) {
-          return await this.aiAgentService.transcribeAudio(audioUrl,audioType, userApiKey,data);
+          return await this.aiAgentService.transcribeAudio(audioUrl,audioType, userApiKey,data,defaultAiModel,defaultProvider);
         }
         return '[AUDIO_MESSAGE_NOT_FOUND]';
 
@@ -44,7 +44,7 @@ export class MessageTypeHandlerService {
             const base64Image = imageBuffer.toString('base64');
             const imageType = data.message?.imageMessage?.mimetype ?? 'image/jpeg'
             // Ahora puedes usar la cadena `base64Image` con LangChain
-            return await this.aiAgentService.describeImage(data, base64Image, imageType, userApiKey);
+            return await this.aiAgentService.describeImage(data, base64Image, imageType, userApiKey,defaultAiModel,defaultProvider);
 
 
           } catch (error) {

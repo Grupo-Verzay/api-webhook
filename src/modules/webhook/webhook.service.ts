@@ -74,7 +74,25 @@ export class WebhookService {
     /* user information */
     const userWithRelations = await this.userService.getUserWithPausar(userId) as User & { pausar: Pausar[] };
     /* apikey */
+    /* apikey y configuración de IA por defecto */
+    const aiConfig = await this.userService.getUserDefaultAiConfig(userId);
+    console.log('aiConfig/////',JSON.stringify(aiConfig))
+
+    // Desestructuramos para obtener el proveedor, modelo Y LA API KEY POR DEFECTO
+    const {
+      defaultModel,
+      defaultProvider,
+      defaultApiKey // <-- ¡AÑADIR ESTA LÍNEA!
+    } = aiConfig || {}; // Usamos || {} para evitar un error si aiConfig es null
+
+    console.log('los modelos que han sido recibidos son///', JSON.stringify({
+      defaultProvider,
+      defaultModel,
+      defaultApiKey // <-- ¡AÑADIR ESTA LÍNEA para el log!
+    }))
+
     const apikeyOpenAi = userWithRelations?.apiUrl as string;
+
 
     //Informacion del tipo de mensaje 
     const fromMe = data?.key?.fromMe ?? false;
@@ -117,7 +135,7 @@ export class WebhookService {
     }
 
     /* Validar si la session está activa */
-    const sessionActive = await this.sessionService.isSessionActive(remoteJid, userId,instanceName);
+    const sessionActive = await this.sessionService.isSessionActive(remoteJid, userId, instanceName);
     this.logger.log(`Estado de la session: ${sessionActive}`, 'WebhookService');
 
     if (!sessionActive) {
@@ -126,7 +144,9 @@ export class WebhookService {
     }
 
     /* Extraer la data dependiendo del tipo de mensaje, "text", "media", "audio" */
-    const extractedContent = await this.messageTypeHandlerService.extractContentByType(messageType, apikeyOpenAi, data);
+    const model = defaultModel?.name ?? ''
+    const provider = defaultProvider?.name ?? ''
+    const extractedContent = await this.messageTypeHandlerService.extractContentByType(messageType, apikeyOpenAi, data, provider,model);
     const incomingMessage = extractedContent.toString().trim().toLowerCase();
 
 
@@ -154,6 +174,8 @@ export class WebhookService {
           input: mergedText,
           userId,
           apikeyOpenAi,
+          defaultModel: defaultModel?.name ?? '',
+          defaultProvider: defaultProvider?.name ?? '',
           sessionId: sessionHistoryId,
           server_url,
           apikey,
@@ -414,7 +436,7 @@ export class WebhookService {
 
     // Consulta el estado más reciente, ya que la lógica anterior pudo haberlo cambiado (o no).
     // Si la sesión está inactiva, no debe ejecutar auto-respuestas/workflows.
-    const isSessionActiveNow = await this.sessionService.isSessionActive(remoteJid, userWithRelations.id,instanceName);
+    const isSessionActiveNow = await this.sessionService.isSessionActive(remoteJid, userWithRelations.id, instanceName);
 
     if (isSessionActiveNow) {
       //Flujo de respuestas rapidas SOLO si la sesión está activa

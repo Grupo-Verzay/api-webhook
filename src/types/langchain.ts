@@ -28,8 +28,8 @@ export type Provider = keyof typeof providersConfig;
  * @property apiKey   - La clave de API necesaria para la autenticación con el proveedor.
  */
 export type ModelConfig<P extends Provider> = {
-  provider: P;
-  model: (typeof providersConfig)[P][number];
+  provider: string;
+  model: string;
   apiKey: string;
 };
 

@@ -46,13 +46,13 @@ export class AiAgentService {
   * @param {string} apikeyOpenAi
   */
   private initializeClient(apikeyOpenAi: string,  model:string,provider:string): BaseChatModel {
-    console.log('error? busca los...',provider,model,'fueron los modelos')
-    if (!this.isValidApiKey(apikeyOpenAi)) {
-      this.logger.error('API Key inválida o no proporcionada.', '', 'AiAgentService');
-    }
-    this.openAiClient = new OpenAI({ apiKey: apikeyOpenAi });
+    console.log('error? busca los...',provider,model,apikeyOpenAi,'fueron los modelos',)
+    // if (!this.isValidApiKey(apikeyOpenAi)) {
+    //   this.logger.error('API Key inválida o no proporcionada.', '', 'AiAgentService');
+    // }
+    // this.openAiClient = new OpenAI({ apiKey: apikeyOpenAi });
     //const apiKey = 'AIzaSyAD9lijxH_RCeKTOi0YEuTI4CznvKdP3jA' // solo para pruebas con gemini
-    const apikeyAlternativa = 'AIzaSyD-Llg1QYeLc39gM02FEA_TdxGpsInfclQ'
+    // const apikeyAlternativa = 'AIzaSyD-Llg1QYeLc39gM02FEA_TdxGpsInfclQ'
     //Modelo de ia a utilizar
     this.aiClient = this.llmClientFactory.getClient({ provider: provider,apiKey:apikeyOpenAi, model:model })
     return this.aiClient
@@ -622,8 +622,8 @@ ${followupText}`
   * @param {string} audioUrl
   * @returns {Promise<string>
   */
-  async transcribeAudio(audioUrl: string, audioType: string, apikeyOpenAi: string, data: any,defaultModel,
-    defaultProvider,): Promise<string> {
+  async transcribeAudio(audioUrl: string, audioType: string, apikeyOpenAi: string, data: any,defaultModel:string,
+    defaultProvider:string,): Promise<string> {
     try {
       this.initializeClient(apikeyOpenAi,defaultModel,
     defaultProvider,);

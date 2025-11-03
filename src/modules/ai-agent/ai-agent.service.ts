@@ -45,8 +45,8 @@ export class AiAgentService {
   *
   * @param {string} apikeyOpenAi
   */
-  private initializeClient(apikeyOpenAi: string,  model:string,provider:string): BaseChatModel {
-    console.log('error? busca los...',provider,model,apikeyOpenAi,'fueron los modelos',)
+  private initializeClient(apikeyOpenAi: string, model: string, provider: string): BaseChatModel {
+    console.log('error? busca los...', provider, model, apikeyOpenAi, 'fueron los modelos',)
     // if (!this.isValidApiKey(apikeyOpenAi)) {
     //   this.logger.error('API Key inválida o no proporcionada.', '', 'AiAgentService');
     // }
@@ -54,7 +54,7 @@ export class AiAgentService {
     //const apiKey = 'AIzaSyAD9lijxH_RCeKTOi0YEuTI4CznvKdP3jA' // solo para pruebas con gemini
     // const apikeyAlternativa = 'AIzaSyD-Llg1QYeLc39gM02FEA_TdxGpsInfclQ'
     //Modelo de ia a utilizar
-    this.aiClient = this.llmClientFactory.getClient({ provider: provider,apiKey:apikeyOpenAi, model:model })
+    this.aiClient = this.llmClientFactory.getClient({ provider: provider, apiKey: apikeyOpenAi, model: model })
     return this.aiClient
   };
 
@@ -102,7 +102,7 @@ export class AiAgentService {
       content: [{
         type: 'text',
         text:
-`${principalSystemPrompt}
+          `${principalSystemPrompt}
 
 REGLA CRÍTICA:
 - Si se ejecutó una tool, EL AGENTE PRINCIPAL es quien da la respuesta final al usuario.
@@ -228,7 +228,7 @@ ${followupText}`
   }: proccessInput): Promise<string> {
     let promptAI = ''; // Declarar aquí para que esté disponible en el catch
     try {
-      this.initializeClient(apikeyOpenAi,defaultModel,defaultProvider);
+      this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
 
       const systemPrompt = await this.promptService.getPromptUserId(userId);
       const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
@@ -538,7 +538,7 @@ ${followupText}`
 
         // Si es INICIO_BIENVENIDA y tenemos literal → lo usa el Agente Principal
         if (currentWorkflow.name.trim().toUpperCase() === this.initWorkflowName.toUpperCase()
-            && successResponseLiteral) {
+          && successResponseLiteral) {
           return await this.respondAsMainAgent({
             userId,
             sessionId,
@@ -622,20 +622,33 @@ ${followupText}`
   * @param {string} audioUrl
   * @returns {Promise<string>
   */
-  async transcribeAudio(audioUrl: string, audioType: string, apikeyOpenAi: string, data: any,defaultModel:string,
-    defaultProvider:string,): Promise<string> {
+  async transcribeAudio(audioUrl: string, audioType: string, apikeyOpenAi: string, data: any, defaultModel: string,
+    defaultProvider: string,): Promise<string> {
     try {
-      this.initializeClient(apikeyOpenAi,defaultModel,
-    defaultProvider,);
+      this.initializeClient(apikeyOpenAi, defaultModel,
+        defaultProvider,);
       const axiosRes = await axios.get(audioUrl, { responseType: "arraybuffer" });
       const base64Audio = Buffer.from(axiosRes.data).toString("base64");
+
       const message = new HumanMessage({
         content: [
           { type: "text", text: "Transcribe de forma clara y detallada este audio." },
           {
-            "type": "input_audio",
+            "type": "media",
             "data": base64Audio,
             "mimeType": `${audioType}`
+          },
+          {
+            type: "text", // LangChain usa "text" en este contexto para la lista de content blocks
+            text: "", // El texto es vacío si solo se incluye data.
+            additional_kwargs: {
+              // Esta es la parte crucial para el contenido binario incrustado
+              // LangChain mapea esto internamente a 'inline_data' (Gemini) o 'image_url' (OpenAI)
+              inline_data: {
+                data: base64Audio,
+                mime_type: `${audioType}`,
+              }
+            }
           },
         ],
       })
@@ -653,11 +666,11 @@ ${followupText}`
   * @param {string} imageUrl
   * @returns {Promise<string>}
   */
-  async describeImage(data: any, imageBase64: string, imageType: string, apikeyOpenAi: string,defaultModel:string,
-    defaultProvider:string): Promise<string> {
+  async describeImage(data: any, imageBase64: string, imageType: string, apikeyOpenAi: string, defaultModel: string,
+    defaultProvider: string): Promise<string> {
     try {
-      this.initializeClient(apikeyOpenAi,defaultModel,
-    defaultProvider,);
+      this.initializeClient(apikeyOpenAi, defaultModel,
+        defaultProvider,);
       const message = new HumanMessage({
         content: [
           { type: "text", text: "Describe de forma clara y detallada el contenido de esta imagen." },

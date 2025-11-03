@@ -632,7 +632,7 @@ ${followupText}`
           defaultProvider,);
         const transcription = await this.aiClient.audio.transcriptions({
           file: axiosRes,
-          model: 'gpt-4o-mini-transcribe',
+          model: 'whisper-1',
           response_format: 'text',
         })
         return transcription.text

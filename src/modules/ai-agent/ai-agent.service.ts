@@ -628,13 +628,13 @@ ${followupText}`
   */
   async transcribeAudio(audioUrl: string, audioType: string, apikeyOpenAi: string, data: any, defaultModel: string,
     defaultProvider: string,): Promise<string> {
-    const axiosRes = await axios.get(audioUrl, { responseType: "arraybuffer" });
-    const audioBuffer = Buffer.from(axiosRes.data);
-    const base64Audio = Buffer.from(axiosRes.data).toString("base64");
-    // 2️⃣ Crear un archivo temporal con extensión válida
-    const tempPath = path.join(process.cwd(), `temp_audio.ogg`);
-    fs.writeFileSync(tempPath, audioBuffer);
-    try {
+      try {
+      const axiosRes = await axios.get(audioUrl, { responseType: "arraybuffer" });
+      const audioBuffer = Buffer.from(axiosRes.data);
+      const base64Audio = Buffer.from(axiosRes.data).toString("base64");
+      // 2️⃣ Crear un archivo temporal con extensión válida
+      const tempPath = path.join(process.cwd(), `temp_audio.ogg`);
+      fs.writeFileSync(tempPath, audioBuffer);
 
       if (defaultProvider == 'openai') {
         this.initializeClient(apikeyOpenAi, 'whisper-1',

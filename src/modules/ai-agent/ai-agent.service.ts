@@ -633,20 +633,20 @@ ${followupText}`
       const axiosRes = await axios.get(audioUrl, { responseType: "arraybuffer" });
       const audioBuffer = Buffer.from(axiosRes.data);
       const base64Audio = Buffer.from(axiosRes.data).toString("base64");
+      const audioStream = Readable.from(audioBuffer);
       // 2️⃣ Crear un archivo temporal con extensión válida
-      const tempPath =`${process.cwd()}/temp_audio.ogg`;
-      fs.writeFileSync(tempPath, audioBuffer);
-
+      (audioStream as any).path = "audio.ogg";
+      
       if (defaultProvider == 'openai') {
         this.initializeClient(apikeyOpenAi, 'whisper-1',
           defaultProvider);
         const transcription = await this.aiClient.audio.transcriptions.create({
-          file: fs.createReadStream(tempPath),
+          file: audioStream,
           model: 'whisper-1',
           response_format: 'text',
         })
         // 5️⃣ Limpiar el archivo temporal
-        fs.unlinkSync(tempPath);
+        
         return typeof transcription === "string"
       ? transcription
       : transcription.text;

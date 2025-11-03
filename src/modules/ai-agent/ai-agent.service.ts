@@ -1,10 +1,12 @@
 import axios from 'axios';
 import OpenAI from 'openai';
 
-import { PassThrough } from "stream";
+
+import fs from "fs";
+import path from "path";
+import { Readable } from "stream";
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/core/logger/logger.service';
-import { Readable } from "stream";
 import { PromptService } from '../prompt/prompt.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
@@ -626,19 +628,24 @@ ${followupText}`
   */
   async transcribeAudio(audioUrl: string, audioType: string, apikeyOpenAi: string, data: any, defaultModel: string,
     defaultProvider: string,): Promise<string> {
-    const axiosRes = await axios.get(audioUrl, {responseType:"arraybuffer"});
+    const axiosRes = await axios.get(audioUrl, { responseType: "arraybuffer" });
     const audioBuffer = Buffer.from(axiosRes.data);
-    const audioStream = Readable.from(audioBuffer);
     const base64Audio = Buffer.from(axiosRes.data).toString("base64");
+    // 2️⃣ Crear un archivo temporal con extensión válida
+    const tempPath = path.join(process.cwd(), `temp_audio.ogg`);
+    fs.writeFileSync(tempPath, audioBuffer);
     try {
+
       if (defaultProvider == 'openai') {
         this.initializeClient(apikeyOpenAi, 'whisper-1',
           defaultProvider);
         const transcription = await this.aiClient.audio.transcriptions.create({
-          file: audioStream,
+          file: fs.createReadStream(tempPath),
           model: 'whisper-1',
           response_format: 'text',
         })
+        // 5️⃣ Limpiar el archivo temporal
+        fs.unlinkSync(tempPath);
         return transcription
       }
       this.initializeClient(apikeyOpenAi, defaultModel,

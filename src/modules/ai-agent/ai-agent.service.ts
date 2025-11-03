@@ -676,7 +676,7 @@ ${followupText}`
       return state.content.toString()
     } catch (error) {
       this.logger.error('Error transcribiendo audio.', error?.response?.data || error.message, 'AiAgentService');
-      this.logger.error('Error transcribiendo audio.', error?.response?.data || error.message,JSON.stringify(error, null, 2));
+      this.logger.error('Error transcribiendo audio.',error.message,JSON.stringify(error, null, 2));
 
 
       return '[ERROR_TRANSCRIBING_AUDIO]';

@@ -4,6 +4,7 @@ import OpenAI from 'openai';
 
 import fs from "fs";
 import path from "path";
+
 import { Readable } from "stream";
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/core/logger/logger.service';
@@ -633,7 +634,7 @@ ${followupText}`
       const audioBuffer = Buffer.from(axiosRes.data);
       const base64Audio = Buffer.from(axiosRes.data).toString("base64");
       // 2️⃣ Crear un archivo temporal con extensión válida
-      const tempPath = path.join(process.cwd(), `temp_audio.ogg`);
+      const tempPath =`${process.cwd()}/temp_audio.ogg`;
       fs.writeFileSync(tempPath, audioBuffer);
 
       if (defaultProvider == 'openai') {

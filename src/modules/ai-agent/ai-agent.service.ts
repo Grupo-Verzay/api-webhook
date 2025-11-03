@@ -624,22 +624,21 @@ ${followupText}`
   */
   async transcribeAudio(audioUrl: string, audioType: string, apikeyOpenAi: string, data: any, defaultModel: string,
     defaultProvider: string,): Promise<string> {
-    const axiosRes = await axios.get(audioUrl, { responseType: "stream" });
+    const axiosRes = await axios.get(audioUrl, { responseType: "arraybuffer" });
     const base64Audio = Buffer.from(axiosRes.data).toString("base64");
     try {
       if (defaultProvider == 'openai') {
         this.initializeClient(apikeyOpenAi, 'whisper-1',
           defaultProvider,);
         const transcription = await this.aiClient.audio.transcriptions({
-          file: axiosRes.data,
+          file: base64Audio,
           model: 'whisper-1',
           response_format: 'text',
         })
-        return transcription.text
+        return transcription
       }
       this.initializeClient(apikeyOpenAi, defaultModel,
         defaultProvider,);
-        console.log('no deberia ejecutarse ps')
 
 
 

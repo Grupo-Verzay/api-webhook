@@ -633,7 +633,7 @@ ${followupText}`
         content: [
           { type: "text", text: "Transcribe de forma clara y detallada este audio." },
           {
-            "type": "audio",
+            "type": "input_audio",
             "data": base64Audio,
             "mimeType": `${audioType}`
           },

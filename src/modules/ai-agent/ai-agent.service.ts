@@ -631,20 +631,17 @@ ${followupText}`
         defaultProvider == 'openai' ?
           "stream" : "arraybuffer"
     });
-    const base64Audio = Buffer.from(axiosRes.data).toString("base64");
-    const stream = Readable.from(Buffer.from(axiosRes.data));
-    const pass = new PassThrough();
-    axiosRes.data.pipe(pass)
+    const base64Audio = Buffer.from(axiosRes.data).toString("base64"); 
     try {
       if (defaultProvider == 'openai') {
         this.initializeClient(apikeyOpenAi, 'whisper-1',
           defaultProvider);          
         const transcription = await this.aiClient.audio.transcriptions.create({
-          file: pass,
+          file: axiosRes.data,
           model: 'whisper-1',
           response_format: 'text',
         })
-        return transcription.text
+        return transcription
       }
       this.initializeClient(apikeyOpenAi, defaultModel,
         defaultProvider,);

@@ -631,7 +631,7 @@ ${followupText}`
         this.initializeClient(apikeyOpenAi, 'whisper-1',
           defaultProvider,);
         const transcription = await this.aiClient.audio.transcriptions({
-          file: axiosRes,
+          file: axiosRes.data,
           model: 'whisper-1',
           response_format: 'text',
         })

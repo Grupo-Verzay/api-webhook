@@ -632,13 +632,14 @@ ${followupText}`
           defaultProvider,);
         const transcription = await this.aiClient.audio.transcriptions({
           file: axiosRes,
-          model: 'whisper-1',
+          model: 'gpt-4o-mini-transcribe',
           response_format: 'text',
         })
         return transcription.text
       }
       this.initializeClient(apikeyOpenAi, defaultModel,
         defaultProvider,);
+        console.log('no deberia ejecutarse ps')
 
 
 

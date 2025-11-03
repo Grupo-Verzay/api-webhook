@@ -633,12 +633,17 @@ ${followupText}`
       const message = new HumanMessage({
         content: [
           { type: "text", text: "Transcribe de forma clara y detallada este audio." },
+          // {
+          //   "type": "media",
+          //   "data": base64Audio,
+          //   "mimeType": `${audioType}`
+          // },
           {
-            "type": "media",
-            "data": base64Audio,
-            "mimeType": `${audioType}`
+            type: "input_audio",
+            input_audio: {
+              data: base64Audio, format: `${audioType}`
+            }
           },
-          { type: "input_audio", input_audio: { data: base64Audio, format: `${audioType}` } },
         ],
       })
       const state = await this.aiClient.invoke([message])

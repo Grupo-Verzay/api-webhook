@@ -630,7 +630,7 @@ ${followupText}`
       if (defaultProvider == 'openai') {
         this.initializeClient(apikeyOpenAi, 'whisper-1',
           defaultProvider,);
-        const transcription = await this.aiClient.audio.transcriptions({
+        const transcription = await this.aiClient.audio.transcriptions.create({
           file: base64Audio,
           model: 'whisper-1',
           response_format: 'text',

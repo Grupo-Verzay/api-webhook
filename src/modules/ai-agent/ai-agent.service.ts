@@ -1,5 +1,7 @@
 import axios from 'axios';
 import OpenAI from 'openai';
+
+import { PassThrough } from "stream";
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/core/logger/logger.service';
 import { Readable } from "stream";
@@ -631,16 +633,18 @@ ${followupText}`
     });
     const base64Audio = Buffer.from(axiosRes.data).toString("base64");
     const stream = Readable.from(Buffer.from(axiosRes.data));
+    const pass = new PassThrough();
+    axiosRes.data.pipe(pass)
     try {
       if (defaultProvider == 'openai') {
         this.initializeClient(apikeyOpenAi, 'whisper-1',
           defaultProvider);          
         const transcription = await this.aiClient.audio.transcriptions.create({
-          file: stream,
+          file: pass,
           model: 'whisper-1',
           response_format: 'text',
         })
-        return transcription
+        return transcription.text
       }
       this.initializeClient(apikeyOpenAi, defaultModel,
         defaultProvider,);

@@ -36,7 +36,7 @@ export class NotificacionToolService {
         server_url + '/message/sendText/' + instanceName,
         apikey,
         notificacionNumber,
-        `✅ *Tienes Nueva Solicitud:*\n\n👤 *Nombre:* ${args.nombre}\n📝 *Descripción:*\n${args.detalles}\n\n📱 *WhatsApp del usuario:*\n👉 +${celular}`
+        `✅ *Tienes Nueva Solicitud:*\n\n👤 *Nombre:* ${args.nombre}\n📝 *Descripción:*\n${args.detalles}\n\n📱 *WhatsApp del usuario:*\n\n👉 +${celular}`
       );
       return `✅ Notificación enviada para ${args.nombre} con detalles: ${args.detalles}`;
     } catch (error) {

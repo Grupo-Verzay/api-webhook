@@ -1,7 +1,6 @@
 export const extraRules = `
-*Comportamiento:* Después de ejecutar un flujo, tu única respuesta es la que se te indique en *Regla/parámetro. 
-Solo si no hay un orden clara responde según el caso y haz una **pregunta contextual* 
-para guiar al usuario al siguiente paso lógico de la conversión. No añadas texto innecesario.
+* **Comportamiento:** Tras ejecutar un flujo, responde **únicamente** lo indicado en **Regla/parámetro**.
+ Si **no hay una orden clara**, formula una **pregunta contextual** para guiar al usuario al siguiente paso lógico de la conversación. **No añadas texto innecesario.** 
 `;
 
 export const ERROR_OPENAI_EMPTY_RESPONSE = `¡Ups! Algo salió mal 😅

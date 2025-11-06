@@ -14,7 +14,7 @@ Parece que hubo un problema al procesar tu mensaje. ¿Podrías intentarlo de nue
 export const extraRulesV2 = ``;
 
 
-export const systemPromptWorkflow = ''
+export const systemPromptWorkflow = (input, formattedList) =>''
 export const systemPromptWorkflowE = (input, formattedList) => {
 
   return `

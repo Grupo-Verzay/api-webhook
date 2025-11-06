@@ -365,16 +365,15 @@ ${followupText}`
             const result = await this.notificacionTool.handleNotificacionTool(
               args, userId, server_url, apikey, instanceName, remoteJid
             );
-            return "Notificación a asesor enviada exitosamente."
-
+            // return "Notificación a asesor enviada exitosamente."
             // const toolExecutionResult = "Notificación a asesor enviada exitosamente.";
-            // return await this.respondAsMainAgent({
-            //   userId,
-            //   sessionId,
-            //   userPrompt: input,
-            //   principalSystemPrompt: promptAI,
-            //   followupText: toolExecutionResult
-            // });
+            return await this.respondAsMainAgent({
+              userId,
+              sessionId,
+              userPrompt: input,
+              principalSystemPrompt: promptAI,
+              followupText: result
+            });
           }
 
           case 'execute_workflow': {

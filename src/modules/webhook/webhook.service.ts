@@ -77,7 +77,6 @@ export class WebhookService {
     /* apikey */
     /* apikey y configuración de IA por defecto */
     const aiConfig = await this.userService.getUserDefaultAiConfig(userId);
-    console.log('aiConfig/////', JSON.stringify(aiConfig))
 
     // Desestructuramos para obtener el proveedor, modelo Y LA API KEY POR DEFECTO
     const {

@@ -91,8 +91,6 @@ export class WebhookService {
       defaultApiKey // <-- ¡AÑADIR ESTA LÍNEA para el log!
     }))
 
-    const apikeyOpenAi = userWithRelations?.apiUrl as string;
-
 
     //Informacion del tipo de mensaje 
     const fromMe = data?.key?.fromMe ?? false;
@@ -146,7 +144,7 @@ export class WebhookService {
     /* Extraer la data dependiendo del tipo de mensaje, "text", "media", "audio" */
     const model = defaultModel?.name || 'o4-mini'
     const provider = defaultProvider?.name || 'openai'
-    const extractedContent = await this.messageTypeHandlerService.extractContentByType(messageType, defaultApiKey ?? apikeyOpenAi, data, model, provider);
+    const extractedContent = await this.messageTypeHandlerService.extractContentByType(messageType, defaultApiKey ?? '', data, model, provider);
     const incomingMessage = extractedContent.toString().trim().toLowerCase();
 
 
@@ -173,7 +171,7 @@ export class WebhookService {
         const dataProccessInput = {
           input: mergedText,
           userId,
-          apikeyOpenAi: defaultApiKey ?? apikeyOpenAi,
+          apikeyOpenAi: defaultApiKey ?? '',
           defaultModel: defaultModel?.name ?? 'o4-mini',
           defaultProvider: defaultProvider?.name ?? 'openai',
           sessionId: sessionHistoryId,

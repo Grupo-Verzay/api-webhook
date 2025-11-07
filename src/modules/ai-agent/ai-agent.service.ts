@@ -78,39 +78,56 @@ export class AiAgentService {
   };
 
   /**
-   * 🔧 Hotfix: algunos modelos devuelven JSON {"tool": "..."} en vez de tool_calls.
-   * Si detectamos eso, normalizamos y devolvemos un descriptor de tool "notificacion".
+   * 🔧 Hotfix robusto: algunos modelos devuelven JSON {"tool": "..."} en texto.
+   * - Limpia fences (```json ... ```), tolera texto alrededor y sinónimos.
    */
   private tryParseToolJson(content: string): { name: 'notificacion'; args: any } | null {
     if (!content) return null;
     try {
-      // limpia cerco de backticks si viniera en bloque
-      const trimmed = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
-      const obj = JSON.parse(trimmed);
+      const cleaned = content
+        .replace(/```(?:json)?/gi, '')
+        .replace(/```/g, '')
+        .trim();
 
-      const raw =
-        (obj.tool ?? obj.Tool ?? obj.herramienta ?? obj.name ?? obj.nombre_tool ?? '')
-          .toString()
-          .trim()
-          .toLowerCase();
+      const candidates: string[] = [];
+      if (/^\s*{/.test(cleaned)) candidates.push(cleaned);
 
-      const isNotificacion =
-        raw === 'notificacion' ||
-        raw === 'notificación' ||
-        raw === 'notificacion asesor' ||
-        raw === 'notificación asesor' ||
-        raw === 'notificar' ||
-        raw === 'notificar asesor';
+      const first = cleaned.indexOf('{');
+      const last = cleaned.lastIndexOf('}');
+      if (first !== -1 && last > first) {
+        candidates.push(cleaned.slice(first, last + 1));
+      }
 
-      if (!isNotificacion) return null;
+      for (const c of candidates) {
+        try {
+          const obj = JSON.parse(c);
 
-      const args = {
-        nombre: obj.nombre ?? obj.name ?? obj.cliente ?? '',
-        detalle_notificacion:
-          obj.detalle_notificacion ?? obj.detalles ?? obj.motivo ?? obj.detalle ?? ''
-      };
+          const raw = (
+            obj.tool ??
+            obj.Tool ??
+            obj.herramienta ??
+            obj.action ??
+            obj.accion ??
+            obj.name ??
+            obj.nombre_tool ??
+            ''
+          ).toString().toLowerCase().trim();
 
-      return { name: 'notificacion', args };
+          const isNotificacion = /notificaci[oó]n(\s+asesor)?|notificar(\s+asesor)?/.test(raw);
+          if (!isNotificacion) continue;
+
+          const args = {
+            nombre: obj.nombre ?? obj.name ?? obj.cliente ?? '',
+            detalle_notificacion:
+              obj.detalle_notificacion ?? obj.detalles ?? obj.motivo ?? obj.detalle ?? obj.descripcion ?? ''
+          };
+
+          return { name: 'notificacion', args };
+        } catch {
+          // intenta siguiente candidato
+        }
+      }
+      return null;
     } catch {
       return null;
     }
@@ -121,7 +138,7 @@ export class AiAgentService {
   };
 
   /**
-   * 🔸 NUEVO: SIEMPRE FINALIZA COMO AGENTE PRINCIPAL
+   * 🔸 SIEMPRE FINALIZA COMO AGENTE PRINCIPAL
    */
   private async respondAsMainAgent(params: {
     userId: string;
@@ -226,7 +243,7 @@ ${followupText}`
 
       return { content }
     } catch (error) {
-      logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message);
+      logger.error('Error procesando entrada con OpenAI.', (error as any)?.response?.data || (error as any).message);
       return { content: null }
     }
   };
@@ -344,7 +361,7 @@ ${followupText}`
         let args;
         try {
           args = toolCall.args;
-        } catch (e) {
+        } catch (e: any) {
           logger.error('Error al parsear los argumentos del toolCall', e.message);
           return await this.respondAsMainAgent({
             userId,
@@ -423,8 +440,14 @@ ${followupText}`
             followupText: toolExecutionResult,
           });
         }
-        // Si no era JSON de tool, se devuelve el contenido directo como antes
-        return direct;
+        // ⛔ Ya no devolvemos JSON crudo; siempre pasamos por el agente principal
+        return await this.respondAsMainAgent({
+          userId,
+          sessionId,
+          userPrompt: input,
+          principalSystemPrompt: promptAI,
+          followupText: direct
+        });
       }
 
       return await this.respondAsMainAgent({
@@ -437,7 +460,7 @@ ${followupText}`
 
     } catch (error) {
       const logger = this.scopedLogger({ userId, instanceName, remoteJid });
-      logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message);
+      logger.error('Error procesando entrada con OpenAI.', (error as any)?.response?.data || (error as any).message);
       const systemPrompt = await this.promptService.getPromptUserId(userId).catch(() => '');
       const workflows = await this.workflowService.getWorkflow(userId).catch(() => []);
       const formattedList = Array.isArray(workflows) ? workflows.map((flow, index) => {
@@ -517,7 +540,7 @@ ${followupText}`
           followupText: 'No se detectó ningún flujo compatible con tu solicitud.'
         });
       }
-    } catch (e) {
+    } catch (e: any) {
       logger.error('Error al parsear el contenido JSON de OpenAI', e.message);
       return await this.respondAsMainAgent({
         userId,
@@ -682,7 +705,7 @@ ${followupText}`
       })
       const state = await this.aiClient.invoke([message])
       return state.content.toString()
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Error transcribiendo audio.', error?.response?.data || error.message);
       logger.error('Error transcribiendo audio.', error?.message || JSON.stringify(error, null, 2));
       return '[ERROR_TRANSCRIBING_AUDIO]';
@@ -690,8 +713,8 @@ ${followupText}`
   };
 
   /**
-  * Describe imagen
-  */
+   * Describe imagen
+   */
   async describeImage(
     data: any,
     imageBase64: string,
@@ -714,7 +737,7 @@ ${followupText}`
       })
       const response = await this.aiClient.invoke([message])
       return response.content.toString() ?? '[ERROR_DESCRIBING_IMAGE]'
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Error describiendo imagen.', error?.response?.data || error.message);
       return '[ERROR_DESCRIBING_IMAGE]';
     }

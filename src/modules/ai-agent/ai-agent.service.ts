@@ -97,6 +97,25 @@ export class AiAgentService {
     followupText: string;
   }): Promise<string> {
     const { userId, sessionId, userPrompt, principalSystemPrompt, followupText } = params;
+    const logger = this.scopedLogger({ userId });
+    logger.log(JSON.stringify({
+
+      'promptSistema': `${principalSystemPrompt}
+
+REGLA CRÍTICA:
+- Si se ejecutó una tool, EL AGENTE PRINCIPAL es quien da la respuesta final al usuario.
+- Responde de forma natural, útil y **sin revelar detalles internos** (IDs, nombres de tools).
+- Usa el resultado siguiente para construir la respuesta final al usuario.
+- Nunca entregues un JSON, un objeto o cualquier dato extraño, todo debe ser lenguaje natural cualquier cosa 
+parecida solo eliminala.
+
+
+[RESULTADO_TOOL]
+${followupText}`,
+
+
+'UserPrompt':userPrompt
+    }))
 
     const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
 

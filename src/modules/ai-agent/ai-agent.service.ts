@@ -417,7 +417,7 @@ ${followupText}`
         }
       }
 
-      // 🔧 Hotfix: si el modelo devolvió JSON en texto con {"tool": "..."} en vez de tool_call
+      // 🔧 Hotfix: si el modelo devolvió JSON en texto con {"tool": "..."} en vez de tool_calls
 
       return await this.respondAsMainAgent({
         userId,

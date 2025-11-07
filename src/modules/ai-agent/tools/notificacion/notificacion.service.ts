@@ -38,7 +38,7 @@ export class NotificacionToolService {
         notificacionNumber,
         `✅ *Tienes Nueva Solicitud:*\n\n👤 *Nombre:* ${args.nombre}\n📝 *Descripción:*\n${args.detalles}\n\n📱 *WhatsApp del usuario:*\n\n👉 +${celular}`
       );
-      return `✅ Notificación enviada para ${args.nombre} con detalles: ${args.detalles}`;
+      return `ok`;
     } catch (error) {
       this.logger.error('Error enviando notificación', error?.message, 'NotificacionToolService');
       return '[ERROR_SENDING_NOTIFICATION]';

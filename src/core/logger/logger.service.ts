@@ -5,7 +5,7 @@ import { PrismaService } from 'src/database/prisma.service'; // Prisma para guar
 export class LoggerService extends Logger {
   constructor(
     private readonly prisma: PrismaService,
-    context: string = 'Application',
+    context: string = 'APP',
   ) {
     super(context);
   }

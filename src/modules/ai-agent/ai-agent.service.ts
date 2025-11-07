@@ -420,26 +420,6 @@ ${followupText}`
       // 🔧 Hotfix: si el modelo devolvió JSON en texto con {"tool": "..."} en vez de tool_calls
       const direct = choice?.content?.toString()?.trim();
       if (direct) {
-        const maybeTool = this.tryParseToolJson(direct);
-        if (maybeTool?.name === 'notificacion') {
-          logger.warn('Respuesta JSON de tool detectada. Ejecutando tool "notificacion" a partir del JSON.');
-          await this.notificacionTool.handleNotificacionTool(
-            maybeTool.args,
-            userId,
-            server_url,
-            apikey,
-            instanceName,
-            remoteJid
-          );
-          const toolExecutionResult = 'Notificación a asesor enviada exitosamente.';
-          return await this.respondAsMainAgent({
-            userId,
-            sessionId,
-            userPrompt: input,
-            principalSystemPrompt: promptAI,
-            followupText: toolExecutionResult,
-          });
-        }
         // ⛔ Ya no devolvemos JSON crudo; siempre pasamos por el agente principal
         return await this.respondAsMainAgent({
           userId,

@@ -417,18 +417,7 @@ ${followupText}`
         }
       }
 
-      // 🔧 Hotfix: si el modelo devolvió JSON en texto con {"tool": "..."} en vez de tool_calls
-      const direct = choice?.content?.toString()?.trim();
-      if (direct) {
-        // ⛔ Ya no devolvemos JSON crudo; siempre pasamos por el agente principal
-        return await this.respondAsMainAgent({
-          userId,
-          sessionId,
-          userPrompt: input,
-          principalSystemPrompt: promptAI,
-          followupText: direct
-        });
-      }
+      // 🔧 Hotfix: si el modelo devolvió JSON en texto con {"tool": "..."} en vez de tool_call
 
       return await this.respondAsMainAgent({
         userId,

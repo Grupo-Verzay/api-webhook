@@ -1,7 +1,6 @@
 import axios from 'axios';
 import OpenAI from 'openai';
 
-
 import fs from "fs";
 import path from "path";
 
@@ -45,8 +44,20 @@ export class AiAgentService {
     private readonly promptCompressor: PromptCompressorService,
     private readonly llmClientFactory: LlmClientFactory,
     private readonly sessionService: SessionService
-
   ) { }
+
+  /**
+   * Logger con contexto fijo:
+   * [UID=...][I=...][R=...]
+   */
+  private scopedLogger(ctx: { userId?: string; instanceName?: string; remoteJid?: string }) {
+    const tag = `[UID=${ctx.userId ?? '-'}][I=${ctx.instanceName ?? '-'}][R=${ctx.remoteJid ?? '-'}]`;
+    return {
+      log: (msg: string, context = 'AiAgentService') => this.logger.log(`${tag} ${msg}`, context),
+      warn: (msg: string, context = 'AiAgentService') => this.logger.warn(`${tag} ${msg}`, context),
+      error: (msg: string, err?: any, context = 'AiAgentService') => this.logger.error(`${tag} ${msg}`, err, context),
+    };
+  }
 
   /**
   * Inicializa el cliente de OpenAI con una API Key proporcionada.
@@ -55,52 +66,30 @@ export class AiAgentService {
   */
   private initializeClient(apikeyOpenAi: string, model: string, provider: string): BaseChatModel {
     console.log('error? busca los...', provider, model, apikeyOpenAi, 'fueron los modelos',)
-    // if (!this.isValidApiKey(apikeyOpenAi)) {
-    //   this.logger.error('API Key inválida o no proporcionada.', '', 'AiAgentService');
-    // }
-    // this.openAiClient = new OpenAI({ apiKey: apikeyOpenAi });
-    //const apiKey = 'AIzaSyAD9lijxH_RCeKTOi0YEuTI4CznvKdP3jA' // solo para pruebas con gemini
-    // const apikeyAlternativa = 'AIzaSyD-Llg1QYeLc39gM02FEA_TdxGpsInfclQ'
-    //Modelo de ia a utilizar
     this.aiClient = this.llmClientFactory.getClient({ provider: provider, apiKey: apikeyOpenAi, model: model })
     return this.aiClient
   };
 
   /**
   * Valida si una API Key parece válida.
-  *
-  * @param {string} apikeyOpenAi
-  * @returns {boolean}
   */
   private isValidApiKey(apikeyOpenAi: string): boolean {
     return typeof apikeyOpenAi === 'string' && apikeyOpenAi.startsWith('sk-') && apikeyOpenAi.length >= 40;
   };
 
-  /**
-  * Procesa la entrada de texto del usuario.
-  *
-  * @param {string} input
-  * @param {string} userId
-  * @param {string} apikeyOpenAi
-  * @param {string} sessionId - ID de la sesión (ej: instance_name + remotejid)
-  * @returns {Promise<string>}
-  */
-
   private async getWeather(location: string): Promise<string> {
-    // Aquí podrías hacer una llamada real a una API de clima
-    return `Soleado y 25°C en ${location}`; // Respuesta simulada
+    return `Soleado y 25°C en ${location}`;
   };
 
   /**
    * 🔸 NUEVO: SIEMPRE FINALIZA COMO AGENTE PRINCIPAL
-   * Dado un resultado de tool o de sistema, el agente principal responde al usuario.
    */
   private async respondAsMainAgent(params: {
     userId: string;
     sessionId: string;
-    userPrompt: string;        // Lo que el usuario dijo originalmente (o contexto relevante)
-    principalSystemPrompt: string; // promptAI ya armado (extraRules + flujos + systemPrompt)
-    followupText: string;      // Resultado crudo de tool / texto a “traducir” para el usuario
+    userPrompt: string;
+    principalSystemPrompt: string;
+    followupText: string;
   }): Promise<string> {
     const { userId, sessionId, userPrompt, principalSystemPrompt, followupText } = params;
 
@@ -144,19 +133,14 @@ ${followupText}`
   }
 
   /**
-  * Se procesa la tool con openAI - segundo agente
-  *
-  * @private
-  * @param input - msg
-  * @param sessionId - Nombre de la instancia en Evolution API
-  * @param userId - Identificador del usuario
-  * @returns {Promise<string>}
+  * Detección de tools (segundo agente)
   */
   private async openAIToolDetection({
     input,
     sessionId,
     userId
   }: openAIToolDetection): Promise<OpenAIDetectionResult> {
+    const logger = this.scopedLogger({ userId });
     try {
       const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
       const workflows = await this.workflowService.getWorkflow(userId);
@@ -169,8 +153,8 @@ ${followupText}`
    }`
       }).join(',\n');
 
-      this.logger.log(`Lista de flujos: ${JSON.stringify(formattedList)}`);
-      this.logger.log(`Lista de flujos: ${JSON.stringify(workflows)}`);
+      logger.log(`Lista de flujos (texto): ${JSON.stringify(formattedList)}`);
+      logger.log(`Lista de flujos (obj): ${JSON.stringify(workflows)}`);
 
       const customWorkflowPrompt = systemPromptWorkflow(input, JSON.stringify(formattedList));
 
@@ -197,30 +181,19 @@ ${followupText}`
       await this.aiCredits.trackTokens(userId, tokensUsedR);
 
       if (!choice || !content) {
-        this.logger.warn('Content inválido o vacío');
+        logger.warn('Content inválido o vacío');
         return { content: null };
       }
 
       return { content }
     } catch (error) {
-      this.logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
+      logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message);
       return { content: null }
     }
   };
 
   /**
-  * Se procesa el texto 
-  *
-  * @private
-  * @param input - msg
-  * @param userId - User ID
-  * @param apikeyOpenAi - API Key Open AI
-  * @param sessionId - Nombre de la instancia en Evolution API
-  * @param server_url - URL base del servidor Evolution
-  * @param apikey - API Key para autorización con Evolution
-  * @param instanceName - Nombre de la instancia en Evolution API
-  * @param remoteJid - Número del cliente en formato WhatsApp
-  * @returns {Promise<string>}
+  * Proceso principal de entrada
   */
   async processInput({
     input,
@@ -234,7 +207,8 @@ ${followupText}`
     instanceName,
     remoteJid
   }: proccessInput): Promise<string> {
-    let promptAI = ''; // Declarar aquí para que esté disponible en el catch
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+    let promptAI = '';
     try {
       this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
 
@@ -251,10 +225,9 @@ ${followupText}`
    }`;
       }).join(',\n');
 
-      // Extrae respuesta literal post-flujo (si existe) desde el system prompt
       const match = systemPrompt.match(/Comportamiento: Después de ejecutar el flujo, tu única respuesta es la que se te indique en Regla\/parámetro\.\n\n\*\s*([^\n]+)/i);
       const workflowSuccessResponse = match ? match[1].trim() : "¡Hola! ¿En qué puedo ayudarte?";
-      this.logger.log(`Respuesta literal de workflow extraída: ${workflowSuccessResponse}`);
+      logger.log(`Respuesta literal de workflow extraída: ${workflowSuccessResponse}`);
 
       const hasInicioBienvenida = workflows?.some(
         (w: any) =>
@@ -262,11 +235,9 @@ ${followupText}`
           w.name.trim().toLowerCase() === this.initWorkflowName.toLowerCase()
       );
 
-      // 🔹 prompt del AGENTE PRINCIPAL (se reutiliza para toda respuesta final)
       const workflowTrigger = `lista de flujos disponibles ${formattedList}`
       promptAI = `${extraRules} ${workflowTrigger} ${systemPrompt}`;
 
-      // Si es primer mensaje y hay INICIO_BIENVENIDA -> ejecutar tool y responder como Agente Principal
       if (noHistory && hasInicioBienvenida) {
         const result = await this.handleExecuteWorkflowTool(
           { nombre_flujo: [this.initWorkflowName] } as any,
@@ -280,14 +251,9 @@ ${followupText}`
           this.initWorkflowName,
           workflowSuccessResponse
         );
-
-        // result ya es “final” como agente principal (por la ruta común)
         return result;
       }
 
-      // =====================================================================
-      // INICIO - Construcción de mensajes para el LLM
-      // =====================================================================
       const historyMessages = chatHistory.map(text => new HumanMessage({
         content: [{ type: "text", text }],
       }));
@@ -300,16 +266,11 @@ ${followupText}`
         content: [{ type: "text", text: promptAI }],
       });
 
-
-
       const messagesForLlm = [
         systemMessage,
         ...historyMessages,
         rawInputMessage,
       ];
-      // =====================================================================
-      // FIN - Construcción de mensajes para el LLM
-      // =====================================================================
 
       const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
 
@@ -325,7 +286,7 @@ ${followupText}`
             const isRate = err?.code === 'rate_limit_exceeded' || err?.status === 429;
             if (!isRate || attempt >= maxAttempts) throw err;
             const backoff = Math.floor((2 ** attempt) * 1000 + Math.random() * 1000);
-            this.logger.warn(`Rate limit: reintento #${attempt} en ${backoff}ms`);
+            logger.warn(`Rate limit: reintento #${attempt} en ${backoff}ms`);
             await sleep(backoff);
           }
         }
@@ -339,15 +300,13 @@ ${followupText}`
       const tokensUsedMain = totalTokensMain ? parseInt(totalTokensMain.toString(), 10) : 0;
       await this.aiCredits.trackTokens(userId, tokensUsedMain);
 
-      // Procesamiento de tool -> SIEMPRE responde el agente principal
       if (toolCall) {
-        this.logger.log(`Tool encontrada, preparando ejecución...`);
+        logger.log(`Tool encontrada, preparando ejecución...`);
         let args;
         try {
           args = toolCall.args;
         } catch (e) {
-          this.logger.error('Error al parsear los argumentos del toolCall', e.message);
-          // Pasar error al principal para que él responda
+          logger.error('Error al parsear los argumentos del toolCall', e.message);
           return await this.respondAsMainAgent({
             userId,
             sessionId,
@@ -361,11 +320,10 @@ ${followupText}`
 
         switch (toolName) {
           case 'notificacion': {
-            this.logger.log('Activada notificacion a...', remoteJid);
+            logger.log('Activada notificacion a...', remoteJid);
             const result = await this.notificacionTool.handleNotificacionTool(
               args, userId, server_url, apikey, instanceName, remoteJid
             );
-            // return "Notificación a asesor enviada exitosamente."
             const toolExecutionResult = "Notificación a asesor enviada exitosamente.";
             return await this.respondAsMainAgent({
               userId,
@@ -381,7 +339,6 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
           }
 
           case 'execute_workflow': {
-            // Se encarga internamente y regresa YA como agente principal
             return await this.handleExecuteWorkflowTool(
               args,
               userId,
@@ -391,13 +348,13 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
               apikey,
               instanceName,
               remoteJid,
-              input,                 // userPrompt real
+              input,
               workflowSuccessResponse
             );
           }
 
           default:
-            this.logger.warn(`Tool no soportada: ${toolCall.name}`, 'AiAgentService');
+            logger.warn(`Tool no soportada: ${toolCall.name}`);
             return await this.respondAsMainAgent({
               userId,
               sessionId,
@@ -408,11 +365,9 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
         }
       }
 
-      // Si no hubo tool, responde normal (contenido directo)
       const direct = choice?.content?.toString()?.trim();
       if (direct) return direct;
 
-      // Fallback
       return await this.respondAsMainAgent({
         userId,
         sessionId,
@@ -422,8 +377,8 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
       });
 
     } catch (error) {
-      this.logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message, 'AiAgentService');
-      // Fallback también como agente principal
+      const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+      logger.error('Error procesando entrada con OpenAI.', error?.response?.data || error.message);
       const systemPrompt = await this.promptService.getPromptUserId(userId).catch(() => '');
       const workflows = await this.workflowService.getWorkflow(userId).catch(() => []);
       const formattedList = Array.isArray(workflows) ? workflows.map((flow, index) => {
@@ -458,9 +413,9 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
     userPrompt: string,
     successResponseLiteral?: string
   ): Promise<string> {
-    this.logger.log('Se esta ejecutando una tool... 😎')
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+    logger.log('Se esta ejecutando una tool... 😎')
 
-    // Prepara el prompt principal para la respuesta final
     const systemPrompt = await this.promptService.getPromptUserId(userId).catch(() => '');
     const workflows = await this.workflowService.getWorkflow(userId).catch(() => []);
     const formattedList = Array.isArray(workflows) ? workflows.map((flow, index) => {
@@ -504,7 +459,7 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
         });
       }
     } catch (e) {
-      this.logger.error('Error al parsear el contenido JSON de OpenAI', e.message);
+      logger.error('Error al parsear el contenido JSON de OpenAI', e.message);
       return await this.respondAsMainAgent({
         userId,
         sessionId,
@@ -514,7 +469,7 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
       });
     }
 
-    this.logger.log(`Flujos detectados: ${JSON.stringify(nombresDetectados)}`);
+    logger.log(`Flujos detectados: ${JSON.stringify(nombresDetectados)}`);
 
     for (const nombre of nombresDetectados) {
       const currentWorkflow = workflows.find(
@@ -522,7 +477,7 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
       );
 
       if (!currentWorkflow) {
-        this.logger.warn(`El flujo "${nombre}" no fue encontrado.`);
+        logger.warn(`El flujo "${nombre}" no fue encontrado.`);
         continue;
       }
 
@@ -546,10 +501,9 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
           remoteJid,
           userId
         );
-        this.logger.log(`[Workflow]: ${currentWorkflow.name} ejecutado, registrando en session ${remoteJid}`)
+        logger.log(`[Workflow]: ${currentWorkflow.name} ejecutado, registrando en session ${remoteJid}`)
         await this.sessionService.registerWorkflow(currentWorkflow.name, remoteJid, instanceName, userId)
 
-        // Si es INICIO_BIENVENIDA y tenemos literal → lo usa el Agente Principal
         if (currentWorkflow.name.trim().toUpperCase() === this.initWorkflowName.toUpperCase()
           && successResponseLiteral) {
           return await this.respondAsMainAgent({
@@ -561,7 +515,6 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
           });
         }
 
-        // Para otros flujos, mensaje estándar hacia el principal
         const follow = `✅ Flujo *${currentWorkflow.name}* iniciado correctamente.`;
 
         return await this.respondAsMainAgent({
@@ -584,7 +537,6 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
       }
     }
 
-    // Si ninguno aplicó
     return await this.respondAsMainAgent({
       userId,
       sessionId,
@@ -595,8 +547,7 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
   };
 
   /**
-   * (Queda por compatibilidad — ya no se usa directamente desde tools;
-   *  toda finalización va por respondAsMainAgent)
+   * (Compatibilidad)
    */
   private async processAgentFollowup(
     followupText: string,
@@ -631,78 +582,68 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
   }
 
   /**
-  * Transcribe un archivo de audio utilizando el agente.
-  * y devuelve su transcripcion
-  *
-  * @param {string} audioUrl
-  * @returns {Promise<string>
+  * Transcribe audio
   */
-  async transcribeAudio(audioUrl: string, audioType: string, apikeyOpenAi: string, data: any, defaultModel: string,
-    defaultProvider: string,): Promise<string> {
+  async transcribeAudio(
+    audioUrl: string,
+    audioType: string,
+    apikeyOpenAi: string,
+    data: any,
+    defaultModel: string,
+    defaultProvider: string,
+  ): Promise<string> {
+    const logger = this.scopedLogger({}); // sin contexto disponible en firma
     try {
       const axiosRes = await axios.get(audioUrl, { responseType: "arraybuffer" });
       const audioBuffer = Buffer.from(axiosRes.data);
       const base64Audio = Buffer.from(axiosRes.data).toString("base64");
       const audioStream = Readable.from(audioBuffer);
-      // 2️⃣ Crear un archivo temporal con extensión válida
       (audioStream as any).path = "audio.ogg";
 
       if (defaultProvider == 'openai') {
-        this.initializeClient(apikeyOpenAi, 'whisper-1',
-          defaultProvider);
+        this.initializeClient(apikeyOpenAi, 'whisper-1', defaultProvider);
         const transcription = await this.aiClient.audio.transcriptions.create({
           file: audioStream,
           model: 'whisper-1',
           response_format: 'text',
         })
-        // 5️⃣ Limpiar el archivo temporal
-
         return typeof transcription === "string"
           ? transcription
           : transcription.text;
       }
-      this.initializeClient(apikeyOpenAi, defaultModel,
-        defaultProvider,);
-
-
+      this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
 
       const message = new HumanMessage({
         content: [
           { type: "text", text: "Transcribe de forma clara y detallada este audio." },
-          defaultProvider == 'openai' ?
-            {
-              type: "input_audio",
-              input_audio: {
-                data: base64Audio, format: `${audioType}`
-              }
-            } :
-            {
-              "type": "media",
-              "data": base64Audio,
-              "mimeType": `${audioType}`
-            },
+          defaultProvider == 'openai'
+            ? { type: "input_audio", input_audio: { data: base64Audio, format: `${audioType}` } }
+            : { type: "media", data: base64Audio, mimeType: `${audioType}` },
         ],
       })
       const state = await this.aiClient.invoke([message])
       return state.content.toString()
     } catch (error) {
-      this.logger.error('Error transcribiendo audio.', error?.response?.data || error.message, 'AiAgentService');
-      this.logger.error('Error transcribiendo audio.', error.message, JSON.stringify(error, null, 2));
+      logger.error('Error transcribiendo audio.', error?.response?.data || error.message);
+      logger.error('Error transcribiendo audio.', error?.message || JSON.stringify(error, null, 2));
       return '[ERROR_TRANSCRIBING_AUDIO]';
     }
   };
 
   /**
-  * Describe una imagen utilizando OpenAI GPT-4 con input de imagen.
-  *
-  * @param {string} imageUrl
-  * @returns {Promise<string>}
+  * Describe imagen
   */
-  async describeImage(data: any, imageBase64: string, imageType: string, apikeyOpenAi: string, defaultModel: string,
-    defaultProvider: string): Promise<string> {
+  async describeImage(
+    data: any,
+    imageBase64: string,
+    imageType: string,
+    apikeyOpenAi: string,
+    defaultModel: string,
+    defaultProvider: string
+  ): Promise<string> {
+    const logger = this.scopedLogger({}); // sin contexto en firma
     try {
-      this.initializeClient(apikeyOpenAi, defaultModel,
-        defaultProvider,);
+      this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
       const message = new HumanMessage({
         content: [
           { type: "text", text: "Describe de forma clara y detallada el contenido de esta imagen." },
@@ -715,7 +656,7 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
       const response = await this.aiClient.invoke([message])
       return response.content.toString() ?? '[ERROR_DESCRIBING_IMAGE]'
     } catch (error) {
-      this.logger.error('Error describiendo imagen.', error?.response?.data || error.message, 'AiAgentService');
+      logger.error('Error describiendo imagen.', error?.response?.data || error.message);
       return '[ERROR_DESCRIBING_IMAGE]';
     }
   };

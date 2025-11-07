@@ -47,7 +47,7 @@ export class WebhookService {
    * Crea un logger con contexto fijo para prefijar todos los mensajes.
    */
   private scopedLogger(ctx: { userId?: string; instanceName?: string; remoteJid?: string }) {
-    const tag = `[userId=${ctx.userId ?? '-'}][inst=${ctx.instanceName ?? '-'}][jid=${ctx.remoteJid ?? '-'}]`;
+    const tag = `[UID=${ctx.userId ?? '-'}][I=${ctx.instanceName ?? '-'}][R=${ctx.remoteJid ?? '-'}]`;
     return {
       log: (msg: string, context = 'WebhookService') => this.logger.log(`${tag} ${msg}`, context),
       warn: (msg: string, context = 'WebhookService') => this.logger.warn(`${tag} ${msg}`, context),

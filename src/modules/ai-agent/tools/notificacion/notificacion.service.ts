@@ -13,14 +13,14 @@ export class NotificacionToolService {
 
   async handleNotificacionTool(
     args: any,
-    sessionId: string,
+    sessionId: string,            // aquí realmente llega userId (mantenemos el nombre para no romper firmas)
     server_url: string,
     apikey: string,
     instanceName: string,
     remoteJid: string
   ): Promise<string> {
     try {
-      // 🔍 Buscar el número de notificación desde la sesión
+      // 🔍 Buscar el número de notificación desde el "userId"
       const user = await this.prisma.user.findUnique({
         where: { id: sessionId },
       });
@@ -32,15 +32,31 @@ export class NotificacionToolService {
         throw new Error('El usuario no tiene un número de notificación configurado');
       }
 
+      // 🧹 Normaliza los campos esperados
+      const detalle =
+        args?.detalle_notificacion ??
+        args?.detalles ??
+        args?.detalle ??
+        args?.descripcion ??
+        'Solicita hablar con un asesor.';
+
+      const nombre =
+        args?.nombre ??
+        args?.name ??
+        'Cliente';
+
+      // 📲 Envía mensaje al asesor
       await this.nodeSenderService.sendTextNode(
         server_url + '/message/sendText/' + instanceName,
         apikey,
         notificacionNumber,
-        `✅ *Tienes Nueva Solicitud:*\n\n👤 *Nombre:* ${args.nombre}\n📝 *Descripción:*\n${args.detalles}\n\n📱 *WhatsApp del usuario:*\n\n👉 +${celular}`
+        `✅ *Tienes Nueva Solicitud:*\n\n👤 *Nombre:* ${nombre}\n📝 *Descripción:*\n${detalle}\n\n📱 *WhatsApp del usuario:*\n\n👉 +${celular}`
       );
-      return `✅ Notificación enviada para ${args.nombre} con detalles: ${args.detalles}`;
+
+      // 🗣️ Retorna el mensaje final que verá el usuario (lo tomará el agente principal)
+      return '📝 ¡He registrado tu solicitud! 👨🏻‍💻 Un asesor se pondrá en contacto a la brevedad posible. ⏰';
     } catch (error) {
-      this.logger.error('Error enviando notificación', error?.message, 'NotificacionToolService');
+      this.logger.error('Error enviando notificación', (error as any)?.message, 'NotificacionToolService');
       return '[ERROR_SENDING_NOTIFICATION]';
     }
   }

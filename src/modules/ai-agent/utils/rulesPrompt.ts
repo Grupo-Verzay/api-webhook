@@ -1,11 +1,8 @@
 export const extraRules = `
-* **Comportamiento:** Tras ejecutar un flujo, responde **únicamente** lo indicado en **Regla/parámetro**.
- Si **no hay una orden clara**, formula una **pregunta contextual** para guiar al usuario al siguiente paso lógico de la conversación. **No añadas texto innecesario.
- ** 
-
- * **Comportamiento:** Tras ejecutar la tool, responde **únicamente** lo indicado en **Regla/parámetro**. 
-Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al usuario:
-> 📝 ¡He **registrado** tu **tipo_registro**! 👨🏻‍💻 Un asesor se pondrá en contacto a la brevedad posible. ⏰ 
+• Comportamiento: Tras ejecutar un flujo o una tool, responde únicamente lo indicado en “Regla/parámetro”.
+• Si no hay una orden clara, formula una pregunta contextual mínima para guiar al siguiente paso.
+• Prohibido: responder en JSON, objetos, código, backticks o bloques de “\`\`\`”.
+• La salida debe ser SIEMPRE texto natural en español, una o dos oraciones como máximo, sin encabezados ni viñetas.
 `;
 
 export const ERROR_OPENAI_EMPTY_RESPONSE = `¡Ups! Algo salió mal 😅
@@ -42,7 +39,7 @@ export const systemPromptWorkflow = (input, formattedList) => {
   - Si no hay coincidencias, devolver:
     { "nombre_flujo": [], "detalles": "${input}" }
   - No inventar nombres ni modificar los existentes.
-   - La respuesta debe ser **únicamente el objeto JSON**, sin texto adicional, explicaciones, o encabezados.
+   -sin texto adicional, explicaciones, o encabezados.
     - **NO** uses backticks (\`\`\`), bloques de código, ni la palabra 'json'.
      - La respuesta debe poder ser procesada directamente por un parser de JSON.
 

@@ -81,57 +81,6 @@ export class AiAgentService {
    * 🔧 Hotfix robusto: algunos modelos devuelven JSON {"tool": "..."} en texto.
    * - Limpia fences (```json ... ```), tolera texto alrededor y sinónimos.
    */
-  private tryParseToolJson(content: string): { name: 'notificacion'; args: any } | null {
-    if (!content) return null;
-    try {
-      const cleaned = content
-        .replace(/```(?:json)?/gi, '')
-        .replace(/```/g, '')
-        .trim();
-
-      const candidates: string[] = [];
-      if (/^\s*{/.test(cleaned)) candidates.push(cleaned);
-
-      const first = cleaned.indexOf('{');
-      const last = cleaned.lastIndexOf('}');
-      if (first !== -1 && last > first) {
-        candidates.push(cleaned.slice(first, last + 1));
-      }
-
-      for (const c of candidates) {
-        try {
-          const obj = JSON.parse(c);
-
-          const raw = (
-            obj.tool ??
-            obj.Tool ??
-            obj.herramienta ??
-            obj.action ??
-            obj.accion ??
-            obj.name ??
-            obj.nombre_tool ??
-            ''
-          ).toString().toLowerCase().trim();
-
-          const isNotificacion = /notificaci[oó]n(\s+asesor)?|notificar(\s+asesor)?/.test(raw);
-          if (!isNotificacion) continue;
-
-          const args = {
-            nombre: obj.nombre ?? obj.name ?? obj.cliente ?? '',
-            detalle_notificacion:
-              obj.detalle_notificacion ?? obj.detalles ?? obj.motivo ?? obj.detalle ?? obj.descripcion ?? ''
-          };
-
-          return { name: 'notificacion', args };
-        } catch {
-          // intenta siguiente candidato
-        }
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
 
   private async getWeather(location: string): Promise<string> {
     return `Soleado y 25°C en ${location}`;
@@ -375,18 +324,18 @@ ${followupText}`
         const toolName = toolCall.name;
 
         switch (toolName) {
-case 'notificacion': {
-  const res = await this.notificacionTool.handleNotificacionTool(
-    args, userId, server_url, apikey, instanceName, remoteJid
-  );
-  return await this.respondAsMainAgent({
-    userId,
-    sessionId,
-    userPrompt: input,
-    principalSystemPrompt: promptAI,
-    followupText: res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.'
-  });
-}
+          case 'notificacion': {
+            const res = await this.notificacionTool.handleNotificacionTool(
+              args, userId, server_url, apikey, instanceName, remoteJid
+            );
+            return await this.respondAsMainAgent({
+              userId,
+              sessionId,
+              userPrompt: input,
+              principalSystemPrompt: promptAI,
+              followupText: res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.'
+            });
+          }
           case 'execute_workflow': {
             return await this.handleExecuteWorkflowTool(
               args,

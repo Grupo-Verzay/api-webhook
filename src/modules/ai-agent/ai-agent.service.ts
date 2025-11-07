@@ -77,6 +77,45 @@ export class AiAgentService {
     return typeof apikeyOpenAi === 'string' && apikeyOpenAi.startsWith('sk-') && apikeyOpenAi.length >= 40;
   };
 
+  /**
+   * 🔧 Hotfix: algunos modelos devuelven JSON {"tool": "..."} en vez de tool_calls.
+   * Si detectamos eso, normalizamos y devolvemos un descriptor de tool "notificacion".
+   */
+  private tryParseToolJson(content: string): { name: 'notificacion'; args: any } | null {
+    if (!content) return null;
+    try {
+      // limpia cerco de backticks si viniera en bloque
+      const trimmed = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+      const obj = JSON.parse(trimmed);
+
+      const raw =
+        (obj.tool ?? obj.Tool ?? obj.herramienta ?? obj.name ?? obj.nombre_tool ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+
+      const isNotificacion =
+        raw === 'notificacion' ||
+        raw === 'notificación' ||
+        raw === 'notificacion asesor' ||
+        raw === 'notificación asesor' ||
+        raw === 'notificar' ||
+        raw === 'notificar asesor';
+
+      if (!isNotificacion) return null;
+
+      const args = {
+        nombre: obj.nombre ?? obj.name ?? obj.cliente ?? '',
+        detalle_notificacion:
+          obj.detalle_notificacion ?? obj.detalles ?? obj.motivo ?? obj.detalle ?? ''
+      };
+
+      return { name: 'notificacion', args };
+    } catch {
+      return null;
+    }
+  }
+
   private async getWeather(location: string): Promise<string> {
     return `Soleado y 25°C en ${location}`;
   };
@@ -361,8 +400,32 @@ ${followupText}`
         }
       }
 
+      // 🔧 Hotfix: si el modelo devolvió JSON en texto con {"tool": "..."} en vez de tool_calls
       const direct = choice?.content?.toString()?.trim();
-      if (direct) return direct;
+      if (direct) {
+        const maybeTool = this.tryParseToolJson(direct);
+        if (maybeTool?.name === 'notificacion') {
+          logger.warn('Respuesta JSON de tool detectada. Ejecutando tool "notificacion" a partir del JSON.');
+          await this.notificacionTool.handleNotificacionTool(
+            maybeTool.args,
+            userId,
+            server_url,
+            apikey,
+            instanceName,
+            remoteJid
+          );
+          const toolExecutionResult = 'Notificación a asesor enviada exitosamente.';
+          return await this.respondAsMainAgent({
+            userId,
+            sessionId,
+            userPrompt: input,
+            principalSystemPrompt: promptAI,
+            followupText: toolExecutionResult,
+          });
+        }
+        // Si no era JSON de tool, se devuelve el contenido directo como antes
+        return direct;
+      }
 
       return await this.respondAsMainAgent({
         userId,

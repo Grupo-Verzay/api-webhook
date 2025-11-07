@@ -369,14 +369,18 @@ ${followupText}`
       }
 
       // 🔧 Hotfix: si el modelo devolvió JSON en texto con {"tool": "..."} en vez de tool_calls
-
-      return await this.respondAsMainAgent({
-        userId,
-        sessionId,
+      
+      const noTool = await this.respondAsMainAgent({
+      userId,
+      sessionId,
         userPrompt: input,
         principalSystemPrompt: promptAI,
         followupText: ERROR_OPENAI_EMPTY_RESPONSE
       });
+      logger.log(noTool)
+      return noTool
+      
+      
 
     } catch (error) {
       const logger = this.scopedLogger({ userId, instanceName, remoteJid });

@@ -375,21 +375,18 @@ ${followupText}`
         const toolName = toolCall.name;
 
         switch (toolName) {
-          case 'notificacion': {
-            logger.log('Activada notificacion a...', remoteJid);
-            const result = await this.notificacionTool.handleNotificacionTool(
-              args, userId, server_url, apikey, instanceName, remoteJid
-            );
-            const toolExecutionResult = "Notificación a asesor enviada exitosamente.";
-            return await this.respondAsMainAgent({
-              userId,
-              sessionId,
-              userPrompt: input,
-              principalSystemPrompt: promptAI,
-              followupText: toolExecutionResult
-            });
-          }
-
+case 'notificacion': {
+  const res = await this.notificacionTool.handleNotificacionTool(
+    args, userId, server_url, apikey, instanceName, remoteJid
+  );
+  return await this.respondAsMainAgent({
+    userId,
+    sessionId,
+    userPrompt: input,
+    principalSystemPrompt: promptAI,
+    followupText: res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.'
+  });
+}
           case 'execute_workflow': {
             return await this.handleExecuteWorkflowTool(
               args,

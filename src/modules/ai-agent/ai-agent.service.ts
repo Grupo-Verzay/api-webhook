@@ -230,11 +230,9 @@ ${followupText}`
       const workflows = await this.workflowService.getWorkflow(userId);
 
       const formattedList = workflows.map((flow, index) => {
-        return `{
-    "id": ${index + 1},
+        return `
     "nombre": "${flow.name}",
-    "descripcion": "${flow.description || 'Sin descripción'}"
-   }`;
+   `;
       }).join(',\n');
 
       const match = systemPrompt.match(/Comportamiento: Después de ejecutar el flujo, tu única respuesta es la que se te indique en Regla\/parámetro\.\n\n\*\s*([^\n]+)/i);

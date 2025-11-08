@@ -2,7 +2,7 @@ export const extraRules = `
 • Comportamiento: Tras ejecutar un flujo o una tool, responde únicamente lo indicado en “Regla/parámetro”.
 • Si no hay una orden clara, formula una pregunta contextual mínima para guiar al siguiente paso.
 • Prohibido: responder en JSON, objetos, código, backticks o bloques de “\`\`\`”.
-• La salida debe ser SIEMPRE texto natural en español, una o dos oraciones como máximo, sin encabezados ni viñetas.
+• La salida debe ser SIEMPRE texto natural en español.
 `;
 
 export const ERROR_OPENAI_EMPTY_RESPONSE = `¡Ups! Algo salió mal 😅

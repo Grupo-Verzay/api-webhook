@@ -356,7 +356,7 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
               followupText: res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.'
             });
             
-            return `${clientRes}`
+            return `'PASO AQUI: '${clientRes}`
           }
           case 'execute_workflow': {
             return await this.handleExecuteWorkflowTool(

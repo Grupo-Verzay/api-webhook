@@ -314,6 +314,7 @@ export class AiAgentService {
           args = toolCall.args;
         } catch (e: any) {
           logger.error('Error al parsear los argumentos del toolCall', e.message);
+          //Esto pasa cuando la tool sale error o no encuentra
           return await this.respondAsMainAgent({
             userId,
             sessionId,
@@ -331,12 +332,12 @@ export class AiAgentService {
               args, userId, server_url, apikey, instanceName, remoteJid
             );
             logger.log(`[Prompt de sistema]: ${systemPrompt}`)
-            
+            //Ejecuta el agentes despues de notificacion
             const clientRes =await this.respondAsMainAgent({
               userId,
               sessionId,
               userPrompt: input,
-              principalSystemPrompt: '',
+              principalSystemPrompt: promptAI,
               followupText: res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.'
             });
             
@@ -360,6 +361,7 @@ export class AiAgentService {
           default:
             logger.warn(`Tool no soportada: ${toolCall.name}`);
 
+            //Todvia no se en que momento se ejecuta
             const flujosR = await this.respondAsMainAgent({
               userId,
               sessionId,
@@ -374,13 +376,16 @@ export class AiAgentService {
 
       // 🔧 Hotfix: si el modelo devolvió JSON en texto con {"tool": "..."} en vez de tool_calls
 
-      return await this.respondAsMainAgent({
+      //Revisando si es este
+      const RFlujos= await this.respondAsMainAgent({
         userId,
         sessionId,
         userPrompt: input,
         principalSystemPrompt: promptAI,
         followupText: ERROR_OPENAI_EMPTY_RESPONSE
       });
+
+      return `'⚡'${RFlujos}`
 
     } catch (error) {
       const logger = this.scopedLogger({ userId, instanceName, remoteJid });

@@ -89,60 +89,60 @@ export class AiAgentService {
   /**
    * 🔸 SIEMPRE FINALIZA COMO AGENTE PRINCIPAL
    */
-private async respondAsMainAgent(params: {
-  userId: string;
-  sessionId: string;
-  userPrompt: string;
-  principalSystemPrompt: string;
-  followupText: string;
-}): Promise<string> {
-  const { userId, sessionId, userPrompt, principalSystemPrompt, followupText } = params;
+  private async respondAsMainAgent(params: {
+    userId: string;
+    sessionId: string;
+    userPrompt: string;
+    principalSystemPrompt: string;
+    followupText: string;
+  }): Promise<string> {
+    const { userId, sessionId, userPrompt, principalSystemPrompt, followupText } = params;
 
-  const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
+    const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
 
-  const systemMessage = new SystemMessage({
-    content: [{
-      type: 'text',
-      text: `${principalSystemPrompt}
+    const systemMessage = new SystemMessage({
+      content: [{
+        type: 'text',
+        text: `${principalSystemPrompt}
 
 REGLA CRÍTICA:
 - El AGENTE PRINCIPAL da la respuesta final al usuario.
 - Usa el resultado siguiente para construir la respuesta final.
 [RESULTADO_TOOL]
 ${followupText}`
-    }]
-  });
+      }]
+    });
 
-  // 🔒 Candado de estilo de salida SOLO TEXTO (sin JSON/markdown)
-  const styleLock = new SystemMessage({
-    content: [{
-      type: 'text',
-      text: `
+    // 🔒 Candado de estilo de salida SOLO TEXTO (sin JSON/markdown)
+    const styleLock = new SystemMessage({
+      content: [{
+        type: 'text',
+        text: `
 SALIDA:
 - Responde SIEMPRE con texto natural en español.
 - PROHIBIDO: JSON, objetos, arrays, backticks, bloques de código o etiquetas.
 - Si tu salida empezaría con "{" o "[", reescríbela como texto llano.
 - Máximo 2 oraciones, cero encabezados, cero viñetas.`
-    }]
-  });
+      }]
+    });
 
-  const historyMessages = chatHistory.map(text => new HumanMessage({ content: [{ type: "text", text }] }));
-  const rawUser = new HumanMessage({ content: [{ type: 'text', text: userPrompt }] });
+    const historyMessages = chatHistory.map(text => new HumanMessage({ content: [{ type: "text", text }] }));
+    const rawUser = new HumanMessage({ content: [{ type: 'text', text: userPrompt }] });
 
-  const completion = await this.aiClient.invoke([
-    systemMessage,
-    styleLock,           // 👈 ponlo después del prompt principal
-    ...historyMessages,
-    rawUser,
-  ]);
+    const completion = await this.aiClient.invoke([
+      systemMessage,
+      styleLock,           // 👈 ponlo después del prompt principal
+      ...historyMessages,
+      rawUser,
+    ]);
 
-  const totalTokens = completion?.usage_metadata?.total_tokens;
-  const tokensUsed = totalTokens ? parseInt(totalTokens.toString(), 10) : 0;
-  await this.aiCredits.trackTokens(userId, tokensUsed);
+    const totalTokens = completion?.usage_metadata?.total_tokens;
+    const tokensUsed = totalTokens ? parseInt(totalTokens.toString(), 10) : 0;
+    await this.aiCredits.trackTokens(userId, tokensUsed);
 
-  const rawOut = completion.content?.toString()?.trim() || followupText;
-  return rawOut
-}
+    const rawOut = completion.content?.toString()?.trim() || followupText;
+    return rawOut
+  }
   /**
   * Detección de tools (segundo agente)
   */
@@ -230,7 +230,11 @@ SALIDA:
 
       const formattedList = workflows.map((flow, index) => {
         return `
-    "${index+1}": "${flow.name}"
+        {
+        "id": ${index + 1},
+    "nombre": "${flow?.name || ''}",
+    "descripcion": "${flow?.description || 'Sin descripción'}"
+      }
    `;
       }).join(',\n');
 
@@ -368,22 +372,22 @@ SALIDA:
       }
 
       // 🔧 Hotfix: si el modelo devolvió JSON en texto con {"tool": "..."} en vez de tool_calls
-      
+
       const noTool = await this.respondAsMainAgent({
-      userId,
-      sessionId,
+        userId,
+        sessionId,
         userPrompt: input,
         principalSystemPrompt: promptAI,
         followupText: ERROR_OPENAI_EMPTY_RESPONSE
       });
       logger.log(noTool)
       return noTool
-      
-      
+
+
 
     } catch (error) {
-     logger.error(JSON.stringify(error))
-     return 'ha habido un error'
+      logger.error(JSON.stringify(error))
+      return 'ha habido un error'
     }
   };
 

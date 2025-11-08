@@ -19,6 +19,7 @@ import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { SessionTriggerService } from '../session-trigger/session-trigger.service';
 import { CreditValidationInput, onAutoRepliesInterface, stopOrResumeConversation, flags, getReactivateDate } from 'src/types/open-ai';
 import { AntifloodService } from './services/antiflood/antiflood.service';
+import { validateApiKeyFormat } from './utils/isValidApikey';
 
 @Injectable()
 export class WebhookService {
@@ -63,6 +64,8 @@ export class WebhookService {
 
     const { instance: instanceName, server_url, apikey, data } = body;
 
+    
+
     // Log inicial sin userId (todavía no lo conocemos)
     this.logger.log(`[WEBHOOK] payload recibido para instance=${instanceName}`, 'WebhookService');
 
@@ -81,6 +84,9 @@ export class WebhookService {
     const aiConfig = await this.userService.getUserDefaultAiConfig(userId);
 
     const { defaultModel, defaultProvider, defaultApiKey } = aiConfig || {};
+
+    // const isValidApiKey= validateApiKeyFormat(defaultProvider??'',defaultApiKey??)
+
     const mask = (k?: string | null) => (k ? `${k.slice(0, 4)}…${k.slice(-4)}` : null);
     logger.log(`AI config recibida → provider=${defaultProvider?.name ?? '-'} model=${defaultModel?.name ?? '-'} apiKey=${mask(defaultApiKey)}`);
 

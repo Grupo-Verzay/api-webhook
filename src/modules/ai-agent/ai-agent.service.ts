@@ -341,7 +341,7 @@ ${followupText}`
               userId,
               sessionId,
               userPrompt: input,
-              principalSystemPrompt: `${extraRules} ${systemPrompt}`,
+              principalSystemPrompt: `${systemPrompt}`,
               followupText: res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.'
             });
             

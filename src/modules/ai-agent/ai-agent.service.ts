@@ -387,7 +387,7 @@ SALIDA:
     } catch (error) {
       logger.error(JSON.stringify(error))
       console.log(JSON.stringify(error))
-      return 'ha habido un error'
+      return ''
     }
   };
 

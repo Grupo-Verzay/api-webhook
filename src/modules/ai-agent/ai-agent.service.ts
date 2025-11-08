@@ -352,7 +352,7 @@ Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al
               userId,
               sessionId,
               userPrompt: input,
-              principalSystemPrompt: `${reglas}, ${systemPrompt}`,
+              principalSystemPrompt: `${reglas}`,
               followupText: res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.'
             });
             

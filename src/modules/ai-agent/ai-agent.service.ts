@@ -117,21 +117,22 @@ ${followupText}`
     const styleLock = new SystemMessage({
       content: [{
         type: 'text',
-        text: `
-SALIDA:
-- Responde SIEMPRE con texto natural en español, puedes usar emojis o negrita.
-- PROHIBIDO: JSON, objetos, arrays, backticks, bloques de código o etiquetas.
-- Si tu salida empezaría con "{" o "[", reescríbela como texto llano.`
+        text:''
+//         text: `
+// SALIDA:
+// - Responde SIEMPRE con texto natural en español, puedes usar emojis o negrita.
+// - PROHIBIDO: JSON, objetos, arrays, backticks, bloques de código o etiquetas.
+// - Si tu salida empezaría con "{" o "[", reescríbela como texto llano.`
       }]
     });
 
-    const historyMessages = chatHistory.map(text => new HumanMessage({ content: [{ type: "text", text }] }));
+    const historyMessages = chatHistory.map(text => new HumanMessage({ content: [{ type: "text", text }] })).splice(0,2);
     const rawUser = new HumanMessage({ content: [{ type: 'text', text: userPrompt }] });
 
     const completion = await this.aiClient.invoke([
       systemMessage,
       styleLock,           // 👈 ponlo después del prompt principal
-      // ...historyMessages,
+      ...historyMessages,
       rawUser,
     ]);
 

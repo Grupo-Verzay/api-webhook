@@ -1,19 +1,4 @@
 export const extraRules = `
-* **Comportamiento:** Tras ejecutar un flujo, responde **únicamente** lo indicado en **Regla/parámetro**.
- Si **no hay una orden clara**, formula una **pregunta contextual** para guiar al usuario al siguiente paso lógico de la conversación. **No añadas texto innecesario.
-
- * **Comportamiento:** Tras ejecutar la tool, responde **únicamente** lo indicado en **Regla/parámetro**. 
-Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al usuario:
-> 📝 ¡He **registrado** tu **tipo_registro**! 👨🏻‍💻 Un asesor se pondrá en contacto a la brevedad posible. ⏰ 
-
-* **Comportamiento:** Tras ejecutar la tool, responde **únicamente** lo indicado en **Regla/parámetro**. 
-Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al usuario:
-> ✅ Tu pago de $[MONTO] ha sido registrado exitosamente.
-> 👨🏻‍💻 Un asesor se comunicará contigo a la brevedad o recibirás un mensaje de confirmación. 
-
-* **Comportamiento:** Tras ejecutar la tool, responde **únicamente** lo indicado en **Regla/parámetro**. 
-Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al usuario:
-> 📝 ¡He **actualizado** tu **tipo_registro**! 👨🏻‍💻 Un asesor se pondrá en contacto a la brevedad posible. ⏰
 `;
 
 export const ERROR_OPENAI_EMPTY_RESPONSE = `¡Ups! Algo salió mal 😅

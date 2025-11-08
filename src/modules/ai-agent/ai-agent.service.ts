@@ -385,7 +385,7 @@ export class AiAgentService {
         followupText: ERROR_OPENAI_EMPTY_RESPONSE
       });
 
-      return `'⚡'${RFlujos}`
+      return `'🎯'${RFlujos}`
 
     } catch (error) {
       const logger = this.scopedLogger({ userId, instanceName, remoteJid });

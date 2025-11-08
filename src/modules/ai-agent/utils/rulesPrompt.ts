@@ -1,5 +1,7 @@
-export const extraRules = `
-`;
+export const extraRules = `SALIDA:
+- Responde SIEMPRE con texto natural.
+- PROHIBIDO: JSON, objetos, arrays, backticks o bloques de código.
+- Si tu salida empezaría con "{" o "[", reescríbela como texto llano.`;
 
 export const ERROR_OPENAI_EMPTY_RESPONSE = `¡Ups! Algo salió mal 😅
 Parece que hubo un problema al procesar tu mensaje. ¿Podrías intentarlo de nuevo?`;

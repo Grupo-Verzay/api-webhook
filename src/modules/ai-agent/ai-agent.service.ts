@@ -342,7 +342,7 @@ ${followupText}`
               userId,
               sessionId,
               userPrompt: input,
-              principalSystemPrompt: extraRules,
+              principalSystemPrompt: '',
               followupText: res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.'
             });
             
@@ -369,7 +369,7 @@ ${followupText}`
               userId,
               sessionId,
               userPrompt: input,
-              principalSystemPrompt: extraRules,
+              principalSystemPrompt: '',
               followupText: `La herramienta "${toolCall.name}" no está soportada.`
             });
         }

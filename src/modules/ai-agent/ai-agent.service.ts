@@ -342,7 +342,7 @@ ${followupText}`
               userId,
               sessionId,
               userPrompt: input,
-              principalSystemPrompt: promptAI,
+              principalSystemPrompt: extraRules,
               followupText: res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.'
             });
             

@@ -334,13 +334,16 @@ SALIDA:
             const res = await this.notificacionTool.handleNotificacionTool(
               args, userId, server_url, apikey, instanceName, remoteJid
             );
-            return await this.respondAsMainAgent({
+            
+            const clientRes =await this.respondAsMainAgent({
               userId,
               sessionId,
               userPrompt: input,
               principalSystemPrompt: promptAI,
               followupText: res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.'
             });
+            
+            return `la ia respondio: ${clientRes}`
           }
           case 'execute_workflow': {
             return await this.handleExecuteWorkflowTool(

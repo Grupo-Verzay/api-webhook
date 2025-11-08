@@ -4,14 +4,11 @@ export const extraRules = `
 - PROHIBIDO: JSON, objetos, arrays, backticks o bloques de código.
 - Si tu salida empezaría con "{" o "[", reescríbela como texto llano.
 
-## No ejecutar si
-- El usuario solo saluda (“Hola”, “Buenos días”, etc.).
-- Aún no hay todavía **guardado/a** Información clara de solicitud/pedido/reclamo/cita/reserva/pago.
+Si el cliente solicita o dice: notificar un asesor o asesor o hablar con un asesor ejecuta la tools de notificacion:
 
-## Restricciones
-- No informar al usuario que se está “ejecutando”, “buscando” o “procesando” la tool.
-- No improvisar ni agregar texto irrelevante en *detalle_notificacion*. 
-
+* **Comportamiento:** Tras ejecutar la tool *notificacion*, responde **únicamente** lo indicado en **Regla/parámetro**. 
+Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al usuario:
+> 📝 ¡He **registrado ** tu **tipo_registro**! 👨🏻‍💻 Un asesor se pondrá en contacto a la brevedad posible. 
 `;
 
 export const ERROR_OPENAI_EMPTY_RESPONSE = `¡Ups! Algo salió mal 😅

@@ -103,13 +103,7 @@ export class AiAgentService {
     const systemMessage = new SystemMessage({
       content: [{
         type: 'text',
-        text: `${principalSystemPrompt}
-
-REGLA CRÍTICA:
-- El AGENTE PRINCIPAL da la respuesta final al usuario.
-- Usa el resultado siguiente para construir la respuesta final.
-[RESULTADO_TOOL]
-${followupText}`
+        text: `${principalSystemPrompt}`
       }]
     });
 
@@ -346,7 +340,7 @@ ${followupText}`
               followupText: res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.'
             });
             
-            return `'PASO AQUI: '${clientRes}`
+            return `⚡'${clientRes}`
           }
           case 'execute_workflow': {
             return await this.handleExecuteWorkflowTool(
@@ -365,13 +359,16 @@ ${followupText}`
 
           default:
             logger.warn(`Tool no soportada: ${toolCall.name}`);
-            return await this.respondAsMainAgent({
+
+            const flujosR = await this.respondAsMainAgent({
               userId,
               sessionId,
               userPrompt: input,
               principalSystemPrompt: '',
               followupText: `La herramienta "${toolCall.name}" no está soportada.`
             });
+
+            return `'⚡'${flujosR}`
         }
       }
 

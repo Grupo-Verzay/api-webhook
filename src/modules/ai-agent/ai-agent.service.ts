@@ -331,6 +331,16 @@ ${followupText}`
 
         const toolName = toolCall.name;
 
+       const reglas = `
+* **Comportamiento:** Tras ejecutar un flujo, responde **únicamente** lo indicado en **Regla/parámetro**.
+ Si **no hay una orden clara**, formula una **pregunta contextual** para guiar al usuario al siguiente paso lógico de la conversación. **No añadas texto innecesario.
+ ** 
+
+ * **Comportamiento:** Tras ejecutar la tool, responde **únicamente** lo indicado en **Regla/parámetro**. 
+Si **no hay una orden clara**, envia el siguiente **mensaje de confirmacion** al usuario:
+> 📝 ¡He **registrado** tu **tipo_registro**! 👨🏻‍💻 Un asesor se pondrá en contacto a la brevedad posible. ⏰ 
+`
+
         switch (toolName) {
           case 'notificacion': {
             const res = await this.notificacionTool.handleNotificacionTool(
@@ -342,7 +352,7 @@ ${followupText}`
               userId,
               sessionId,
               userPrompt: input,
-              principalSystemPrompt: `${systemPrompt}`,
+              principalSystemPrompt: `${reglas}, ${systemPrompt}`,
               followupText: res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.'
             });
             

@@ -341,7 +341,7 @@ export class AiAgentService {
               followupText: res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.'
             });
             
-            return `⚡'${clientRes}`
+            return `${clientRes}`
           }
           case 'execute_workflow': {
             return await this.handleExecuteWorkflowTool(

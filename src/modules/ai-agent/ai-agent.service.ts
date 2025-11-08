@@ -369,7 +369,7 @@ ${followupText}`
               userId,
               sessionId,
               userPrompt: input,
-              principalSystemPrompt: promptAI,
+              principalSystemPrompt: extraRules,
               followupText: `La herramienta "${toolCall.name}" no está soportada.`
             });
         }

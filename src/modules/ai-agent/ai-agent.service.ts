@@ -15,7 +15,7 @@ import { inputWorkflow, OpenAIDetectionResult, openAIToolDetection, proccessInpu
 import { NotificacionToolService } from './tools/notificacion/notificacion.service';
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { tools } from './utils/tools';
-import { ERROR_OPENAI_EMPTY_RESPONSE, extraRules, systemPromptWorkflow } from './utils/rulesPrompt';
+import { ERROR_OPENAI_EMPTY_RESPONSE, systemPromptWorkflow } from './utils/rulesPrompt';
 import { PromptCompressorService } from './services/prompt-compressor/prompt-compressor.service';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { SessionService } from '../session/session.service';
@@ -242,6 +242,8 @@ export class AiAgentService {
       );
 
       const workflowTrigger = `lista de flujos disponibles ${formattedList}`
+
+      const extraRules = await this.promptService.getPromptPadre('cm842kthc0000qd2l66nbnytv').catch(() => '');
       promptAI = `${extraRules} ${workflowTrigger} ${systemPrompt}`;
       
 
@@ -400,6 +402,7 @@ export class AiAgentService {
    }`;
       }).join(',\n') : '';
 
+      const extraRules = await this.promptService.getPromptPadre('cm842kthc0000qd2l66nbnytv').catch(() => '');
       const promptAI = `${extraRules} lista de flujos disponibles ${formattedList} ${systemPrompt}`;
 
       return await this.respondAsMainAgent({
@@ -436,6 +439,8 @@ export class AiAgentService {
     "descripcion": "${flow?.description || 'Sin descripción'}"
    }`;
     }).join(',\n') : '';
+
+    const extraRules = await this.promptService.getPromptPadre('cm842kthc0000qd2l66nbnytv').catch(() => '');
     const principalPrompt = `${extraRules} lista de flujos disponibles ${formattedList} ${systemPrompt}`;
 
     const detectionResult = await this.openAIToolDetection({

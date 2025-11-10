@@ -211,7 +211,7 @@ export class AiAgentService {
     server_url,
     apikey,
     instanceName,
-    remoteJid
+    remoteJid,
   }: proccessInput): Promise<string> {
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
     let promptAI = '';
@@ -243,7 +243,7 @@ export class AiAgentService {
 
       const workflowTrigger = `lista de flujos disponibles ${formattedList}`
 
-      const extraRules = await this.promptService.getPromptPadre('cm842kthc0000qd2l66nbnytv').catch(() => '');
+      const extraRules = await this.promptService.getPromptPadre(userId).catch(() => '');
       promptAI = `${extraRules} ${workflowTrigger} ${systemPrompt}`;
       
 
@@ -258,7 +258,8 @@ export class AiAgentService {
           instanceName,
           remoteJid,
           this.initWorkflowName,
-          workflowSuccessResponse
+          extraRules,
+          workflowSuccessResponse,
         );
         return result;
       }
@@ -356,7 +357,8 @@ export class AiAgentService {
               instanceName,
               remoteJid,
               input,
-              workflowSuccessResponse
+              extraRules,
+              workflowSuccessResponse,
             );
           }
 
@@ -402,7 +404,7 @@ export class AiAgentService {
    }`;
       }).join(',\n') : '';
 
-      const extraRules = await this.promptService.getPromptPadre('cm842kthc0000qd2l66nbnytv').catch(() => '');
+      const extraRules = await this.promptService.getPromptPadre(userId).catch(() => '');
       const promptAI = `${extraRules} lista de flujos disponibles ${formattedList} ${systemPrompt}`;
 
       return await this.respondAsMainAgent({
@@ -425,7 +427,8 @@ export class AiAgentService {
     instanceName: string,
     remoteJid: string,
     userPrompt: string,
-    successResponseLiteral?: string
+    extraRules:string,
+    successResponseLiteral?: string,
   ): Promise<string> {
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
     logger.log('Se esta ejecutando una tool... 😎')
@@ -440,7 +443,6 @@ export class AiAgentService {
    }`;
     }).join(',\n') : '';
 
-    const extraRules = await this.promptService.getPromptPadre('cm842kthc0000qd2l66nbnytv').catch(() => '');
     const principalPrompt = `${extraRules} lista de flujos disponibles ${formattedList} ${systemPrompt}`;
 
     const detectionResult = await this.openAIToolDetection({

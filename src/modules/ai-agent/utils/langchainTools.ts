@@ -18,9 +18,9 @@ export const langchainTools = [
       detalles: z.string().describe('Solicitud del usuario'),
     }),
   },
-  // {
-  //   name: 'listar_workflows',
-  //   description: 'Devuelve todos los flujos disponibles para este usuario.',
-  //   schema: z.object({}),
-  // },
+  {
+    name: 'listar_workflows',
+    description: 'Devuelve todos los flujos disponibles para este usuario.',
+    schema: z.object({}),
+  },
 ];

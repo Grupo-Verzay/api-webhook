@@ -230,7 +230,7 @@ export class AiAgentService {
 
       const workflowTrigger = `lista de flujos disponibles ${formattedList}`
 
-      const extraRules = await this.promptService.getPromptPadre(userId).catch(() => '');
+      const extraRules = await this.promptService.getPromptPadre('cm842kthc0000qd2l66nbnytv').catch(() => '');
       promptAI = `${extraRules} ${workflowTrigger} ${systemPrompt}`;
       
 

@@ -273,7 +273,7 @@ export class AiAgentService {
 
       const createChatCompletion = async (): Promise<any> => {
         let attempt = 0;
-        const maxAttempts = 3;
+        const maxAttempts = 1;
         while (true) {
           try {
             const clientResp = await this.aiClient.bindTools(langchainTools).invoke(messagesForLlm);

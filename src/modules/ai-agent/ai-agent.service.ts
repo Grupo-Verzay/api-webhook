@@ -276,6 +276,7 @@ export class AiAgentService {
         const maxAttempts = 3;
         while (true) {
           try {
+            console.log('intento n#',attempt)
             const clientResp = await this.aiClient.bindTools(langchainTools).invoke(messagesForLlm);
             return clientResp
           } catch (err: any) {

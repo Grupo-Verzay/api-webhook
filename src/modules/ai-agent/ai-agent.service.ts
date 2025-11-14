@@ -160,6 +160,7 @@ export class AiAgentService {
         ...chatHistory.map(text => new HumanMessage({
           content: [{ type: "text", text }],
         })),
+
         new HumanMessage({
           content: [{ type: "text", text: JSON.stringify(input) }],
         })
@@ -438,35 +439,40 @@ export class AiAgentService {
 
     const principalPrompt = `${extraRules} lista de flujos disponibles ${formattedList} ${systemPrompt}`;
 
-    const detectionResult = await this.openAIToolDetection({
-      input: args,
-      sessionId,
-      userId
-    });
-    const raw = detectionResult.content?.toString()?.trim();
+    // const detectionResult = await this.openAIToolDetection({
+    //   input: args,
+    //   sessionId,
+    //   userId
+    // });
+    // const raw = detectionResult.content?.toString()?.trim();
 
-    if (!raw || raw.toLowerCase() === 'ninguno') {
-      return await this.respondAsMainAgent({
-        userId,
-        sessionId,
-        userPrompt,
-        principalSystemPrompt: principalPrompt,
-        followupText: 'Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?'
-      });
-    }
+    // if (!raw || raw.toLowerCase() === 'ninguno') {
+    //   return await this.respondAsMainAgent({
+    //     userId,
+    //     sessionId,
+    //     userPrompt,
+    //     principalSystemPrompt: principalPrompt,
+    //     followupText: 'Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?'
+    //   });
+    // }
 
     let nombresDetectados: string[] = [];
     try {
-      const parsed = JSON.parse(raw);
-      nombresDetectados = parsed?.nombre_flujo || [];
+      // const parsed = JSON.parse(raw);
+      // nombresDetectados = parsed?.nombre_flujo || [];
 
-      if (!Array.isArray(nombresDetectados) || nombresDetectados.length === 0) {
+      if (args && Array.isArray(args.nombre_flujo)) {
+        nombresDetectados = args.nombre_flujo;  
+      }
+      if (nombresDetectados.length === 0) {
+        logger.warn('El LLM no devolvió flujos válidos en los argumentos de la tool.');
         return await this.respondAsMainAgent({
           userId,
           sessionId,
           userPrompt,
           principalSystemPrompt: principalPrompt,
-          followupText: 'No se detectó ningún flujo compatible con tu solicitud.'
+          // Usamos un mensaje que indica que la herramienta no encontró la intención.
+          followupText: 'Disculpa, no se detectó ningún flujo compatible con tu solicitud. ¿Te puedo ayudar con algo más?',
         });
       }
     } catch (e: any) {

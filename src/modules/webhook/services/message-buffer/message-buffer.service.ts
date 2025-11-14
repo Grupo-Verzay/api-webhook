@@ -21,7 +21,7 @@ export class MessageBufferService {
     handleIncomingMessage(
         userId: string,
         content: string,
-        delay = 7000,
+        delay = 10000,
         callback: (mergedText: string) => Promise<void>,
     ): void {
         const entry = this.buffer.get(userId) || { messages: [] };

@@ -23,7 +23,7 @@ export class WebhookController {
                 this.logger.error(`Error asíncrono en el webhook: ${JSON.stringify(error)}`);
                 // No se puede enviar error 500 al remitente, la respuesta ya fue enviada.
             });
-            
         // El hilo de ejecución se libera aquí.
     }
+
 }

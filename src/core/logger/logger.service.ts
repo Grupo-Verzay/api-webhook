@@ -12,6 +12,7 @@ export class LoggerService extends Logger {
 
   async log(message: string, context?: string): Promise<void> {
     super.log(`🟢 LOG - ${message}`, context);
+    await this.saveLog('Out', `${message}`, context);
   }
 
   async error(message: any, trace?: string, context?: string): Promise<void> {

@@ -64,7 +64,7 @@ export class AiAgentService {
   * @param {string} apikeyOpenAi
   */
   private initializeClient(apikeyOpenAi: string, model: string, provider: string): BaseChatModel {
-
+    console.log('error? busca los...', provider, model, apikeyOpenAi, 'fueron los modelos',)
     this.aiClient = this.llmClientFactory.getClient({ provider: provider, apiKey: apikeyOpenAi, model: model })
     return this.aiClient
   };
@@ -160,7 +160,6 @@ export class AiAgentService {
         ...chatHistory.map(text => new HumanMessage({
           content: [{ type: "text", text }],
         })),
-
         new HumanMessage({
           content: [{ type: "text", text: JSON.stringify(input) }],
         })
@@ -233,7 +232,7 @@ export class AiAgentService {
 
       const extraRules = await this.promptService.getPromptPadre('cm842kthc0000qd2l66nbnytv').catch(() => '');
       promptAI = `${extraRules} ${workflowTrigger} ${systemPrompt}`;
-
+      
 
       if (noHistory && hasInicioBienvenida) {
         const result = await this.handleExecuteWorkflowTool(
@@ -248,11 +247,6 @@ export class AiAgentService {
           this.initWorkflowName,
           extraRules,
           workflowSuccessResponse,
-        );
-        await this.chatHistoryService.registerExecutedIntention(
-          sessionId,
-          this.initWorkflowName,
-          'intention'
         );
         return result;
       }
@@ -282,7 +276,6 @@ export class AiAgentService {
         const maxAttempts = 3;
         while (true) {
           try {
-            console.log('intento n#', attempt)
             const clientResp = await this.aiClient.bindTools(langchainTools).invoke(messagesForLlm);
             return clientResp
           } catch (err: any) {
@@ -328,16 +321,16 @@ export class AiAgentService {
             const res = await this.notificacionTool.handleNotificacionTool(
               args, userId, server_url, apikey, instanceName, remoteJid
             );
-
+            
             //Ejecuta el agentes despues de notificacion
-            const clientRes = await this.respondAsMainAgent({
+            const clientRes =await this.respondAsMainAgent({
               userId,
               sessionId,
               userPrompt: input,
               principalSystemPrompt: promptAI,
               followupText: res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.'
             });
-
+            
             return `${clientRes}`
           }
           case 'Ejecutar_Flujos': {
@@ -375,7 +368,7 @@ export class AiAgentService {
       // 🔧 Hotfix: si el modelo devolvió JSON en texto con {"tool": "..."} en vez de tool_calls
 
       //Revisando si es este
-      const RFlujos = await this.respondAsMainAgent({
+      const RFlujos= await this.respondAsMainAgent({
         userId,
         sessionId,
         userPrompt: input,
@@ -421,7 +414,7 @@ export class AiAgentService {
     instanceName: string,
     remoteJid: string,
     userPrompt: string,
-    extraRules: string,
+    extraRules:string,
     successResponseLiteral?: string,
   ): Promise<string> {
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
@@ -439,40 +432,35 @@ export class AiAgentService {
 
     const principalPrompt = `${extraRules} lista de flujos disponibles ${formattedList} ${systemPrompt}`;
 
-    // const detectionResult = await this.openAIToolDetection({
-    //   input: args,
-    //   sessionId,
-    //   userId
-    // });
-    // const raw = detectionResult.content?.toString()?.trim();
+    const detectionResult = await this.openAIToolDetection({
+      input: args,
+      sessionId,
+      userId
+    });
+    const raw = detectionResult.content?.toString()?.trim();
 
-    // if (!raw || raw.toLowerCase() === 'ninguno') {
-    //   return await this.respondAsMainAgent({
-    //     userId,
-    //     sessionId,
-    //     userPrompt,
-    //     principalSystemPrompt: principalPrompt,
-    //     followupText: 'Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?'
-    //   });
-    // }
+    if (!raw || raw.toLowerCase() === 'ninguno') {
+      return await this.respondAsMainAgent({
+        userId,
+        sessionId,
+        userPrompt,
+        principalSystemPrompt: principalPrompt,
+        followupText: 'Disculpa, no encontré información relacionada. ¿Te puedo ayudar con algo más?'
+      });
+    }
 
     let nombresDetectados: string[] = [];
     try {
-      // const parsed = JSON.parse(raw);
-      // nombresDetectados = parsed?.nombre_flujo || [];
+      const parsed = JSON.parse(raw);
+      nombresDetectados = parsed?.nombre_flujo || [];
 
-      if (args && Array.isArray(args.nombre_flujo)) {
-        nombresDetectados = args.nombre_flujo;  
-      }
-      if (nombresDetectados.length === 0) {
-        logger.warn('El LLM no devolvió flujos válidos en los argumentos de la tool.');
+      if (!Array.isArray(nombresDetectados) || nombresDetectados.length === 0) {
         return await this.respondAsMainAgent({
           userId,
           sessionId,
           userPrompt,
           principalSystemPrompt: principalPrompt,
-          // Usamos un mensaje que indica que la herramienta no encontró la intención.
-          followupText: 'Disculpa, no se detectó ningún flujo compatible con tu solicitud. ¿Te puedo ayudar con algo más?',
+          followupText: 'No se detectó ningún flujo compatible con tu solicitud.'
         });
       }
     } catch (e: any) {

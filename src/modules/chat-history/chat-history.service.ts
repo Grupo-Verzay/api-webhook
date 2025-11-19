@@ -37,7 +37,7 @@ export class ChatHistoryService {
         const messages = await this.prisma.n8n_chat_histories.findMany({
             where: { session_id: sessionId },
             orderBy: { id: 'desc' }, // más recientes primero
-            take: 5,
+            take: 15,
         });
 
         return messages

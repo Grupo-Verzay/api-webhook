@@ -644,9 +644,7 @@
       return 'No pude iniciar ningún flujo en este momento. ¿Te puedo ayudar con otra cosa?';
     }
 
-    /**
-     * Transcribe audio (usado por message-type-handler).
-     */
+    //Transcribe audio (usado por message-type-handler)
     async transcribeAudio(
       audioUrl: string,
       audioType: string,
@@ -714,9 +712,7 @@
       }
     }
 
-    /**
-     * Describe imagen (usado por message-type-handler).
-     */
+    // Describe imagen (usado por message-type-handler).
     async describeImage(
       data: any,
       imageBase64: string,

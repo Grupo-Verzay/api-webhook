@@ -37,7 +37,6 @@ export class SessionService {
     return this.prisma.session.findFirst({
       where: {
         remoteJid,
-        instanceId,
         userId,
       },
     });
@@ -53,7 +52,7 @@ export class SessionService {
   // Update state session by remoteJid y instanceId
   async updateSessionStatus(remoteJid: string, instanceId: string, status: boolean, userId: string) {
     return this.prisma.session.updateMany({
-      where: { remoteJid, instanceId, userId },
+      where: { remoteJid, userId },
       data: { status },
     });
   }
@@ -61,7 +60,7 @@ export class SessionService {
   // Consulta el estado del chat
   async isSessionActive(remoteJid: string, userId: string, instanceId: string): Promise<boolean> {
     const session = await this.prisma.session.findFirst({
-      where: { remoteJid, userId,instanceId },
+      where: { remoteJid, userId },
       select: { status: true },
     });
     return session?.status ?? false;

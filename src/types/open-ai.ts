@@ -66,6 +66,7 @@ export interface OpenAIDetectionResult {
 export interface stopOrResumeConversation {
     conversationMsg: string,
     remoteJid: string,
+    remoteJidAlt?: string; // 👈 NUEVO
     instanceId: string,
     sessionStatus: boolean,
     userWithRelations: User & { pausar: Pausar[] },

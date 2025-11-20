@@ -47,7 +47,7 @@ export class WebhookService {
     private readonly aiCreditsService: AiCreditsService,
     private readonly sessionTriggerService: SessionTriggerService,
     private readonly antifloodService: AntifloodService,
-  ) { }
+  ) {}
 
   /**
    * Crea un logger con contexto fijo para prefijar todos los mensajes.
@@ -158,6 +158,7 @@ export class WebhookService {
       await this.stopOrResumeConversation({
         conversationMsg,
         remoteJid,
+        remoteJidAlt, // 👈 PASAMOS TAMBIÉN EL JID ALTERNATIVO
         instanceId,
         sessionStatus,
         userWithRelations,
@@ -255,8 +256,6 @@ export class WebhookService {
         }
       },
     );
-
-
   }
 
   private async creditValidation({
@@ -423,6 +422,7 @@ export class WebhookService {
   private async stopOrResumeConversation({
     conversationMsg,
     remoteJid,
+    remoteJidAlt,
     instanceId,
     sessionStatus,
     userWithRelations,
@@ -432,13 +432,25 @@ export class WebhookService {
   }: stopOrResumeConversation) {
     const logger = this.scopedLogger({ userId: userWithRelations?.id, instanceName, remoteJid });
 
+    // ⛔ Pausar SIEMPRE la sesión canon...
     await this.sessionService.updateSessionStatus(
       remoteJid,
       instanceName,
       false,
       userWithRelations.id,
     );
-    logger.log(`Chat pausado.`);
+    logger.log(`Chat pausado para ${remoteJid}.`);
+
+    // ...y también el JID alternativo si existe y es distinto
+    if (remoteJidAlt && remoteJidAlt !== remoteJid) {
+      await this.sessionService.updateSessionStatus(
+        remoteJidAlt,
+        instanceName,
+        false,
+        userWithRelations.id,
+      );
+      logger.log(`Chat pausado también para JID alternativo: ${remoteJidAlt}.`);
+    }
 
     if (!sessionStatus) {
       if (!userWithRelations) {
@@ -465,6 +477,18 @@ export class WebhookService {
           true,
           userWithRelations.id,
         );
+
+        // Opcional: si quieres reactivar también el alternativo:
+        if (remoteJidAlt && remoteJidAlt !== remoteJid) {
+          await this.sessionService.updateSessionStatus(
+            remoteJidAlt,
+            instanceName,
+            true,
+            userWithRelations.id,
+          );
+          logger.log(`Chat reactivado también para JID alternativo: ${remoteJidAlt}.`);
+        }
+
         return;
       }
     }

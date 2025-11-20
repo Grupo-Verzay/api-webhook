@@ -284,7 +284,7 @@
         promptAI = `${extraRules} ${systemPrompt}`.trim();
 
         // 👉 LOG EXTRA: ver prompt completo en logs
-        logger.log(`Prompt principal (promptAI) usado por el agente:\n${promptAI}`);
+        //logger.log(`Prompt principal (promptAI) usado por el agente:\n${promptAI}`);
 
         const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
         const noHistory =

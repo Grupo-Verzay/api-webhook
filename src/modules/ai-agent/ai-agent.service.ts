@@ -1,10 +1,10 @@
 import axios from 'axios';
 import OpenAI from 'openai';
 
-import fs from "fs";
-import path from "path";
+import fs from 'fs';
+import path from 'path';
 
-import { Readable } from "stream";
+import { Readable } from 'stream';
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/core/logger/logger.service';
 import { PromptService } from '../prompt/prompt.service';
@@ -33,8 +33,10 @@ import {
   HumanMessage,
   SystemMessage,
   ToolMessage,
-} from "@langchain/core/messages";
+} from '@langchain/core/messages';
 import { langchainTools } from './utils/langchainTools';
+import { NodeSenderService } from '../workflow/services/node-sender.service.ts/node-sender.service';
+import { AgentNotificationService } from './services/notificacionService/notificacion.service';
 
 @Injectable()
 export class AiAgentService {
@@ -55,11 +57,15 @@ export class AiAgentService {
     private readonly llmClientFactory: LlmClientFactory,
     private readonly sessionService: SessionService,
     private readonly promptCompressor: PromptCompressorService,
-  ) { }
+    private readonly nodeSenderService: NodeSenderService,
+    private readonly agentNotificationService: AgentNotificationService,
+  ) {}
 
   // Logger con contexto fijo: [UID=...][I=...][R=...]
   private scopedLogger(ctx: { userId?: string; instanceName?: string; remoteJid?: string }) {
-    const tag = `[UID=${ctx.userId ?? '-'}][I=${ctx.instanceName ?? '-'}][R=${ctx.remoteJid ?? '-'}]`;
+    const tag = `[UID=${ctx.userId ?? '-'}][I=${ctx.instanceName ?? '-'}][R=${
+      ctx.remoteJid ?? '-'
+    }]`;
     return {
       log: (msg: string, context = 'AiAgentService') =>
         this.logger.log(`${tag} ${msg}`, context),
@@ -71,11 +77,7 @@ export class AiAgentService {
   }
 
   // Inicializa el cliente LLM (LangChain) según provider y modelo.
-  private initializeClient(
-    apikeyOpenAi: string,
-    model: string,
-    provider: string,
-  ): BaseChatModel {
+  private initializeClient(apikeyOpenAi: string, model: string, provider: string): BaseChatModel {
     this.logger.log(
       `Inicializando cliente LLM. provider=${provider} model=${model}`,
       'AiAgentService',
@@ -107,16 +109,8 @@ export class AiAgentService {
   /**
    * SIEMPRE FINALIZA COMO AGENTE PRINCIPAL.
    *
-   * Esta función se ejecuta SIEMPRE que:
    * - No hubo tool_call, o
-   * - Se ejecutó una tool (Notificacion_Asesor / Ejecutar_Flujos) y ya tenemos
-   *   un texto de resultado (followupText) que se pasa como contexto.
-   *
-   * El agente principal recibe:
-   * - system prompt principal: `${extraRules} ${systemPrompt}`
-   * - historial de chat
-   * - mensaje original del usuario
-   * - mensaje de seguimiento con el resultado de la tool (followupText)
+   * - Se ejecutó una tool y tenemos followupText.
    */
   private async respondAsMainAgent(params: {
     userId: string;
@@ -125,13 +119,7 @@ export class AiAgentService {
     principalSystemPrompt: string;
     followupText: string;
   }): Promise<string> {
-    const {
-      userId,
-      sessionId,
-      userPrompt,
-      principalSystemPrompt,
-      followupText,
-    } = params;
+    const { userId, sessionId, userPrompt, principalSystemPrompt, followupText } = params;
 
     const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
 
@@ -151,12 +139,10 @@ export class AiAgentService {
         }),
     );
 
-    // Mensaje original del usuario
     const rawUser = new HumanMessage({
       content: [{ type: 'text', text: userPrompt }],
     });
 
-    // Resultado de la tool como contexto adicional
     const followupMessage = new HumanMessage({
       content: [{ type: 'text', text: followupText }],
     });
@@ -197,13 +183,10 @@ export class AiAgentService {
         .map((flow, index) => `${index + 1}. ${flow.name}`)
         .join(',\n');
 
-      logger.log(`Lista de flujos (texto): ${JSON.stringify(formattedList)}`);
+      logger.log(`Lista de flujos (texto): ${formattedList}`);
       logger.log(`Lista de flujos (obj): ${JSON.stringify(workflows)}`);
 
-      const customWorkflowPrompt = systemPromptWorkflow(
-        input,
-        JSON.stringify(formattedList),
-      );
+      const customWorkflowPrompt = systemPromptWorkflow(input, JSON.stringify(formattedList));
 
       const messagesR = [
         new SystemMessage({
@@ -247,12 +230,6 @@ export class AiAgentService {
   /**
    * Proceso principal de entrada (AGENTE PRINCIPAL).
    * Llamado desde el webhook.
-   *
-   * Prompt principal:  `${extraRules} ${systemPrompt}`
-   *
-   * - Detecta si la IA quiere usar tools (Notificacion_Asesor / Ejecutar_Flujos).
-   * - Ejecuta la tool en backend.
-   * - Pasa el resultado al MISMO agente principal para que responda al usuario.
    */
   async processInput({
     input,
@@ -273,33 +250,26 @@ export class AiAgentService {
       // Inicializar LLM (LangChain client)
       this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
 
-      const systemPrompt = await this.promptService
-        .getPromptUserId(userId)
-        .catch(() => '');
+      const systemPrompt = await this.promptService.getPromptUserId(userId).catch(() => '');
       const extraRules = await this.promptService
         .getPromptPadre('cm842kthc0000qd2l66nbnytv')
         .catch(() => '');
 
-      // 🔹 Prompt PRINCIPAL del agente
+      // Prompt PRINCIPAL del agente
       promptAI = `${extraRules} ${systemPrompt}`.trim();
 
-      // 👉 LOG EXTRA: ver prompt completo en logs
-      //logger.log(`Prompt principal (promptAI) usado por el agente:\n${promptAI}`);
-
       const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
-      const noHistory =
-        !Array.isArray(chatHistory) || chatHistory.length === 0;
+      const noHistory = !Array.isArray(chatHistory) || chatHistory.length === 0;
 
       const workflows = await this.workflowService.getWorkflow(userId);
 
       const hasInicioBienvenida = workflows?.some(
         (w: any) =>
           typeof w?.name === 'string' &&
-          w.name.trim().toLowerCase() ===
-          this.initWorkflowName.toLowerCase(),
+          w.name.trim().toLowerCase() === this.initWorkflowName.toLowerCase(),
       );
 
-      // 🔹 Caso especial: primera vez en el chat + flujo INICIO_BIENVENIDA
+      // Caso especial: primera vez en el chat + flujo INICIO_BIENVENIDA
       if (noHistory && hasInicioBienvenida) {
         const args: any = {
           nombre_flujo: [this.initWorkflowName],
@@ -342,44 +312,35 @@ export class AiAgentService {
         content: [{ type: 'text', text: promptAI }],
       });
 
-      const messagesForLlm = [
-        systemMessage,
-        ...historyMessages,
-        rawInputMessage,
-      ];
+      const messagesForLlm = [systemMessage, ...historyMessages, rawInputMessage];
 
-      const sleep = (ms: number) =>
-        new Promise((res) => setTimeout(res, ms));
+      const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
       const createChatCompletion = async (): Promise<any> => {
         let attempt = 0;
         const maxAttempts = 3;
         while (true) {
           try {
-            const clientResp = await this.aiClient
-              .bindTools(langchainTools)
-              .invoke(messagesForLlm);
+            const clientResp = await this.aiClient.bindTools(langchainTools).invoke(messagesForLlm);
             return clientResp;
           } catch (err: any) {
             attempt++;
             const isRate =
               err?.code === 'rate_limit_exceeded' ||
-              err?.status === 429;
+              err?.status === 429 ||
+              (typeof err?.message === 'string' &&
+                err.message.toLowerCase().includes('rate limit'));
             if (!isRate || attempt >= maxAttempts) throw err;
-            const backoff = Math.floor(
-              2 ** attempt * 1000 + Math.random() * 1000,
-            );
-            logger.warn(
-              `Rate limit: reintento #${attempt} en ${backoff}ms`,
-            );
+            const backoff = Math.floor(2 ** attempt * 1000 + Math.random() * 1000);
+            logger.warn(`Rate limit: reintento #${attempt} en ${backoff}ms`);
             await sleep(backoff);
           }
         }
       };
 
-      // 🔹 Primer llamado al modelo con tools
       let response: any;
 
+      // --- Llamada al modelo con manejo especial de error de CUOTA ---
       try {
         response = await createChatCompletion();
       } catch (err: any) {
@@ -393,16 +354,45 @@ export class AiAgentService {
           msg.includes('InsufficientQuota');
 
         if (isQuota) {
-          logger.error(
+          logger.warn(
             '❌ Error de cuota con el proveedor de IA (OpenAI). El asistente no puede responder hasta que se restablezca el plan/billing.',
-            err,
           );
 
-          // 🔙 Salida controlada: NO volvemos a llamar a la IA aquí.
-          return 'En este momento el asistente superó el límite de uso del proveedor de IA. Intenta de nuevo en unos minutos o contacta con soporte.';
+          try {
+            const apiUrl = `${server_url}/message/sendText/${instanceName}`;
+            const notificationPhone = await this.agentNotificationService.getNotificationPhone(
+              userId,
+              remoteJid,
+            );
+
+            if (notificationPhone) {
+              const aviso =
+                '⚠️ Tu *agente IA* alcanzó el límite de uso del proveedor de IA.\n\n' +
+                '🧐 Por favor revisa el plan o la facturación del modelo configurado\n\n' +
+                '👉 https://platform.openai.com/settings/organization/billing/overview';
+              await this.nodeSenderService.sendTextNode(
+                apiUrl,
+                apikey,
+                notificationPhone,
+                aviso,
+              );
+            } else {
+              logger.warn(
+                'Error de cuota: no se envió aviso porque no hay número de notificación ni fallback.',
+              );
+            }
+          } catch (sendErr: any) {
+            logger.error(
+              'Error enviando notificación por error de cuota.',
+              sendErr?.message || sendErr,
+            );
+          }
+
+          // ❌ No responder nada al usuario final
+          return '';
         }
 
-        // Otros errores se manejan en el catch general de processInput
+        // Otros errores pasan al catch general de processInput
         throw err;
       }
 
@@ -410,23 +400,17 @@ export class AiAgentService {
       const toolCall = choice.tool_calls?.shift?.();
 
       const totalTokensMain = response?.usage_metadata?.total_tokens;
-      const tokensUsedMain = totalTokensMain
-        ? parseInt(totalTokensMain.toString(), 10)
-        : 0;
+      const tokensUsedMain = totalTokensMain ? parseInt(totalTokensMain.toString(), 10) : 0;
       await this.aiCredits.trackTokens(userId, tokensUsedMain);
 
-      // 🔹 Si la IA pidió una tool
+      // Si la IA pidió una tool
       if (toolCall) {
         logger.log(`Tool encontrada, preparando ejecución...`);
         let args: any;
         try {
           args = toolCall.args;
         } catch (e: any) {
-          logger.error(
-            'Error al parsear los argumentos del toolCall',
-            e.message,
-          );
-          // Si los argumentos vienen dañados, el agente principal responde el error.
+          logger.error('Error al parsear los argumentos del toolCall', e.message);
           const final = await this.respondAsMainAgent({
             userId,
             sessionId,
@@ -452,9 +436,7 @@ export class AiAgentService {
             );
 
             const follow =
-              res === 'ok'
-                ? 'Notificación enviada.'
-                : 'No se pudo notificar al asesor.';
+              res === 'ok' ? 'Notificación enviada.' : 'No se pudo notificar al asesor.';
 
             const final = await this.respondAsMainAgent({
               userId,
@@ -509,7 +491,7 @@ export class AiAgentService {
         }
       }
 
-      // 🔹 Si NO hubo tool_call → responde el agente principal directamente
+      // Si NO hubo tool_call → responde el agente principal directamente
       const finalSinTool = await this.respondAsMainAgent({
         userId,
         sessionId,
@@ -519,25 +501,68 @@ export class AiAgentService {
       });
 
       return finalSinTool;
-    } catch (error) {
+    } catch (error: any) {
       const logger = this.scopedLogger({ userId, instanceName, remoteJid });
-      logger.error(
-        'Error procesando entrada con OpenAI.',
-        (error as any)?.response?.data || (error as any).message,
-      );
 
-      const systemPrompt = await this.promptService
-        .getPromptUserId(userId)
-        .catch(() => '');
+      // Extraemos el error pero solo lo logueamos completo si NO es auth
+      const rawError = error?.response?.data || error?.message || JSON.stringify(error);
+      const msgStr = rawError?.toString?.() ?? String(rawError);
+
+      const isAuthError =
+        msgStr.includes('Incorrect API key provided') ||
+        msgStr.includes('MODEL_AUTHENTICATION') ||
+        error?.status === 401;
+
+      // 🔐 Error de API Key inválida → NOTIFICAR SOLO ADMIN, NO RESPONDER AL USUARIO
+      if (isAuthError) {
+        logger.error(
+          'Error de autenticación con el proveedor de IA (API Key inválida).',
+          undefined,
+        );
+
+        try {
+          const apiUrl = `${server_url}/message/sendText/${instanceName}`;
+          const notificationPhone = await this.agentNotificationService.getNotificationPhone(
+            userId,
+            remoteJid,
+          );
+
+          if (notificationPhone) {
+            const aviso =
+              '⚠️ La *APIKey* introducida en *Agente IA* es inválida. Por favor revisa e ingresa una API Key valida.\n\n' +
+              '👉 https://agente.ia-app.com/profile';
+
+            await this.nodeSenderService.sendTextNode(
+              apiUrl,
+              apikey,
+              notificationPhone,
+              aviso,
+            );
+          } else {
+            logger.warn(
+              'Error de autenticación: no se envió aviso porque no hay número de notificación ni fallback.',
+            );
+          }
+        } catch (sendErr: any) {
+          logger.error(
+            'Error enviando notificación por API Key inválida.',
+            sendErr?.message || sendErr,
+          );
+        }
+
+        // ❌ No responder nada al usuario final
+        return '';
+      }
+
+      // Otros errores sí se loguean completos
+      logger.error('Error procesando entrada con OpenAI.', rawError);
+
+      const systemPrompt = await this.promptService.getPromptUserId(userId).catch(() => '');
       const extraRules = await this.promptService
         .getPromptPadre('cm842kthc0000qd2l66nbnytv')
         .catch(() => '');
       const promptAI = `${extraRules} ${systemPrompt}`.trim();
 
-      // 👉 LOG EXTRA también en error para ver qué prompt se intentó usar
-      logger.log(`Prompt principal (promptAI) usado en error:\n${promptAI}`);
-
-      // Si el cliente LLM no está listo o no es un chat model válido, devolvemos texto plano
       const hasInvoke = this.aiClient && typeof (this.aiClient as any).invoke === 'function';
 
       if (!hasInvoke) {
@@ -553,28 +578,13 @@ export class AiAgentService {
         sessionId,
         userPrompt: '[ERROR_PROCESSING_OPENAI_INPUT]',
         principalSystemPrompt: promptAI,
-        followupText:
-          'Ocurrió un error procesando tu solicitud. ¿Deseas intentarlo de nuevo?',
+        followupText: 'Ocurrió un error procesando tu solicitud. ¿Deseas intentarlo de nuevo?',
       });
     }
   }
 
   /**
    * Tool Ejecutar_Flujos (AGENTE INTERNO DE FLUJOS).
-   *
-   * Recibe algo como:
-   * {
-   *   "nombre_flujo": ["DEMO"],
-   *   "descripcion": "El cliente quiere un demo gratis"
-   * }
-   *
-   * 1. Usa openAIToolDetection (systemPromptWorkflow + formattedList)
-   *    para mapear al/los nombres de flujos EXACTOS en BD.
-   * 2. Ejecuta el flujo correspondiente.
-   * 3. Devuelve un texto tipo:
-   *    "✅ Flujo *DEMO* iniciado correctamente."
-   *
-   * Ese texto luego se pasa al agente principal como followupText.
    */
   private async handleExecuteWorkflowTool(
     args: inputWorkflow,
@@ -588,15 +598,12 @@ export class AiAgentService {
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
     logger.log('Se está ejecutando la tool Ejecutar_Flujos... 😎');
 
-    const workflows = await this.workflowService
-      .getWorkflow(userId)
-      .catch(() => []);
+    const workflows = await this.workflowService.getWorkflow(userId).catch(() => []);
 
     if (!Array.isArray(workflows) || workflows.length === 0) {
       return 'No hay flujos configurados actualmente.';
     }
 
-    // 🔹 Segundo agente interno: detecta nombres de flujos exactos a partir de args
     const detectionResult = await this.openAIToolDetection({
       input: args,
       sessionId,
@@ -636,11 +643,10 @@ export class AiAgentService {
         continue;
       }
 
-      const alreadyExecuted =
-        await this.chatHistoryService.hasIntentionBeenExecuted(
-          sessionId,
-          currentWorkflow.name,
-        );
+      const alreadyExecuted = await this.chatHistoryService.hasIntentionBeenExecuted(
+        sessionId,
+        currentWorkflow.name,
+      );
 
       if (!alreadyExecuted) {
         await this.chatHistoryService.registerExecutedIntention(
@@ -677,7 +683,7 @@ export class AiAgentService {
     return 'No pude iniciar ningún flujo en este momento. ¿Te puedo ayudar con otra cosa?';
   }
 
-  //Transcribe audio (usado por message-type-handler)
+  // Transcribe audio (usado por message-type-handler)
   async transcribeAudio(
     audioUrl: string,
     audioType: string,
@@ -696,21 +702,34 @@ export class AiAgentService {
       const audioStream = Readable.from(audioBuffer);
       (audioStream as any).path = 'audio.ogg';
 
-      if (defaultProvider == 'openai') {
-        this.initializeClient(apikeyOpenAi, 'whisper-1', defaultProvider);
-        const transcription = await (this.aiClient as any).audio.transcriptions.create(
-          {
+      // ⚠️ NO usar this.initializeClient aquí para no tocar this.aiClient
+      if (defaultProvider === 'openai') {
+        try {
+          const localOpenAI = new OpenAI({ apiKey: apikeyOpenAi });
+          const transcription = await (localOpenAI as any).audio.transcriptions.create({
             file: audioStream,
             model: 'whisper-1',
             response_format: 'text',
-          },
-        );
-        return typeof transcription === 'string'
-          ? transcription
-          : (transcription as any).text;
+          });
+
+          return typeof transcription === 'string'
+            ? transcription
+            : (transcription as any).text;
+        } catch (err: any) {
+          logger.error(
+            'Error transcribiendo audio con Whisper (OpenAI).',
+            err?.response?.data || err?.message,
+          );
+          return '[ERROR_TRANSCRIBING_AUDIO]';
+        }
       }
 
-      this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
+      // Otros proveedores (por ejemplo Gemini) usando llmClientFactory
+      const audioLlm = this.llmClientFactory.getClient({
+        provider: defaultProvider,
+        apiKey: apikeyOpenAi,
+        model: defaultModel,
+      });
 
       const message = new HumanMessage({
         content: [
@@ -718,25 +737,17 @@ export class AiAgentService {
             type: 'text',
             text: 'Transcribe de forma clara y detallada este audio.',
           },
-          defaultProvider == 'openai'
-            ? {
-              type: 'input_audio',
-              input_audio: { data: base64Audio, format: `${audioType}` },
-            }
-            : {
-              type: 'media',
-              data: base64Audio,
-              mimeType: `${audioType}`,
-            },
+          {
+            type: 'media',
+            data: base64Audio,
+            mimeType: `${audioType}`,
+          },
         ],
       });
-      const state = await this.aiClient.invoke([message]);
+      const state = await (audioLlm as any).invoke([message]);
       return state.content.toString();
     } catch (error: any) {
-      logger.error(
-        'Error transcribiendo audio.',
-        error?.response?.data || error.message,
-      );
+      logger.error('Error transcribiendo audio.', error?.response?.data || error.message);
       logger.error(
         'Error transcribiendo audio.',
         error?.message || JSON.stringify(error, null, 2),
@@ -766,8 +777,7 @@ export class AiAgentService {
           {
             type: 'image_url',
             image_url: {
-              url: `data:${imageType == '' ? 'image/jpeg' : imageType
-                };base64,${imageBase64}`,
+              url: `data:${imageType == '' ? 'image/jpeg' : imageType};base64,${imageBase64}`,
             },
           },
         ],
@@ -775,10 +785,7 @@ export class AiAgentService {
       const response = await this.aiClient.invoke([message]);
       return response.content.toString() ?? '[ERROR_DESCRIBING_IMAGE]';
     } catch (error: any) {
-      logger.error(
-        'Error describiendo imagen.',
-        error?.response?.data || error.message,
-      );
+      logger.error('Error describiendo imagen.', error?.response?.data || error.message);
       return '[ERROR_DESCRIBING_IMAGE]';
     }
   }

@@ -1,6 +1,7 @@
+// ai-agent.module.ts
 import { Module } from '@nestjs/common';
-import { HttpModule } from '@nestjs/axios'; // <-- importa HttpModule
-import { ConfigModule } from '@nestjs/config'; // <-- también debes tenerlo para ConfigService
+import { HttpModule } from '@nestjs/axios';
+import { ConfigModule } from '@nestjs/config';
 import { AiAgentService } from './ai-agent.service';
 import { PromptService } from '../prompt/prompt.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
@@ -15,13 +16,19 @@ import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { PromptCompressorService } from './services/prompt-compressor/prompt-compressor.service';
 import { LlmClientFactory } from './services/llmClientFactory/llmClientFactory.service';
 
+
+// 👇 IMPORTA UserService
+import { UserService } from '../user/user.service';
+import { AgentNotificationService } from './services/notificacionService/notificacion.service';
+
 @Module({
   imports: [
     HttpModule,
     ConfigModule,
-    WorkflowModule // necesario porque usas ConfigService
+    WorkflowModule,
   ],
-  providers: [AiAgentService,
+  providers: [
+    AiAgentService,
     PromptService,
     ChatHistoryService,
     IntentionService,
@@ -32,9 +39,17 @@ import { LlmClientFactory } from './services/llmClientFactory/llmClientFactory.s
     SessionService,
     NotificacionToolService,
     AiCreditsService,
-    LlmClientFactory
+    LlmClientFactory,
+    AgentNotificationService,
+    UserService,              // 👈 AÑADIDO AQUÍ
   ],
-
-  exports: [AiAgentService, NotificacionToolService, NodeSenderService, AiCreditsService,LlmClientFactory ],
+  exports: [
+    AiAgentService,
+    NotificacionToolService,
+    NodeSenderService,
+    AiCreditsService,
+    LlmClientFactory,
+    AgentNotificationService,
+  ],
 })
-export class AiAgentModule { }
+export class AiAgentModule {}

@@ -155,23 +155,24 @@ model ModuleItem {
 }
 
 model Session {
-  userId       String
-  remoteJid    String
-  pushName     String
-  instanceId   String
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  status       Boolean
-  id           Int           @id @default(autoincrement())
-  seguimientos String?       @default("")
-  inactividad  String?       @default("")
-  sessionDelay String?
-  flujos       String?       @default("")
-  remoteJidAlt String?
-  Appointment  Appointment[]
-  Registro     Registro[]
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  SessionTag   SessionTag[]
+  userId         String
+  remoteJid      String
+  pushName       String
+  instanceId     String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  status         Boolean
+  id             Int             @id @default(autoincrement())
+  seguimientos   String?         @default("")
+  inactividad    String?         @default("")
+  sessionDelay   String?
+  flujos         String?         @default("")
+  remoteJidAlt   String?
+  Appointment    Appointment[]
+  Registro       Registro?
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  SessionTag     SessionTag[]
+  SessionTrigger SessionTrigger?
 
   @@index([userId, remoteJid])
 }
@@ -486,25 +487,25 @@ model SessionTrigger {
   time      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  sessionId String
+  sessionId Int      @unique
+  Session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
 model Registro {
   tipo      TipoRegistro
   fecha     DateTime?
-  estado    String
+  estado    String?
   resumen   String?
   lead      Boolean?
   nombre    String?
   detalles  String?
   meta      Json?
-  sessionId Int
+  sessionId Int          @unique
   createdAt DateTime     @default(now())
   updatedAt DateTime
   id        Int          @id @default(autoincrement())
   Session   Session      @relation(fields: [sessionId], references: [id])
 
-  @@index([sessionId, tipo, fecha])
   @@index([tipo, fecha])
 }
 

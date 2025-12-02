@@ -468,6 +468,7 @@ export class WebhookService {
       logger.log(`Chat pausado también para JID alternativo: ${remoteJidAlt}.`);
     }
 
+    //Revisar el estado
     if (!sessionStatus) {
       if (!userWithRelations) {
         logger.warn('No se encontró el usuario para obtener la frase de reactivación.');

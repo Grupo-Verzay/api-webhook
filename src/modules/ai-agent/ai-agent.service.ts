@@ -40,7 +40,6 @@ import { AgentNotificationService } from './services/notificacionService/notific
 
 @Injectable()
 export class AiAgentService {
-  private openAiClient: OpenAI;
   // Cliente LLM (LangChain / OpenAI envuelto)
   private aiClient: any = null;
 
@@ -169,7 +168,6 @@ export class AiAgentService {
   }: openAIToolDetection): Promise<OpenAIDetectionResult> {
     const logger = this.scopedLogger({ userId });
     try {
-      const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
       const workflows = await this.workflowService.getWorkflow(userId);
 
       const formattedList = workflows
@@ -185,12 +183,6 @@ export class AiAgentService {
         new SystemMessage({
           content: [{ type: 'text', text: customWorkflowPrompt }],
         }),
-        ...chatHistory.map(
-          (text) =>
-            new HumanMessage({
-              content: [{ type: 'text', text }],
-            }),
-        ),
         new HumanMessage({
           content: [{ type: 'text', text: JSON.stringify(input) }],
         }),

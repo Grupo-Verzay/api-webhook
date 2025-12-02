@@ -5,22 +5,53 @@ import { PrismaService } from 'src/database/prisma.service';
 export class SessionService {
   constructor(private readonly prisma: PrismaService) { }
 
-  // Create or update a session based on remoteJid + instanceId
-  async registerSession(userId: string, remoteJid: string, pushName: string, instanceId: string) {
+  /**
+   * Crea o actualiza una sesión.
+   * Evita sesiones duplicadas cuando el mismo contacto aparece con dos JIDs distintos
+   * (por ejemplo: 573001234567@jid y 573001234567@s.whatsapp.net).
+   *
+   * @param userId        ID del usuario dueño de la instancia
+   * @param remoteJid     JID "prioritario" que vas a usar (según tu diagrama)
+   * @param pushName      Nombre que llega del evento
+   * @param instanceId    ID de la instancia de Evolution
+   * @param remoteJidAlt  JID alternativo (ej: el otro dominio). Puede ser undefined.
+   */
+  async registerSession(
+    userId: string,
+    remoteJid: string,
+    pushName: string,
+    instanceId: string,
+    remoteJidAlt?: string | null,
+  ) {
+    // Construimos la lista de JIDs posibles para buscar una sesión existente
+    const jidsToSearch: string[] = [remoteJid];
+
+    if (remoteJidAlt && remoteJidAlt.trim() !== '') {
+      jidsToSearch.push(remoteJidAlt.trim());
+    }
+
     const existingSession = await this.prisma.session.findFirst({
-      where: { remoteJid, userId },
+      where: {
+        userId,
+        remoteJid: { in: jidsToSearch },
+      },
     });
 
     if (existingSession) {
+      // Si ya existe, solo actualizamos la sesión en vez de crear otra.
+      // Guardamos el remoteJid "prioritario" que estás usando en este momento.
       return this.prisma.session.update({
         where: { id: existingSession.id },
         data: {
+          remoteJid,      // ahora se actualiza al JID prioritario actual
           pushName,
+          instanceId,
           updatedAt: new Date(),
         },
       });
     }
 
+    // Si no existe ninguna sesión para ninguno de los JIDs, la creamos.
     return this.prisma.session.create({
       data: {
         userId,
@@ -86,8 +117,6 @@ export class SessionService {
         return null;
       }
 
-
-      // Opcional: Puedes hacer un findUnique después si quieres retornar el objeto actualizado
       const session = await this.prisma.session.findFirst({
         where: { remoteJid, instanceId, userId },
       });
@@ -118,8 +147,6 @@ export class SessionService {
         return null;
       }
 
-
-      // Opcional: Puedes hacer un findUnique después si quieres retornar el objeto actualizado
       const session = await this.prisma.session.findFirst({
         where: { remoteJid, instanceId, userId },
       });

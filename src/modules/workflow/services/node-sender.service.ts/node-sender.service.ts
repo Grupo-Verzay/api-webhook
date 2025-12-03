@@ -10,7 +10,6 @@ export class NodeSenderService {
     private readonly logger: LoggerService,
   ) { }
 
-
   /**
    * Send message type text
    *
@@ -83,7 +82,7 @@ export class NodeSenderService {
   /**
    * Envía un nodo multimedia (imagen, video o documento) y registra la respuesta.
    */
-  async sendMediaNode(
+  async   sendMediaNode(
     url: string,
     apikey: string,
     remoteJid: string,
@@ -131,6 +130,54 @@ export class NodeSenderService {
     } catch (error) {
       this.logger.error(
         `Error enviando ${type} a ${remoteJid}`,
+        error?.response?.data || error.message,
+        'NodeSenderService',
+      );
+    }
+  }
+
+    /**
+   * Envía un audio de WhatsApp usando el endpoint sendWhatsAppAudio.
+   *
+   * @param {string} url - `${urlevo}/message/sendWhatsAppAudio/${instanceName}`.
+   * @param {string} apikey - API Key de Evolution.
+   * @param {string} remoteJid - 573107964105@s.whatsapp.net (o solo número, según lo que ya uses).
+   * @param {string} audioUrl - URL o base64 del audio.
+   */
+  async sendAudioNode(
+    url: string,
+    apikey: string,
+    remoteJid: string,
+    audioUrl: string,
+  ) {
+    try {
+      const body = {
+        // Mantenemos el mismo formato que ya usas para "number"
+        // (si hoy remoteJid funciona en sendText, lo dejamos igual para no romper nada)
+        number: remoteJid,
+        audio: audioUrl,   // url o base64
+        delay: 1200,       // opcional, mismo criterio que en sendMediaNode
+      };
+
+      this.logger.log(
+        `Enviando audio a ${remoteJid} (media: ${audioUrl})`,
+        'NodeSenderService',
+      );
+
+      const response = await firstValueFrom(
+        this.http.post(url, body, {
+          headers: { 'Content-Type': 'application/json', apikey },
+        }),
+      );
+
+      // Si quieres loggear la respuesta, descomenta:
+      // this.logger.log(
+      //   `Respuesta del audio a ${remoteJid}: ${JSON.stringify(response.data)}`,
+      //   'NodeSenderService',
+      // );
+    } catch (error) {
+      this.logger.error(
+        `Error enviando audio a ${remoteJid}`,
         error?.response?.data || error.message,
         'NodeSenderService',
       );

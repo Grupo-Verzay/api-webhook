@@ -80,10 +80,28 @@ export class WorkflowService {
                         const url = `${urlevo}/message/sendText/${instanceName}`;
                         await this.nodeSenderService.sendTextNode(url, apikey, remoteJid, node.message);
                         this.logger.log(`Texto enviado correctamente (nodo ID: ${node.id})`, 'WorkflowService');
-                    } else if (['image', 'video', 'document', 'audio'].includes(node.tipo)) {
+                    } else if (['image', 'video', 'document'].includes(node.tipo)) {
                         const url = `${urlevo}/message/sendMedia/${instanceName}`;
-                        await this.nodeSenderService.sendMediaNode(url, apikey, remoteJid, node.tipo, node.message, node.url as string);
+
+                        await this.nodeSenderService.sendMediaNode(
+                            url, 
+                            apikey, 
+                            remoteJid, 
+                            node.tipo, 
+                            node.message, 
+                            node.url as string
+                        );
                         this.logger.log(`${node.tipo} enviado correctamente (nodo ID: ${node.id})`, 'WorkflowService');
+                    } else if (node.tipo === 'audio') {
+                        const url = `${urlevo}/message/sendWhatsAppAudio/${instanceName}`;
+
+                        await this.nodeSenderService.sendAudioNode(
+                            url,
+                            apikey,
+                            remoteJid,
+                            node.url as string,
+                        );
+                        this.logger.log(`audio enviado correctamente (nodo ID: ${node.id})`, 'WorkflowService');
                     } else if (node.tipo.startsWith('seguimiento-')) {
                         //TODO: INACTIVIDAD
                         const delaySeguimiento = convertDelayToSeconds(node.delay ?? '');

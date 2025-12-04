@@ -58,13 +58,12 @@ export class AiAgentService {
     private readonly promptCompressor: PromptCompressorService,
     private readonly nodeSenderService: NodeSenderService,
     private readonly agentNotificationService: AgentNotificationService,
-  ) {}
+  ) { }
 
   // Logger con contexto fijo: [UID=...][I=...][R=...]
   private scopedLogger(ctx: { userId?: string; instanceName?: string; remoteJid?: string }) {
-    const tag = `[UID=${ctx.userId ?? '-'}][I=${ctx.instanceName ?? '-'}][R=${
-      ctx.remoteJid ?? '-'
-    }]`;
+    const tag = `[UID=${ctx.userId ?? '-'}][I=${ctx.instanceName ?? '-'}][R=${ctx.remoteJid ?? '-'
+      }]`;
     return {
       log: (msg: string, context = 'AiAgentService') =>
         this.logger.log(`${tag} ${msg}`, context),
@@ -243,44 +242,9 @@ export class AiAgentService {
       // Prompt PRINCIPAL del agente
       promptAI = `${extraRules} ${systemPrompt}`.trim();
 
+      logger.log("PROMPT:", promptAI)
+
       const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
-      const noHistory = !Array.isArray(chatHistory) || chatHistory.length === 0;
-
-      const workflows = await this.workflowService.getWorkflow(userId);
-
-      const hasInicioBienvenida = workflows?.some(
-        (w: any) =>
-          typeof w?.name === 'string' &&
-          w.name.trim().toLowerCase() === this.initWorkflowName.toLowerCase(),
-      );
-
-      // Caso especial: primera vez en el chat + flujo INICIO_BIENVENIDA
-      if (noHistory && hasInicioBienvenida) {
-        const args: any = {
-          nombre_flujo: [this.initWorkflowName],
-          descripcion: 'Inicio automático de bienvenida',
-        };
-
-        const follow = await this.handleExecuteWorkflowTool(
-          args,
-          userId,
-          sessionId,
-          server_url,
-          apikey,
-          instanceName,
-          remoteJid,
-        );
-
-        const final = await this.respondAsMainAgent({
-          userId,
-          sessionId,
-          userPrompt: input,
-          principalSystemPrompt: promptAI,
-          followupText: follow,
-        });
-
-        return final;
-      }
 
       const historyMessages = chatHistory.map(
         (text) =>
@@ -295,7 +259,7 @@ export class AiAgentService {
 
       const systemMessage = new SystemMessage({
         content: [{ type: 'text', text: promptAI }],
-      });
+      }); 
 
       const messagesForLlm = [systemMessage, ...historyMessages, rawInputMessage];
 

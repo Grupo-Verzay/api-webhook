@@ -84,11 +84,11 @@ export class WorkflowService {
                         const url = `${urlevo}/message/sendMedia/${instanceName}`;
 
                         await this.nodeSenderService.sendMediaNode(
-                            url, 
-                            apikey, 
-                            remoteJid, 
-                            node.tipo, 
-                            node.message, 
+                            url,
+                            apikey,
+                            remoteJid,
+                            node.tipo,
+                            node.message,
                             node.url as string
                         );
                         this.logger.log(`${node.tipo} enviado correctamente (nodo ID: ${node.id})`, 'WorkflowService');
@@ -103,7 +103,6 @@ export class WorkflowService {
                         );
                         this.logger.log(`audio enviado correctamente (nodo ID: ${node.id})`, 'WorkflowService');
                     } else if (node.tipo.startsWith('seguimiento-')) {
-                        //TODO: INACTIVIDAD
                         const delaySeguimiento = convertDelayToSeconds(node.delay ?? '');
 
                         const seguimientoData = {
@@ -119,25 +118,47 @@ export class WorkflowService {
                             name_file: node.name_file,
                             consecutivo: '',
                         };
-                        // 1. Registrar seguimiento en la tabla Seguimientos
+
                         const { id } = await this.seguimientosService.createSeguimiento(seguimientoData);
 
-                        // 2. Obtener la sesión actual
-                        const res = await this.getSession({ remoteJid, instanceName, userId });
-                        if (!res) {
-                            this.logger.warn(`No se pudo registrar el seguimiento porque la sesión no existe: ${remoteJid}`, 'WorkflowService');
+                        const session = await this.getSession({ remoteJid, instanceName, userId });
+                        if (!session) {
+                            this.logger.warn(
+                                `No se pudo registrar el seguimiento porque la sesión no existe: ${remoteJid}`,
+                                'WorkflowService',
+                            );
                             return;
                         }
 
-                        // 3. Construir la nueva cadena de IDs de seguimiento
+                        // 🧩 1) Actualizar lista general de seguimientos
                         const seguimientos = this.buildSeguimientoID({
-                            seguimientos: res.seguimientos,
+                            seguimientos: session.seguimientos,
                             current: id.toString(),
                         });
 
-                        // 4. Registrar el nuevo ID de seguimiento en la sesión
-                        await this.registerIdSeguimientoInSession(id.toString(), remoteJid, instanceName, userId, seguimientos);
+                        await this.registerIdSeguimientoInSession(
+                            id.toString(),
+                            remoteJid,
+                            instanceName,
+                            userId,
+                            seguimientos,
+                        );
 
+                        // 🧩 2) Si este nodo es de inactividad, también guardarlo en Session.inactividad
+                        if (node.inactividad) {
+                            const nuevosIdsInactividad = this.buildSeguimientoID({
+                                seguimientos: session.inactividad, // aquí usas el string actual de inactividad
+                                current: id.toString(),
+                            });
+
+                            await this.registerIdsInactividadInSession(
+                                id.toString(),
+                                remoteJid,
+                                instanceName,
+                                userId,
+                                nuevosIdsInactividad,
+                            );
+                        }
                     } else {
                         this.logger.warn(`Tipo de nodo desconocido: ${node.tipo} (ID: ${node.id})`, 'WorkflowService');
                     }
@@ -163,6 +184,26 @@ export class WorkflowService {
             totalNodes: nodes.length,
         };
     }
+
+    //registra el Id en inactividad
+    private async registerIdsInactividadInSession(
+        seguimientoId: string,
+        remoteJid: string,
+        instanceName: string,
+        userId: string,
+        inactividad: string,
+    ) {
+        await this.prisma.session.updateMany({
+            where: { userId, remoteJid, instanceId: instanceName },
+            data: { inactividad },
+        });
+
+        this.logger.log(
+            `Registrado seguimiento de inactividad ${seguimientoId} en Session.inactividad (${remoteJid})`,
+            'WorkflowService',
+        );
+    }
+
 
     /**
      * Obtiene todos los workflows disponibles en la base de datos.

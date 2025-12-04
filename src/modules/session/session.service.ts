@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
+import { LoggerService } from 'src/core/logger/logger.service';
 
 @Injectable()
 export class SessionService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly logger: LoggerService
+  ) { }
 
   /**
    * Crea o actualiza una sesión.
@@ -155,5 +159,67 @@ export class SessionService {
     } catch (error) {
       return null;
     }
+  }
+
+  /**
+   * Limpia los seguimientos de INACTIVIDAD cuando el usuario ya respondió
+   * y el agente ya envió su respuesta.
+   *
+   * Se ejecuta de ÚLTIMO después de responder al cliente.
+   */
+  async clearInactividadAfterAgentReply(
+    userId: string,
+    remoteJid: string,
+    instanceId: string,
+  ): Promise<void> {
+    const session = await this.prisma.session.findFirst({
+      where: { userId, remoteJid, instanceId },
+    });
+
+    if (!session || !session.inactividad) {
+      // No hay inactividad registrada para esta sesión
+      return;
+    }
+
+    const parseIds = (value?: string | null): number[] => {
+      if (!value || !value.trim()) return [];
+      return value
+        .split(',')
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => !Number.isNaN(n));
+    };
+
+    const buildString = (ids: number[]) =>
+      ids.length ? ids.map((id) => id.toString()).join(',') : '';
+
+    const inactividadIds = parseIds(session.inactividad);
+    if (!inactividadIds.length) return;
+
+    const todosSeguimientos = parseIds(session.seguimientos);
+
+    // IDs que permanecerán como seguimientos normales (no eran de inactividad)
+    const restantes = todosSeguimientos.filter((id) => !inactividadIds.includes(id));
+
+    // 1) Eliminar o marcar los seguimientos de inactividad
+    // Si tienes un campo estado en Seguimiento, cámbialo a updateMany
+    await this.prisma.seguimientos.deleteMany({
+      where: { id: { in: inactividadIds } },
+    });
+
+    // 2) Actualizar la sesión: limpiar inactividad y ajustar seguimientos
+    await this.prisma.session.update({
+      where: { id: session.id },
+      data: {
+        inactividad: '',
+        seguimientos: buildString(restantes),
+      },
+    });
+
+    this.logger.log(
+      `Inactividad limpiada para ${remoteJid} (instanceId: ${instanceId}). Eliminados seguimientos: [${inactividadIds.join(
+        ', ',
+      )}]`,
+      'SessionService',
+    );
   }
 }

@@ -15,9 +15,6 @@ import { WorkflowModule } from '../workflow/workflow.module';
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { PromptCompressorService } from './services/prompt-compressor/prompt-compressor.service';
 import { LlmClientFactory } from './services/llmClientFactory/llmClientFactory.service';
-
-
-// 👇 IMPORTA UserService
 import { UserService } from '../user/user.service';
 import { AgentNotificationService } from './services/notificacionService/notificacion.service';
 
@@ -25,7 +22,7 @@ import { AgentNotificationService } from './services/notificacionService/notific
   imports: [
     HttpModule,
     ConfigModule,
-    WorkflowModule,
+    WorkflowModule,   // 👈 de aquí viene WorkflowService ya configurado
   ],
   providers: [
     AiAgentService,
@@ -33,7 +30,7 @@ import { AgentNotificationService } from './services/notificacionService/notific
     ChatHistoryService,
     IntentionService,
     NodeSenderService,
-    WorkflowService,
+    // ❌ QUITAR WorkflowService DE AQUÍ
     PromptCompressorService,
     SeguimientosService,
     SessionService,
@@ -41,7 +38,7 @@ import { AgentNotificationService } from './services/notificacionService/notific
     AiCreditsService,
     LlmClientFactory,
     AgentNotificationService,
-    UserService,              // 👈 AÑADIDO AQUÍ
+    UserService,
   ],
   exports: [
     AiAgentService,

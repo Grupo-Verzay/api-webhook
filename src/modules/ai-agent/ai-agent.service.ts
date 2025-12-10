@@ -329,6 +329,9 @@ export class AiAgentService {
       this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
 
       const systemPrompt = await this.promptService.getPromptUserId(userId).catch(() => '');
+
+      logger.log('PROMPT:', systemPrompt);
+
       const extraRules = await this.promptService
         .getPromptPadre('cm842kthc0000qd2l66nbnytv')
         .catch(() => '');

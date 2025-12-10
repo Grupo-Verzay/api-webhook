@@ -204,6 +204,42 @@ export class WebhookService {
       );
     const incomingMessage = extractedContent.toString().trim().toLowerCase();
 
+    // 🔹 CHATBOT SIN IA BASADO EN WORKFLOW.DESCRIPTION
+    // Si el texto coincide con la descripción de algún workflow, lo ejecutamos y NO usamos IA.
+    if (incomingMessage) {
+      const matchedWorkflow =
+        await this.workflowService.findWorkflowByDescriptionMatch(
+          userId,
+          incomingMessage,
+        );
+
+      if (matchedWorkflow) {
+        logger.log(
+          `Workflow por descripción encontrado: ${matchedWorkflow.name} → ejecutando sin IA.`,
+          'WebhookService',
+        );
+
+        await this.workflowService.executeWorkflow(
+          matchedWorkflow.name,
+          server_url,
+          apikey,
+          instanceName,
+          remoteJid,
+          userId,
+        );
+
+        // Opcional: puedes guardar en historial que se ejecutó un flujo, si quieres
+        // await this.chatHistoryService.saveMessage(
+        //   sessionHistoryId,
+        //   `[FLOW:${matchedWorkflow.name}]`,
+        //   'ia',
+        // );
+
+        return; // 👈 Importante: SALIMOS aquí y no pasamos por IA
+      }
+    }
+
+
     /* Anti-flood */
     this.antifloodService.registerMessageTimestamp(remoteJid);
     if (this.antifloodService.isSynchronizedPattern(remoteJid)) {

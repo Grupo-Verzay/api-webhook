@@ -5,11 +5,17 @@ import { WorkflowService } from './services/workflow.service.ts/workflow.service
 import { NodeSenderService } from './services/node-sender.service.ts/node-sender.service';
 import { SeguimientosService } from '../seguimientos/seguimientos.service';
 import { SessionService } from '../session/session.service';
-
+import { SessionTriggerModule } from 'src/modules/session-trigger/session-trigger.module';
 
 @Module({
-  imports: [HttpModule],
-  providers: [WorkflowService, PrismaService, NodeSenderService, SeguimientosService, SessionService],
+  imports: [HttpModule, SessionTriggerModule],
+  providers: [
+    WorkflowService,
+    PrismaService,
+    NodeSenderService,
+    SeguimientosService,
+    SessionService,
+  ],
   exports: [WorkflowService],
 })
-export class WorkflowModule { }
+export class WorkflowModule {}

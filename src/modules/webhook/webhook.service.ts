@@ -143,22 +143,31 @@ export class WebhookService {
 
     const msgChat = data?.message?.conversation ?? '';
     const conversationMsg = msgChat.trim().toLowerCase();
-    const sessionHistoryId = `${instanceName}-${remoteJid}`;
+const sessionHistoryId = `${instanceName}-${remoteJid}`;
     const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
 
-    /* Validar créditos */
-    const creditOk = await this.creditValidation({
-      flags,
-      userId,
-      webhookUrl: userWithRelations.webhookUrl ?? '',
-      apikey,
-      apiUrl: apiMsgUrl,
-      userPhone: userWithRelations.notificationNumber,
-    });
+    const agentMuted = !!userWithRelations.muteAgentResponses;
 
-    if (!creditOk) {
-      logger.warn('Créditos insuficientes. Deteniendo flujo.');
-      return;
+    // 🔹 Si el agente NO está muteado -> sí validamos créditos
+    if (!agentMuted) {
+      const creditOk = await this.creditValidation({
+        flags,
+        userId,
+        webhookUrl: userWithRelations.webhookUrl ?? '',
+        apikey,
+        apiUrl: apiMsgUrl,
+        userPhone: userWithRelations.notificationNumber,
+      });
+
+      if (!creditOk) {
+        logger.warn('Créditos insuficientes. Deteniendo flujo.');
+        return;
+      }
+    } else {
+      logger.log(
+        'Agente muteado: se omite validación de créditos y uso de IA.',
+        'WebhookService',
+      );
     }
 
     /* Grupo */
@@ -253,14 +262,27 @@ export class WebhookService {
       return;
     }
 
-    /* Buffer + IA */
+        /* Buffer + IA */
     this.messageBufferService.handleIncomingMessage(
       remoteJid,
       incomingMessage,
       delayConversation,
       async (mergedText) => {
         try {
-          await this.chatHistoryService.saveMessage(sessionHistoryId, mergedText, 'human');
+          // 🔇 Si el agente está muteado, NO usamos IA
+          if (userWithRelations.muteAgentResponses) {
+            logger.warn(
+              '🔇 Agente muteado: no se usará IA (solo flujos/chatbot).',
+              'muteAgentResponses',
+            );
+            return;
+          }
+
+          await this.chatHistoryService.saveMessage(
+            sessionHistoryId,
+            mergedText,
+            'human',
+          );
 
           const dataProccessInput = {
             input: mergedText,
@@ -275,15 +297,16 @@ export class WebhookService {
             remoteJid,
           };
 
-          const aiResponse = await this.aiAgentService.processInput(dataProccessInput);
+          const aiResponse = await this.aiAgentService.processInput(
+            dataProccessInput,
+          );
           if (!aiResponse || aiResponse === '') return;
 
-          if (userWithRelations.muteAgentResponses) {
-            logger.warn('🔇 Agente muteado, no se enviará respuesta.', 'muteAgentResponses');
-            return;
-          }
-
-          await this.chatHistoryService.saveMessage(sessionHistoryId, aiResponse, 'ia');
+          await this.chatHistoryService.saveMessage(
+            sessionHistoryId,
+            aiResponse,
+            'ia',
+          );
 
           const msgBlocks = aiResponse
             .split('\n\n')
@@ -291,13 +314,24 @@ export class WebhookService {
             .filter((b) => b.length > 0);
 
           if (msgBlocks.length === 0) {
-            logger.warn(`El mensaje está vacío después de procesar bloques.`, 'NodeSenderService');
+            logger.warn(
+              `El mensaje está vacío después de procesar bloques.`,
+              'NodeSenderService',
+            );
             return;
           }
 
           for (const [index, msgBlock] of msgBlocks.entries()) {
-            logger.log(`📤 Enviando bloque ${index + 1}/${msgBlocks.length}`, 'NodeSenderService');
-            await this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, remoteJid, msgBlock);
+            logger.log(
+              `📤 Enviando bloque ${index + 1}/${msgBlocks.length}`,
+              'NodeSenderService',
+            );
+            await this.nodeSenderService.sendTextNode(
+              apiMsgUrl,
+              apikey,
+              remoteJid,
+              msgBlock,
+            );
             await new Promise((res) => setTimeout(res, 300));
           }
         } catch (err: any) {
@@ -308,6 +342,7 @@ export class WebhookService {
         }
       },
     );
+
   }
 
   private async creditValidation({

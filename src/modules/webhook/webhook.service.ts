@@ -143,7 +143,7 @@ export class WebhookService {
 
     const msgChat = data?.message?.conversation ?? '';
     const conversationMsg = msgChat.trim().toLowerCase();
-const sessionHistoryId = `${instanceName}-${remoteJid}`;
+    const sessionHistoryId = `${instanceName}-${remoteJid}`;
     const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
 
     const agentMuted = !!userWithRelations.muteAgentResponses;
@@ -213,40 +213,7 @@ const sessionHistoryId = `${instanceName}-${remoteJid}`;
       );
     const incomingMessage = extractedContent.toString().trim().toLowerCase();
 
-    // 🔹 CHATBOT SIN IA BASADO EN WORKFLOW.DESCRIPTION
-    // Si el texto coincide con la descripción de algún workflow, lo ejecutamos y NO usamos IA.
-    if (incomingMessage) {
-      const matchedWorkflow =
-        await this.workflowService.findWorkflowByDescriptionMatch(
-          userId,
-          incomingMessage,
-        );
 
-      if (matchedWorkflow) {
-        logger.log(
-          `Workflow por descripción encontrado: ${matchedWorkflow.name} → ejecutando sin IA.`,
-          'WebhookService',
-        );
-
-        await this.workflowService.executeWorkflow(
-          matchedWorkflow.name,
-          server_url,
-          apikey,
-          instanceName,
-          remoteJid,
-          userId,
-        );
-
-        // Opcional: puedes guardar en historial que se ejecutó un flujo, si quieres
-        // await this.chatHistoryService.saveMessage(
-        //   sessionHistoryId,
-        //   `[FLOW:${matchedWorkflow.name}]`,
-        //   'ia',
-        // );
-
-        return; // 👈 Importante: SALIMOS aquí y no pasamos por IA
-      }
-    }
 
 
     /* Anti-flood */
@@ -262,14 +229,49 @@ const sessionHistoryId = `${instanceName}-${remoteJid}`;
       return;
     }
 
-        /* Buffer + IA */
+    /* Buffer + IA + CHATBOT */
     this.messageBufferService.handleIncomingMessage(
       remoteJid,
       incomingMessage,
       delayConversation,
       async (mergedText) => {
         try {
-          // 🔇 Si el agente está muteado, NO usamos IA
+          const mergedTextStr = mergedText.toString();
+
+          // Guardamos el mensaje completo que se acumuló en el buffer
+          await this.chatHistoryService.saveMessage(
+            sessionHistoryId,
+            mergedTextStr,
+            'human',
+          );
+
+          // 1) 🔹 PRIMERO: intentar disparar workflow tipo chatbot por descripción
+          const matchedWorkflow =
+            await this.workflowService.findWorkflowByDescriptionMatch(
+              userId,
+              mergedTextStr,
+            );
+
+          if (matchedWorkflow) {
+            logger.log(
+              `Workflow por descripción encontrado (via buffer): ${matchedWorkflow.name} → ejecutando sin IA.`,
+              'WebhookService',
+            );
+
+            await this.workflowService.executeWorkflow(
+              matchedWorkflow.name,
+              server_url,
+              apikey,
+              instanceName,
+              remoteJid,
+              userId,
+            );
+
+            // Importante: NO usamos IA si ya encontramos un flujo
+            return;
+          }
+
+          // 2) Si el agente está muteado → solo dejamos funcionar flujos (que ya revisamos)
           if (userWithRelations.muteAgentResponses) {
             logger.warn(
               '🔇 Agente muteado: no se usará IA (solo flujos/chatbot).',
@@ -278,14 +280,9 @@ const sessionHistoryId = `${instanceName}-${remoteJid}`;
             return;
           }
 
-          await this.chatHistoryService.saveMessage(
-            sessionHistoryId,
-            mergedText,
-            'human',
-          );
-
+          // 3) Si no hay flujo y no está muteado → ahora sí usamos IA
           const dataProccessInput = {
-            input: mergedText,
+            input: mergedTextStr,
             userId,
             apikeyOpenAi: defaultApiKey ?? '',
             defaultModel: model,
@@ -342,6 +339,7 @@ const sessionHistoryId = `${instanceName}-${remoteJid}`;
         }
       },
     );
+
 
   }
 

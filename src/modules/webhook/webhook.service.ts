@@ -331,6 +331,14 @@ export class WebhookService {
             );
             await new Promise((res) => setTimeout(res, 300));
           }
+
+          // 👉 DESPUÉS DE RESPONDER AL CLIENTE CON IA
+          await this.sessionService.clearInactividadAfterAgentReply(
+            userId,
+            remoteJid,
+            instanceName,
+          );
+
         } catch (err: any) {
           logger.error(
             'Error en callback de messageBufferService.handleIncomingMessage (se evita crash global).',
@@ -643,6 +651,13 @@ export class WebhookService {
           instanceName,
           remoteJid,
           userId,
+        );
+
+        // 👉 AQUÍ LIMPIAMOS INACTIVIDAD DESPUÉS DE RESPONDER
+        await this.sessionService.clearInactividadAfterAgentReply(
+          userId,
+          remoteJid,
+          instanceName,
         );
 
         // await this.sessionService.updateSessionStatus(remoteJid, instanceName, true, userId);

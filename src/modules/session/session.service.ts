@@ -184,13 +184,14 @@ export class SessionService {
     const parseIds = (value?: string | null): number[] => {
       if (!value || !value.trim()) return [];
       return value
-        .split(',')
+        // soporta ambos formatos: "1-2-3" o "1,2,3"
+        .split(/[-,]/)
         .map((s) => parseInt(s.trim(), 10))
         .filter((n) => !Number.isNaN(n));
     };
 
     const buildString = (ids: number[]) =>
-      ids.length ? ids.map((id) => id.toString()).join(',') : '';
+      ids.length ? ids.map((id) => id.toString()).join('-') : '';
 
     const inactividadIds = parseIds(session.inactividad);
     if (!inactividadIds.length) return;

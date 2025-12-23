@@ -232,11 +232,11 @@ export class AiAgentService {
         return follow || `ℹ️ Flujo "${nombre_flujo}" ejecutado.`;
       },
       {
-        name: 'Ejecutar_Flujos',
+        name: 'Ejecutar_Flujos',  
         description:
-          'Utiliza esta herramienta para ejecutar el flujo automatizado correcto según la intención del usuario.',
+          'Siempre consulta y ejecuta si existen flujos disponibles en la base de datos que correspondan a la solicitud del usuario. Si se encuentra un flujo, se ejecuta. Si no hay flujos, la IA continúa la conversación normalmente.',
         schema: z.object({
-          nombre_flujo: z.string().describe('Nombre del flujo que se debe intentar ejecutar'),
+          nombre_flujo: z.string().describe('Nombre del flujo que se debe ejecutar'),
           detalles: z
             .string()
             .describe('Texto original de la solicitud del usuario o contexto adicional'),
@@ -330,7 +330,7 @@ export class AiAgentService {
 
       const systemPrompt = await this.promptService.getPromptUserId(userId).catch(() => '');
 
-      logger.log('PROMPT:', systemPrompt);
+      //logger.log('PROMPT:', systemPrompt);
 
       const extraRules = await this.promptService
         .getPromptPadre('cm842kthc0000qd2l66nbnytv')
@@ -339,7 +339,7 @@ export class AiAgentService {
       // Prompt PRINCIPAL del agente
       const promptAI = `${extraRules} ${systemPrompt}`.trim();
 
-      //logger.log('PROMPT:', promptAI);
+      logger.log('PROMPT:', promptAI);
 
       const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
 
@@ -349,6 +349,8 @@ export class AiAgentService {
             content: [{ type: 'text', text }],
           }),
       );
+
+      logger.log(`HISTORIAL: ${JSON.stringify(historyMessages, null, 2)}`);
 
       const rawInputMessage = new HumanMessage({
         content: [{ type: 'text', text: input }],
@@ -478,33 +480,42 @@ export class AiAgentService {
       const rawError = error?.response?.data || error?.message || JSON.stringify(error);
       const msgStr = rawError?.toString?.() ?? String(rawError);
 
+      // 🔹 Detectar errores de autenticación tanto de OpenAI como de Google (Gemini)
       const isAuthError =
-        msgStr.includes('Incorrect API key provided') ||
-        msgStr.includes('MODEL_AUTHENTICATION') ||
+        msgStr.includes('Incorrect API key provided') ||      // OpenAI
+        msgStr.includes('MODEL_AUTHENTICATION') ||            // OpenAI
+        msgStr.includes('API key not valid') ||               // GoogleGenerativeAI
+        msgStr.includes('API_KEY_INVALID') ||                 // GoogleGenerativeAI ErrorInfo
         error?.status === 401;
 
       if (isAuthError) {
         logger.error(
           'Error de autenticación con el proveedor de IA (API Key inválida).',
-          undefined,
+          rawError,
         );
 
         try {
           const apiUrl = `${server_url}/message/sendText/${instanceName}`;
-          const notificationPhone = await this.agentNotificationService.getNotificationPhone(
-            userId,
-            remoteJid,
-          );
+          const notificationPhone =
+            await this.agentNotificationService.getNotificationPhone(
+              userId,
+              remoteJid,
+            );
 
           if (notificationPhone) {
             const aviso =
-              '⚠️ La *APIKey* introducida en *Agente IA* es inválida. Por favor revisa e ingresa una API Key valida.\n\n' +
+              '⚠️ La *APIKey* introducida en *Agente IA* es inválida o no tiene permisos. Por favor revisa e ingresa una API Key válida.\n\n' +
               '👉 https://agente.ia-app.com/profile';
 
-            await this.nodeSenderService.sendTextNode(apiUrl, apikey, notificationPhone, aviso);
+            await this.nodeSenderService.sendTextNode(
+              apiUrl,
+              apikey,
+              notificationPhone,
+              aviso,
+            );
           } else {
             logger.warn(
-              'Error de autenticación: no se envió aviso porque no hay número de notificación ni fallback.',
+              'Error de autenticación: no se envió aviso porque no hay número de notificación configurado.',
             );
           }
         } catch (sendErr: any) {
@@ -514,14 +525,19 @@ export class AiAgentService {
           );
         }
 
+        // No respondemos nada al usuario final
         return '';
       }
 
-      logger.error('Error procesando entrada con OpenAI.', rawError);
+      // 🔹 Otros errores genéricos del proveedor de IA (timeout, 500, etc.)
+      logger.error('Error procesando entrada con el proveedor de IA.', rawError);
 
-      // Fallback plano sin llamar a otro LLM (sin respondAsMainAgent)
-      return 'Ocurrió un error procesando tu solicitud. ¿Deseas intentarlo de nuevo?';
+      // Aquí, por ahora, NO notificamos por WhatsApp para evitar usar variables fuera de scope.
+      // Si luego quieres, se puede agregar una notificación genérica similar pero con su propio bloque try/catch.
+
+      return '';
     }
+
   }
 
   /**

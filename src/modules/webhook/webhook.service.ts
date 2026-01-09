@@ -8,7 +8,7 @@ import { InstancesService } from '../instances/instances.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
 import { UserService } from '../user/user.service';
 import { isGroupChat } from './utils/is-group-chat';
-import { Pausar, rr, User } from '@prisma/client';
+import { Pausar, Prisma, rr, User } from '@prisma/client';
 import { MessageBufferService } from './services/message-buffer/message-buffer.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
 import { NodeSenderService } from '../workflow/services/node-sender.service.ts/node-sender.service';
@@ -23,6 +23,7 @@ import {
   stopOrResumeConversation,
   flags,
   getReactivateDate,
+  UserWithPausar,
 } from 'src/types/open-ai';
 import { AntifloodService } from './services/antiflood/antiflood.service';
 
@@ -99,9 +100,8 @@ export class WebhookService {
     // Logger con contexto ya incluye userId/inst/jid
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
-    const userWithRelations = (await this.userService.getUserWithPausar(userId)) as User & {
-      pausar: Pausar[];
-    };
+    const userWithRelations = await this.userService.getUserWithPausar(userId) as UserWithPausar;
+
     const aiConfig = await this.userService.getUserDefaultAiConfig(userId);
 
     const { defaultModel, defaultProvider, defaultApiKey } = aiConfig || {};
@@ -416,7 +416,7 @@ export class WebhookService {
     instanceName: string,
     userId: string,
     pushName: string,
-    userWithRelations: User & { pausar: Pausar[] },
+    userWithRelations: UserWithPausar,
     remoteJidAlt?: string,
   ): Promise<boolean> {
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
@@ -552,7 +552,7 @@ export class WebhookService {
         return;
       }
 
-      const dataPausar = userWithRelations.pausar ?? [];
+      const dataPausar = userWithRelations.Pausar ?? [];
       const pausarItem = dataPausar.find((p) => p.tipo === 'abrir');
 
       if (!pausarItem) {

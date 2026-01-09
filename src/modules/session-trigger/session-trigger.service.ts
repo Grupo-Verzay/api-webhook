@@ -8,7 +8,7 @@ export class SessionTriggerService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly logger: LoggerService,
-    ) {}
+    ) { }
 
     /** Normaliza y valida el sessionId a number */
     private toSessionIdNumber(sessionId: string | number): number {
@@ -41,7 +41,9 @@ export class SessionTriggerService {
         const sessionIdNumber = this.toSessionIdNumber(sessionId);
 
         const trigger = await this.prisma.sessionTrigger.create({
-            data: { sessionId: sessionIdNumber, time },
+            data: {
+                sessionId: sessionIdNumber, time, updatedAt: new Date(),
+            },
         });
 
         this.logger.log(`Trigger creado: sessionId=${sessionIdNumber}, time=${time}`);

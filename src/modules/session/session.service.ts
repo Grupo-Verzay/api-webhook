@@ -63,6 +63,7 @@ export class SessionService {
         pushName,
         instanceId,
         status: true,
+        updatedAt: new Date(),
       },
     });
   }

@@ -1,8 +1,13 @@
-import { Pausar, User } from "@prisma/client";
+import { Pausar, Prisma, User } from "@prisma/client";
 // import { ChatCompletionMessageToolCall } from "openai/resources/chat";
 import { ChatCompletionMessageToolCall } from "openai/resources/index.mjs";
 
 const whatsappCreditsMsg = 'https://w.app/verzay';
+
+export type UserWithPausar = Prisma.UserGetPayload<{
+    include: { Pausar: true };
+}>;
+
 export interface IntentionItem {
     name: string;
     tipo: 'flujo' | 'seguimiento' | 'notificacion';
@@ -28,8 +33,8 @@ export interface proccessInput {
     apikey: string,
     instanceName: string,
     remoteJid: string,
-    defaultModel:string,
-    defaultProvider:string,
+    defaultModel: string,
+    defaultProvider: string,
 }
 
 export interface inputWorkflow {
@@ -69,7 +74,7 @@ export interface stopOrResumeConversation {
     remoteJidAlt?: string; // 👈 NUEVO
     instanceId: string,
     sessionStatus: boolean,
-    userWithRelations: User & { pausar: Pausar[] },
+    userWithRelations: UserWithPausar,
     instanceName: string,
     apikey: string,
     server_url: string
@@ -77,7 +82,7 @@ export interface stopOrResumeConversation {
 
 
 export interface getReactivateDate {
-    userWithRelations: User & { pausar: Pausar[] },
+    userWithRelations: UserWithPausar,
 };
 
 export interface onAutoRepliesInterface {

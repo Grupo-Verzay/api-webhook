@@ -1,21 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
-import {
-    Pausar,
-    User,
-    UserAiConfig,
-    Prisma,
-    AiProvider,
-} from '@prisma/client';
+import { Pausar, Prisma, User } from '@prisma/client';
 
 // Define el tipo de retorno para la configuración de IA por defecto
 export type DefaultAiConfig = {
     userId: string;
-    // El proveedor por defecto se obtiene a través de un lookup manual.
-    defaultProvider?: { id: string; name: string; } | null;
-    defaultModel?: { id: string; name: string; } | null;
+    defaultProvider?: { id: string; name: string } | null;
+    defaultModel?: { id: string; name: string } | null;
     defaultApiKey: string | null;
 };
+
+type UserWithPausar = Prisma.UserGetPayload<{
+    include: { Pausar: true };
+}>;
 
 @Injectable()
 export class UserService {
@@ -44,7 +41,7 @@ export class UserService {
     async updateUser(userId: string, data: Partial<User>): Promise<User> {
         return this.prisma.user.update({
             where: { id: userId },
-            data: data,
+            data,
         });
     }
 
@@ -65,64 +62,61 @@ export class UserService {
         });
     }
 
-    async getUserWithPausar(userId: string): Promise<(
-        User & {
-            pausar: Pausar[];
-        }
-    ) | null> {
+    async getUserWithPausar(userId: string): Promise<UserWithPausar | null> {
         return this.prisma.user.findUnique({
             where: { id: userId },
             include: {
-                pausar: true,
+                Pausar: true, // 👈 así se llama en tu schema
             },
         });
     }
 
     // =================================================================
-    // FUNCIONES DE CONFIGURACIÓN DE IA (CONFIRMADA PARA TU ESQUEMA)
+    // CONFIGURACIÓN DE IA (ALINEADA A TU SCHEMA)
     // =================================================================
 
-    /**
-     * Obtiene la configuración de IA por defecto de un usuario:
-     * - Modelo por defecto (relación directa a AiModel).
-     * - Proveedor por defecto (requiere lookup manual ya que no hay relación @relation en defaultProviderId).
-     * - API Key asociada al proveedor por defecto (de UserAiConfig).
-     * No utiliza ningún valor de fallback (`apiUrl`).
-     */
     async getUserDefaultAiConfig(userId: string): Promise<DefaultAiConfig | null> {
         const user = await this.prisma.user.findUnique({
             where: { id: userId },
             select: {
                 id: true,
                 defaultProviderId: true,
-                defaultAiModel: { select: { id: true, name: true } },
-                aiConfig: { select: { providerId: true, apiKey: true, isActive: true } },
+                ai_models: { select: { id: true, name: true } }, // <- relación real en tu schema
+                user_ai_configs: {
+                    select: { providerId: true, apiKey: true, isActive: true },
+                }, // <- relación real en tu schema
             },
         });
 
-        if (!user) return null; // <- único caso real de null
+        if (!user) return null;
 
-        // 1) Elegir la config candidata
-        let chosen: { providerId: string; apiKey: string } | undefined;
+        // 1) Elegir config candidata
+        let chosen:
+            | { providerId: string; apiKey: string; isActive: boolean }
+            | undefined;
 
         if (user.defaultProviderId) {
-            chosen = user.aiConfig.find(c => c.providerId === user.defaultProviderId && c.isActive)
-                ?? user.aiConfig.find(c => c.providerId === user.defaultProviderId) // por si isActive es false/null
-        }
-        if (!chosen) {
-            // Fallback: primera activa
-            chosen = user.aiConfig.find(c => c.isActive) ?? user.aiConfig[0];
+            chosen =
+                user.user_ai_configs.find(
+                    (c) => c.providerId === user.defaultProviderId && c.isActive,
+                ) ?? user.user_ai_configs.find((c) => c.providerId === user.defaultProviderId);
         }
 
-        // 2) Resolver proveedor (si hay candidate)
+        if (!chosen) {
+            chosen =
+                user.user_ai_configs.find((c) => c.isActive) ?? user.user_ai_configs[0];
+        }
+
+        // 2) Resolver proveedor
         let defaultProvider: { id: string; name: string } | null = null;
         let defaultApiKey: string | null = null;
 
         if (chosen) {
-            const provider = await this.prisma.aiProvider.findUnique({
+            const provider = await this.prisma.ai_providers.findUnique({
                 where: { id: chosen.providerId },
                 select: { id: true, name: true },
             });
+
             defaultProvider = provider ?? null;
             defaultApiKey = chosen.apiKey ?? null;
         }
@@ -130,7 +124,7 @@ export class UserService {
         return {
             userId: user.id,
             defaultProvider,
-            defaultModel: user.defaultAiModel, // puede ser null si no está configurado
+            defaultModel: user.ai_models ?? null,
             defaultApiKey,
         };
     }

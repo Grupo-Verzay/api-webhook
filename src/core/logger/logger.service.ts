@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/database/prisma.service'; // Prisma para guardar en BD
 
 @Injectable()
@@ -45,6 +46,7 @@ export class LoggerService extends Logger {
     try {
       await this.prisma.log.create({
         data: {
+          id: randomUUID(),
           level,
           message,
           context,

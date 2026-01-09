@@ -59,7 +59,12 @@ export class WorkflowService {
             throw new NotFoundException('Workflow no encontrado');
         }
 
-        const nodes = await this.getExecutionNodesForWorkflow(result.id);
+        // const nodes = await this.getExecutionNodesForWorkflow(result.id); //TODO: Nodos ordenados (new version)
+        const nodes = await this.prisma.workflowNode.findMany({
+            where: { workflowId: result.id },
+            orderBy: { createdAt: 'asc' }, //TODO: Se debe agregar campo order a futuro.
+        });
+
 
         if (!nodes.length) {
             this.logger.warn(

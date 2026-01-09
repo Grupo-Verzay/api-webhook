@@ -64,15 +64,15 @@ export class InstancesService {
 
             const user = await this.prisma.user.findUnique({
                 where: { id: userId },
-                include: { apiKey: true },
+                include: { ApiKey: true },
             });
 
-            if (!user || !user.apiKey) {
+            if (!user || !user.ApiKey) {
                 this.logger.warn(`El usuario ${userId} no tiene una API Key asignada`);
                 return [];
             }
 
-            const { key: apiKey, url: serverUrl } = user.apiKey;
+            const { key: apiKey, url: serverUrl } = user.ApiKey;
 
             const enrichedInstances = instances.map((instance) => ({
                 ...instance,

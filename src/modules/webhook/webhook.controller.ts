@@ -11,19 +11,20 @@ export class WebhookController {
   ) { }
 
   @Post()
-    async recibirWebhook(@Body() payload: any, @Res() res: Response) {
-        // 1. Responde inmediatamente al remitente del webhook.
-        // Esto libera su conexión rápidamente, evitando timeouts y reintentos.
-        res.status(200).send('Webhook recibido, procesando en segundo plano');
+  async recibirWebhook(@Body() payload: any, @Res() res: Response) {
+    this.logger.log(`Webhook recibido: ${JSON.stringify(payload).slice(0, 500)}`);
+    // 1. Responde inmediatamente al remitente del webhook.
+    // Esto libera su conexión rápidamente, evitando timeouts y reintentos.
+    res.status(200).send('Webhook recibido, procesando en segundo plano');
 
-        // 2. Inicia el proceso pesado sin esperar el 'await'.
-        // Aquí usamos .then().catch() o simplemente dejamos la promesa "flotando".
-        this.webhookService.processWebhook(payload)
-            .catch(error => {
-                this.logger.error(`Error asíncrono en el webhook: ${JSON.stringify(error)}`);
-                // No se puede enviar error 500 al remitente, la respuesta ya fue enviada.
-            });
-        // El hilo de ejecución se libera aquí.
-    }
+    // 2. Inicia el proceso pesado sin esperar el 'await'.
+    // Aquí usamos .then().catch() o simplemente dejamos la promesa "flotando".
+    this.webhookService.processWebhook(payload)
+      .catch(error => {
+        this.logger.error(`Error asíncrono en el webhook: ${JSON.stringify(error)}`);
+        // No se puede enviar error 500 al remitente, la respuesta ya fue enviada.
+      });
+    // El hilo de ejecución se libera aquí.
+  }
 
 }

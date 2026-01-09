@@ -8,40 +8,41 @@ datasource db {
 }
 
 model User {
-  id                            String                @id @default(cuid())
+  id                            String                 @id @default(cuid())
   name                          String?
-  email                         String                @unique
+  email                         String                 @unique
   password                      String?
   emailVerified                 DateTime?
   image                         String?
-  role                          Role                  @default(user)
-  createdAt                     DateTime              @default(now())
-  updatedAt                     DateTime              @updatedAt
-  apiUrl                        String                @default("https://api.openAI.co")
-  company                       String                @default("Empresa Demo")
-  lat                           String                @default("0.0000")
-  lng                           String                @default("0.0000")
-  mapsUrl                       String                @default("https://maps.google.com/?q=0,0")
-  notificationNumber            String                @default("0000000000")
-  openingPhrase                 String?               @default("DEPRECATED")
+  role                          Role                   @default(user)
+  createdAt                     DateTime               @default(now())
+  updatedAt                     DateTime               @updatedAt
+  apiUrl                        String                 @default("https://api.openAI.co")
+  company                       String                 @default("Empresa Demo")
+  lat                           String                 @default("0.0000")
+  lng                           String                 @default("0.0000")
+  mapsUrl                       String                 @default("https://maps.google.com/?q=0,0")
+  notificationNumber            String                 @default("0000000000")
+  openingPhrase                 String?                @default("DEPRECATED")
   apiKeyId                      String?
-  del_seguimiento               String?               @default("Estamos para servirle.")
-  plan                          Plan                  @default(basico)
+  del_seguimiento               String?                @default("Estamos para servirle.")
+  plan                          Plan                   @default(basico)
   autoReactivate                String?
-  webhookUrl                    String?               @default("https://n8npro.verzay.co/webhook")
-  theme                         ThemeApp?             @default(Default)
-  muteAgentResponses            Boolean               @default(false)
+  webhookUrl                    String?                @default("https://n8npro.verzay.co/webhook")
+  theme                         ThemeApp?              @default(Default)
+  muteAgentResponses            Boolean                @default(false)
   timezone                      String?
   meetingDuration               Int?
-  onFacebook                    Boolean               @default(false)
-  onInstagram                   Boolean               @default(false)
+  onFacebook                    Boolean                @default(false)
+  onInstagram                   Boolean                @default(false)
   aiModelId                     String?
   defaultAiModelId              String?
   defaultProviderId             String?
   delayTimeGPT                  String?
+  meetingUrl                    String?
   accounts                      Account[]
-  agentPrompts                  AgentPrompt[]         @relation("UserAgentPrompts")
-  publishedAgentPromptRevisions AgentPromptRevision[] @relation("UserPublishedRevisions")
+  agentPrompts                  AgentPrompt[]          @relation("UserAgentPrompts")
+  publishedAgentPromptRevisions AgentPromptRevision[]  @relation("UserPublishedRevisions")
   Appointment                   Appointment[]
   instancias                    Instancias[]
   pausar                        Pausar[]
@@ -52,14 +53,18 @@ model User {
   systemMessages                SystemMessage[]
   Tag                           Tag[]
   tools                         Tools[]
-  apiKey                        ApiKey?               @relation(fields: [apiKeyId], references: [id])
-  defaultAiModel                AiModel?              @relation("DefaultAiModel", fields: [defaultAiModelId], references: [id])
+  apiKey                        ApiKey?                @relation(fields: [apiKeyId], references: [id])
+  defaultAiModel                AiModel?               @relation("DefaultAiModel", fields: [defaultAiModelId], references: [id])
   UserAvailability              UserAvailability[]
+  finance_accounts              finance_accounts[]
+  finance_attachments           finance_attachments[]
+  finance_categories            finance_categories[]
+  finance_transactions          finance_transactions[]
   iaCredit                      IaCredit?
-  clientesAsignados             reseller[]            @relation("RevendedorAsignador")
-  esClienteDe                   reseller[]            @relation("ClienteAsignado")
+  clientesAsignados             reseller[]             @relation("RevendedorAsignador")
+  esClienteDe                   reseller[]             @relation("ClienteAsignado")
   aiConfig                      UserAiConfig[]
-  modules                       Module[]              @relation("UserModules")
+  modules                       Module[]               @relation("UserModules")
 }
 
 model Product {
@@ -169,7 +174,7 @@ model Session {
   flujos         String?         @default("")
   remoteJidAlt   String?
   Appointment    Appointment[]
-  Registro       Registro?
+  Registro       Registro[]
   user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   SessionTag     SessionTag[]
   SessionTrigger SessionTrigger?
@@ -304,31 +309,36 @@ model Tools {
 }
 
 model Workflow {
-  id          String   @id @default(cuid())
-  userId      String
-  name        String
-  description String?
-  definition  String
-  status      String
-  createdAt   DateTime @default(now())
-  updateAt    DateTime @updatedAt
-  umbral      Float    @default(0.5)
+  id           String         @id @default(cuid())
+  userId       String
+  name         String
+  description  String?
+  definition   String
+  status       String
+  createdAt    DateTime       @default(now())
+  updateAt     DateTime       @updatedAt
+  umbral       Float          @default(0.5)
+  WorkflowEdge WorkflowEdge[]
 
   @@unique([name, userId])
 }
 
 model WorkflowNode {
-  id          String   @id @default(cuid())
-  workflowId  String
-  message     String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  tipo        String
-  url         String?
-  delay       String?
-  inactividad Boolean?
-  name_file   String?
-  order       Int      @default(0)
+  id                                               String         @id @default(cuid())
+  workflowId                                       String
+  message                                          String
+  createdAt                                        DateTime       @default(now())
+  updatedAt                                        DateTime       @updatedAt
+  tipo                                             String
+  url                                              String?
+  delay                                            String?
+  inactividad                                      Boolean?
+  name_file                                        String?
+  order                                            Int            @default(0)
+  posX                                             Float?
+  posY                                             Float?
+  WorkflowEdge_WorkflowEdge_sourceIdToWorkflowNode WorkflowEdge[] @relation("WorkflowEdge_sourceIdToWorkflowNode")
+  WorkflowEdge_WorkflowEdge_targetIdToWorkflowNode WorkflowEdge[] @relation("WorkflowEdge_targetIdToWorkflowNode")
 }
 
 model n8n_chat_histories {
@@ -500,7 +510,7 @@ model Registro {
   nombre    String?
   detalles  String?
   meta      Json?
-  sessionId Int          @unique
+  sessionId Int
   createdAt DateTime     @default(now())
   updatedAt DateTime
   id        Int          @id @default(autoincrement())
@@ -530,6 +540,111 @@ model Tag {
   User       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, slug])
+}
+
+model WorkflowEdge {
+  id                                               String       @id
+  workflowId                                       String
+  sourceId                                         String
+  targetId                                         String
+  createdAt                                        DateTime     @default(now())
+  WorkflowNode_WorkflowEdge_sourceIdToWorkflowNode WorkflowNode @relation("WorkflowEdge_sourceIdToWorkflowNode", fields: [sourceId], references: [id], onDelete: Cascade)
+  WorkflowNode_WorkflowEdge_targetIdToWorkflowNode WorkflowNode @relation("WorkflowEdge_targetIdToWorkflowNode", fields: [targetId], references: [id], onDelete: Cascade)
+  Workflow                                         Workflow     @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, sourceId])
+  @@index([sourceId])
+  @@index([targetId])
+  @@index([workflowId])
+}
+
+model finance_accounts {
+  id                   String                 @id
+  userId               String
+  name                 String
+  type                 FinanceAccountType     @default(PERSONAL)
+  isDefault            Boolean                @default(false)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime
+  User                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  finance_transactions finance_transactions[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model finance_attachments {
+  id                   String               @id
+  userId               String
+  transactionId        String
+  url                  String
+  fileName             String?
+  mimeType             String?
+  sizeBytes            Int?
+  createdAt            DateTime             @default(now())
+  finance_transactions finance_transactions @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  User                 User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@index([userId])
+}
+
+model finance_categories {
+  id                   String                 @id
+  userId               String
+  name                 String
+  type                 FinanceTxType
+  color                String?
+  order                Int                    @default(0)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime
+  User                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  finance_transactions finance_transactions[]
+
+  @@unique([userId, type, name])
+  @@index([userId, type])
+}
+
+model finance_currencies {
+  code                 String                 @id
+  name                 String
+  symbol               String
+  decimals             Int                    @default(2)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime
+  finance_transactions finance_transactions[]
+}
+
+model finance_transactions {
+  id                  String                @id
+  userId              String
+  type                FinanceTxType
+  status              FinanceTxStatus       @default(ACTIVE)
+  occurredAt          DateTime
+  amount              Decimal               @db.Decimal(18, 2)
+  currencyCode        String
+  accountId           String
+  categoryId          String?
+  title               String?
+  description         String?
+  counterparty        String?
+  reference           String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime
+  deletedAt           DateTime?
+  discount            Decimal               @default(0)
+  extra               Decimal               @default(0)
+  finance_attachments finance_attachments[]
+  finance_accounts    finance_accounts      @relation(fields: [accountId], references: [id])
+  finance_categories  finance_categories?   @relation(fields: [categoryId], references: [id])
+  finance_currencies  finance_currencies    @relation(fields: [currencyCode], references: [code])
+  User                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, accountId, occurredAt])
+  @@index([userId, categoryId, occurredAt])
+  @@index([userId, currencyCode, occurredAt])
+  @@index([userId, occurredAt])
+  @@index([userId, type, status])
 }
 
 enum PromptStatus {
@@ -602,4 +717,20 @@ enum TipoRegistro {
   RECLAMO
   PAGO
   RESERVA
+}
+
+enum FinanceAccountType {
+  COMPANY
+  PERSONAL
+}
+
+enum FinanceTxStatus {
+  ACTIVE
+  VOIDED
+  DELETED
+}
+
+enum FinanceTxType {
+  SALE
+  EXPENSE
 }

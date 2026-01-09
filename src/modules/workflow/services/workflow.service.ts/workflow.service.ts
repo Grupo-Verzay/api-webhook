@@ -8,6 +8,8 @@ import { Session } from '@prisma/client';
 import { SessionService } from 'src/modules/session/session.service';
 import { SessionTriggerService } from 'src/modules/session-trigger/session-trigger.service';
 
+type NodeDB = { id: string; order?: number | null; createdAt?: Date | null };
+type EdgeDB = { sourceId: string; targetId: string };
 
 interface getSessionInterface {
     remoteJid: string;
@@ -52,17 +54,12 @@ export class WorkflowService {
             },
         });
 
-        console.log({ result: JSON.stringify(result) });
-
         if (!result) {
             this.logger.warn(`Workflow no encontrado: ${name_flujo}`, 'WorkflowService');
             throw new NotFoundException('Workflow no encontrado');
         }
 
-        const nodes = await this.prisma.workflowNode.findMany({
-            where: { workflowId: result.id },
-            orderBy: { createdAt: 'asc' }, //TODO: Se debe agregar campo order a futuro.
-        });
+        const nodes = await this.getExecutionNodesForWorkflow(result.id);
 
         if (!nodes.length) {
             this.logger.warn(
@@ -295,6 +292,91 @@ export class WorkflowService {
             totalNodes: nodes.length,
         };
     }
+
+    /**
+     * SE UTILIZA PARA SABER EL ORDEN DE LOS NODOS (mismo orden que el grafo/edges, no por createdAt).
+     */
+    private async getExecutionNodesForWorkflow(workflowId: string) {
+        const [nodes, edges] = await Promise.all([
+            this.prisma.workflowNode.findMany({
+                where: { workflowId },
+            }),
+            this.prisma.workflowEdge.findMany({
+                where: { workflowId },
+                select: { sourceId: true, targetId: true },
+            }),
+        ]);
+
+        const orderedIds = this.buildLinearExecutionOrder(
+            nodes as unknown as NodeDB[],
+            edges as unknown as EdgeDB[],
+        );
+
+        const byId = new Map<string, any>((nodes as any[]).map((n) => [n.id, n]));
+
+        const orderedNodes = orderedIds
+            .map((id) => byId.get(id))
+            .filter((n) => n !== undefined);
+
+        return orderedNodes;
+    }
+
+    private buildLinearExecutionOrder(nodes: NodeDB[], edges: EdgeDB[]) {
+        if (!nodes.length) return [];
+
+        const nodeIds = new Set(nodes.map((n) => n.id));
+
+        // inDegree (cuántos entran a cada nodo)
+        const inDegree = new Map<string, number>();
+        for (const n of nodes) inDegree.set(n.id, 0);
+
+        for (const e of edges) {
+            if (!nodeIds.has(e.sourceId) || !nodeIds.has(e.targetId)) continue;
+            inDegree.set(e.targetId, (inDegree.get(e.targetId) ?? 0) + 1);
+        }
+
+        // START: inDegree === 0
+        const starts = nodes.filter((n) => (inDegree.get(n.id) ?? 0) === 0);
+
+        if (starts.length === 0) {
+            throw new Error('Workflow inválido: no hay nodo inicial (posible ciclo).');
+        }
+
+        // Si por algún motivo hay más de un start (edges desconectados), elige uno con fallback
+        const start = [...starts].sort((a, b) => {
+            const ao = a.order ?? Number.MAX_SAFE_INTEGER;
+            const bo = b.order ?? Number.MAX_SAFE_INTEGER;
+
+            if (ao !== bo) return ao - bo;
+
+            const ac = a.createdAt ? new Date(a.createdAt).getTime() : Number.MAX_SAFE_INTEGER;
+            const bc = b.createdAt ? new Date(b.createdAt).getTime() : Number.MAX_SAFE_INTEGER;
+            if (ac !== bc) return ac - bc;
+
+            return a.id.localeCompare(b.id);
+        })[0];
+
+        // Siguiente por source (lineal: máximo 1 salida)
+        const nextBySource = new Map<string, string>();
+        for (const e of edges) nextBySource.set(e.sourceId, e.targetId);
+
+        const visited = new Set<string>();
+        const ordered: string[] = [];
+
+        let current: string | undefined = start.id;
+
+        while (current) {
+            if (visited.has(current)) throw new Error('Workflow inválido: ciclo detectado.');
+            visited.add(current);
+            ordered.push(current);
+
+            current = nextBySource.get(current);
+        }
+
+        return ordered; // lista de nodeIds en orden de ejecución
+    }
+
+
 
     //registra el Id en inactividad
     private async registerIdsInactividadInSession(

@@ -19,9 +19,9 @@ export class ChatHistoryService {
             response_metadata: {},
         };
 
-        await this.prisma.n8n_chat_histories.create({
+        await this.prisma.n8nChatHistory.create({
             data: {
-                session_id: sessionId,
+                sessionId: sessionId,
                 message: messageJson,
             },
         });
@@ -34,8 +34,8 @@ export class ChatHistoryService {
      * @returns {Promise<string[]>} - Lista de contenidos concatenados
      */
     async getChatHistory(sessionId: string): Promise<string[]> {
-        const messages = await this.prisma.n8n_chat_histories.findMany({
-            where: { session_id: sessionId },
+        const messages = await this.prisma.n8nChatHistory.findMany({
+            where: { sessionId: sessionId },
             orderBy: { id: 'desc' }, // más recientes primero
             take: 10,
         });
@@ -58,18 +58,18 @@ export class ChatHistoryService {
             executedAt: new Date().toISOString()
         };
 
-        await this.prisma.n8n_chat_histories.create({
+        await this.prisma.n8nChatHistory.create({
             data: {
-                session_id: sessionId,
+                sessionId: sessionId,
                 message
             }
         });
     }
 
     async hasIntentionBeenExecuted(sessionId: string, name: string): Promise<boolean> {
-        const executed = await this.prisma.n8n_chat_histories.findMany({
+        const executed = await this.prisma.n8nChatHistory.findMany({
             where: {
-                session_id: sessionId,
+                sessionId: sessionId,
                 message: {
                     path: ['type'],
                     equals: 'intention'

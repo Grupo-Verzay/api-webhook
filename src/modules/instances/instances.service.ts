@@ -21,7 +21,7 @@ export class InstancesService {
         }
 
         try {
-            const result = await this.prisma.instancias.findFirst({
+            const result = await this.prisma.instancia.findFirst({
                 where: { instanceName },
             });
 
@@ -50,7 +50,7 @@ export class InstancesService {
         }
 
         try {
-            const instances = await this.prisma.instancias.findMany({
+            const instances = await this.prisma.instancia.findMany({
                 where: { userId },
                 select: {
                     instanceName: true,
@@ -64,15 +64,15 @@ export class InstancesService {
 
             const user = await this.prisma.user.findUnique({
                 where: { id: userId },
-                include: { ApiKey: true },
+                include: { apiKey: true },
             });
 
-            if (!user || !user.ApiKey) {
+            if (!user || !user.apiKey) {
                 this.logger.warn(`El usuario ${userId} no tiene una API Key asignada`);
                 return [];
             }
 
-            const { key: apiKey, url: serverUrl } = user.ApiKey;
+            const { key: apiKey, url: serverUrl } = user.apiKey;
 
             const enrichedInstances = instances.map((instance) => ({
                 ...instance,

@@ -1,18 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
-import { Pausar, Prisma, User } from '@prisma/client';
-
-// Define el tipo de retorno para la configuración de IA por defecto
-export type DefaultAiConfig = {
-    userId: string;
-    defaultProvider?: { id: string; name: string } | null;
-    defaultModel?: { id: string; name: string } | null;
-    defaultApiKey: string | null;
-};
-
-type UserWithPausar = Prisma.UserGetPayload<{
-    include: { Pausar: true };
-}>;
+import { User } from '@prisma/client';
+import { DefaultAiConfig, UserWithPausar } from 'src/types/open-ai';
 
 @Injectable()
 export class UserService {
@@ -66,7 +55,7 @@ export class UserService {
         return this.prisma.user.findUnique({
             where: { id: userId },
             include: {
-                Pausar: true, // 👈 así se llama en tu schema
+                pausar: true, // 👈 así se llama en tu schema
             },
         });
     }
@@ -81,8 +70,8 @@ export class UserService {
             select: {
                 id: true,
                 defaultProviderId: true,
-                ai_models: { select: { id: true, name: true } }, // <- relación real en tu schema
-                user_ai_configs: {
+                defaultAiModel: { select: { id: true, name: true } }, // <- relación real en tu schema
+                aiConfigs: {
                     select: { providerId: true, apiKey: true, isActive: true },
                 }, // <- relación real en tu schema
             },
@@ -97,14 +86,14 @@ export class UserService {
 
         if (user.defaultProviderId) {
             chosen =
-                user.user_ai_configs.find(
+                user.aiConfigs.find(
                     (c) => c.providerId === user.defaultProviderId && c.isActive,
-                ) ?? user.user_ai_configs.find((c) => c.providerId === user.defaultProviderId);
+                ) ?? user.aiConfigs.find((c) => c.providerId === user.defaultProviderId);
         }
 
         if (!chosen) {
             chosen =
-                user.user_ai_configs.find((c) => c.isActive) ?? user.user_ai_configs[0];
+                user.aiConfigs.find((c) => c.isActive) ?? user.aiConfigs[0];
         }
 
         // 2) Resolver proveedor
@@ -112,7 +101,7 @@ export class UserService {
         let defaultApiKey: string | null = null;
 
         if (chosen) {
-            const provider = await this.prisma.ai_providers.findUnique({
+            const provider = await this.prisma.aiProvider.findUnique({
                 where: { id: chosen.providerId },
                 select: { id: true, name: true },
             });
@@ -124,7 +113,7 @@ export class UserService {
         return {
             userId: user.id,
             defaultProvider,
-            defaultModel: user.ai_models ?? null,
+            defaultModel: user.defaultAiModel ?? null,
             defaultApiKey,
         };
     }

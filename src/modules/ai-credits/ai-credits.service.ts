@@ -40,7 +40,7 @@ export class AiCreditsService {
         try {
             this.logger.log(`trackTokens: registrando ${tokensInt} tokens usados para userId=${userId}`);
 
-            await this.prisma.ia_credits.upsert({
+            await this.prisma.iaCredit.upsert({
                 where: { userId },
                 create: {
                     id: randomUUID(),          // ✅ requerido por tu schema
@@ -73,7 +73,7 @@ export class AiCreditsService {
         }
 
         try {
-            const credit = await this.prisma.ia_credits.findUnique({
+            const credit = await this.prisma.iaCredit.findUnique({
                 where: { userId },
             });
 

@@ -5,9 +5,15 @@ import { ChatCompletionMessageToolCall } from "openai/resources/index.mjs";
 const whatsappCreditsMsg = 'https://w.app/verzay';
 
 export type UserWithPausar = Prisma.UserGetPayload<{
-    include: { Pausar: true };
+    include: { pausar: true };
 }>;
 
+export type DefaultAiConfig = {
+    userId: string;
+    defaultProvider?: { id: string; name: string } | null;
+    defaultModel?: { id: string; name: string } | null;
+    defaultApiKey: string | null;
+};
 export interface IntentionItem {
     name: string;
     tipo: 'flujo' | 'seguimiento' | 'notificacion';

@@ -204,7 +204,7 @@ export class SessionService {
 
     // 1) Eliminar o marcar los seguimientos de inactividad
     // Si tienes un campo estado en Seguimiento, cámbialo a updateMany
-    await this.prisma.seguimientos.deleteMany({
+    await this.prisma.seguimiento.deleteMany({
       where: { id: { in: inactividadIds } },
     });
 

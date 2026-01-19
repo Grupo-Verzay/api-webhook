@@ -317,7 +317,7 @@ export class WorkflowService {
                         tipo: node.tipo,
                         media: node.url,
                         time: delaySeguimiento ?? '',
-                        name_file: node.name_file,
+                        name_file: node.nameFile,
                         consecutivo: '',
                     };
 

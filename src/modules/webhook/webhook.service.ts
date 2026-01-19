@@ -8,7 +8,6 @@ import { InstancesService } from '../instances/instances.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
 import { UserService } from '../user/user.service';
 import { isGroupChat } from './utils/is-group-chat';
-import { Pausar, Prisma, rr, User } from '@prisma/client';
 import { MessageBufferService } from './services/message-buffer/message-buffer.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
 import { NodeSenderService } from '../workflow/services/node-sender.service.ts/node-sender.service';
@@ -115,15 +114,15 @@ export class WebhookService {
     const defaultDelay = WebhookService.DELAYCONVERSATION; // 10000 ms por defecto (10s)
     let delayConversation = defaultDelay;
 
-    if (userWithRelations.delayTimeGPT) {
-      const seconds = parseInt(userWithRelations.delayTimeGPT, 10);
+    if (userWithRelations.delayTimeGpt) {
+      const seconds = parseInt(userWithRelations.delayTimeGpt, 10);
 
       if (!isNaN(seconds) && seconds > 0) {
         delayConversation = seconds * 1000; // convertir segundos → milisegundos
         logger.log(`delayTimeGPT personalizado: ${seconds}s → ${delayConversation}ms`);
       } else {
         logger.warn(
-          `delayTimeGPT inválido ("${userWithRelations.delayTimeGPT}"), usando default ${defaultDelay}ms`,
+          `delayTimeGPT inválido ("${userWithRelations.delayTimeGpt}"), usando default ${defaultDelay}ms`,
         );
       }
     }
@@ -562,7 +561,7 @@ export class WebhookService {
         return;
       }
 
-      const dataPausar = userWithRelations.Pausar ?? [];
+      const dataPausar = userWithRelations.pausar ?? [];
       const pausarItem = dataPausar.find((p) => p.tipo === 'abrir');
 
       if (!pausarItem) {
@@ -597,7 +596,7 @@ export class WebhookService {
       }
     }
 
-    const pharaseToDelSeguimiento = userWithRelations.del_seguimiento ?? '';
+    const pharaseToDelSeguimiento = userWithRelations.delSeguimiento ?? '';
 
     if (conversationMsg === pharaseToDelSeguimiento.trim().toLowerCase()) {
       logger.log('Frase correcta detectada. Eliminando seguimiento...');

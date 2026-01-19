@@ -7,7 +7,7 @@ export class AutoRepliesService {
 
     
     async getAutoRepliesByUserId(userId: string) {
-        return this.prisma.rr.findMany({
+        return this.prisma.quickReply.findMany({
             where: { userId },
             orderBy: { id: 'asc' },
         });

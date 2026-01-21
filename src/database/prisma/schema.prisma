@@ -282,7 +282,7 @@ model Session {
   id                   Int                    @id @default(autoincrement())
   seguimientos         String?                @default("")
   inactividad          String?                @default("")
-  sessionDelay         String?
+  sessionDelay         String?  
   flujos               String?                @default("")
   remoteJidAlt         String?
   appointments         Appointment[]

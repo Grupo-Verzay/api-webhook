@@ -412,8 +412,11 @@ export class WorkflowService {
                 );
             }
 
-            const next = this.pickNextByHandle(outs, 'out') ?? outs[0] ?? null;
-            currentId = next?.targetId;
+            const next =
+                this.pickNextByHandle(outs, 'out') ??
+                outs.find(e => (e.sourceHandle ?? 'out') !== 'default') ??
+                outs[0] ??
+                null;
 
             currentId = next?.targetId;
         }

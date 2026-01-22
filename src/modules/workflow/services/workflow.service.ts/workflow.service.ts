@@ -3,7 +3,7 @@ import { NodeSenderService } from '../node-sender.service.ts/node-sender.service
 import { LoggerService } from 'src/core/logger/logger.service';
 import { SeguimientosService } from 'src/modules/seguimientos/seguimientos.service';
 import { convertDelayToSeconds } from 'src/modules/webhook/utils/convert-delay-to-seconds.helper';
-import { Session, WorkflowNode } from '@prisma/client';
+import { Prisma, Session, WorkflowNode } from '@prisma/client';
 import { SessionService } from 'src/modules/session/session.service';
 import { SessionTriggerService } from 'src/modules/session-trigger/session-trigger.service';
 import { AiAgentService } from 'src/modules/ai-agent/ai-agent.service';
@@ -327,7 +327,7 @@ export class WorkflowService {
                 } else if (node.tipo.startsWith('seguimiento-')) {
                     const delaySeguimiento = convertDelayToSeconds(node.delay ?? '');
 
-                    const seguimientoData = {
+                    const seguimientoData = Prisma.validator<Prisma.SeguimientoUncheckedCreateInput>()({
                         idNodo: node.id,
                         serverurl: urlevo,
                         instancia: instanceName,
@@ -337,9 +337,9 @@ export class WorkflowService {
                         tipo: node.tipo,
                         media: node.url,
                         time: delaySeguimiento ?? '',
-                        name_file: node.nameFile,
+                        nameFile: node.nameFile,
                         consecutivo: '',
-                    };
+                    });
 
                     const { id } = await this.seguimientosService.createSeguimiento(
                         seguimientoData,

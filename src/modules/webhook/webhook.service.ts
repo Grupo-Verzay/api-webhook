@@ -616,8 +616,7 @@ export class WebhookService {
       return;
     }
 
-    // Estado reciente (si lo necesitas en el futuro)
-    await this.sessionService.isSessionActive(remoteJid, userWithRelations.id, instanceName);
+    // await this.sessionService.isSessionActive(remoteJid, userWithRelations.id, instanceName);
 
     await this.onAutoReplies({
       userId: userWithRelations.id.toString(),

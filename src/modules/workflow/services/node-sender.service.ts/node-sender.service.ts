@@ -62,7 +62,7 @@ export class NodeSenderService {
   //         text: bloque,
   //       };
 
-  //       this.logger.log(`📤 Enviando bloque ${index + 1}/${bloques.length} a ${remoteJid}: "${bloque}"`, 'NodeSenderService');
+  //       this.logger.log(`Enviando bloque ${index + 1}/${bloques.length} a ${remoteJid}: "${bloque}"`, 'NodeSenderService');
 
   //       const response = await firstValueFrom(
   //         this.http.post(url, body, {
@@ -70,12 +70,12 @@ export class NodeSenderService {
   //         }),
   //       );
 
-  //       this.logger.log(`✅ Respuesta bloque ${index + 1}: ${JSON.stringify(response.data)}`, 'NodeSenderService');
+  //       this.logger.log(`Respuesta bloque ${index + 1}: ${JSON.stringify(response.data)}`, 'NodeSenderService');
 
   //       await new Promise((res) => setTimeout(res, 1200)); // delay entre mensajes
   //     }
   //   } catch (error) {
-  //     this.logger.error(`❌ Error enviando texto a ${remoteJid}`, error?.response?.data || error.message, 'NodeSenderService');
+  //     this.logger.error(`Error enviando texto a ${remoteJid}`, error?.response?.data || error.message, 'NodeSenderService');
   //   }
   // }
 

@@ -234,10 +234,10 @@ export class AiAgentService {
         );
 
         if (res === 'ok') {
-          return `✅ Notificación enviada al asesor para el cliente "${nombre}". Detalle: ${detalles}`;
+          return `Notificación enviada al asesor para el cliente "${nombre}". Detalle: ${detalles}`;
         }
 
-        return `⚠️ No se pudo notificar al asesor. Detalle original del cliente: ${detalles}`;
+        return `No se pudo notificar al asesor. Detalle original del cliente: ${detalles}`;
       },
       {
         name: 'Notificacion_Asesor',
@@ -381,7 +381,7 @@ export class AiAgentService {
       // Prompt PRINCIPAL del agente
       const promptAI = `${extraRules} ${systemPrompt}`.trim();
 
-      logger.log('PROMPT:', promptAI);
+      // logger.log('PROMPT:', promptAI);
 
       const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
 
@@ -392,7 +392,7 @@ export class AiAgentService {
           }),
       );
 
-      logger.log(`HISTORIAL: ${JSON.stringify(historyMessages, null, 2)}`);
+      // logger.log(`HISTORIAL: ${JSON.stringify(historyMessages, null, 2)}`);
 
       const rawInputMessage = new HumanMessage({
         content: [{ type: 'text', text: input }],
@@ -672,9 +672,9 @@ export class AiAgentService {
           userId,
         );
 
-        return `✅ Flujo *${currentWorkflow.name}* iniciado correctamente.`;
+        return `Flujo *${currentWorkflow.name}* iniciado correctamente.`;
       } else {
-        return `ℹ️ El flujo *${currentWorkflow.name}* ya fue ejecutado anteriormente en esta conversación.`;
+        return `El flujo *${currentWorkflow.name}* ya fue ejecutado anteriormente en esta conversación.`;
       }
     }
 

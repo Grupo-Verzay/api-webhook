@@ -149,7 +149,7 @@ No menciones "workflow", no repitas el contenido del flujo, no ejecutes acciones
     } catch (err: any) {
         logger?.error?.('Error generando post-message con IA', err?.message || err, context);
         // fallback fijo si IA falla
-        aiText = '✨ Listo ✅ ¿En qué más te puedo ayudar?';
+        aiText = 'Listo ¿En qué más te puedo ayudar?';
     }
 
     aiText = (aiText || '').trim();

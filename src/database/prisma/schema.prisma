@@ -153,7 +153,7 @@ model Module {
   showOnlySelectedPlans  Boolean?     @default(false)
   customUrl              String?
   moduleItems            ModuleItem[]
-  users                  User[]       @relation("UserModules")
+  userModules            UserModule[]
 }
 
 model ModuleItem {
@@ -272,25 +272,25 @@ model Service {
 }
 
 model Session {
-  userId               String
-  remoteJid            String
-  pushName             String
-  instanceId           String
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
-  status               Boolean
-  id                   Int                    @id @default(autoincrement())
-  seguimientos         String?                @default("")
-  inactividad          String?                @default("")
-  sessionDelay         String?  
-  flujos               String?                @default("")
-  remoteJidAlt         String?
-  appointments         Appointment[]
-  registros            Registro[]
-  user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sessionTags          SessionTag[]
-  sessionTrigger       SessionTrigger?
-  workflowStates       SessionWorkflowState[]
+  userId              String
+  remoteJid           String
+  pushName            String
+  instanceId          String
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  status              Boolean
+  id                  Int                    @id @default(autoincrement())
+  seguimientos        String?                @default("")
+  inactividad         String?                @default("")
+  sessionDelay        String?
+  flujos              String?                @default("")
+  remoteJidAlt        String?
+  appointments        Appointment[]
+  registros           Registro[]
+  user                User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionTags         SessionTag[]
+  sessionTrigger      SessionTrigger?
+  workflowStates      SessionWorkflowState[]
   financeTransactions FinanceTransaction[]
 
   @@index([userId, remoteJid])
@@ -388,6 +388,7 @@ model User {
   defaultProviderId                  String?
   delayTimeGpt                       String?               @map("delayTimeGPT")
   meetingUrl                         String?
+  preferredCurrencyCode              String                @default("COP")
   accounts                           Account[]
   agentPrompts                       AgentPrompt[]
   publishedAgentPromptRevisions      AgentPromptRevision[]
@@ -404,6 +405,7 @@ model User {
   apiKey                             ApiKey?               @relation(fields: [apiKeyId], references: [id])
   defaultAiModel                     AiModel?              @relation(fields: [defaultAiModelId], references: [id])
   userAvailability                   UserAvailability[]
+  userModules                        UserModule[]
   financeAccounts                    FinanceAccount[]
   financeAttachments                 FinanceAttachment[]
   financeCategories                  FinanceCategory[]
@@ -412,7 +414,6 @@ model User {
   reseller_reseller_reselleridToUser Reseller[]            @relation("reseller_reselleridToUser")
   reseller_reseller_userIdToUser     Reseller[]            @relation("reseller_userIdToUser")
   aiConfigs                          UserAiConfig[]
-  modules                            Module[]              @relation("UserModules")
 }
 
 model UserAvailability {
@@ -433,20 +434,34 @@ model VerificationToken {
 }
 
 model Workflow {
-  id            String                 @id @default(cuid())
-  userId        String
-  name          String
-  description   String?
-  definition    String
-  status        String
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt @map("updateAt")
-  umbral        Float                  @default(0.5)
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  definition  String
+  status      String
+  isPro       Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt @map("updateAt")
+  umbral      Float    @default(0.5)
+
   sessionStates SessionWorkflowState[]
   workflowEdges WorkflowEdge[]
   nodes         WorkflowNode[]
 
   @@unique([name, userId])
+}
+
+model WorkflowExecutionLock {
+  id           String   @id @default(cuid())
+  userId       String
+  instanceName String
+  remoteJid    String
+  workflowId   String
+  lockKey      String   @unique
+  createdAt    DateTime @default(now())
+
+  @@index([userId, instanceName, remoteJid, workflowId])
 }
 
 model SessionWorkflowState {
@@ -552,11 +567,14 @@ model FinanceAccount {
   isDefault    Boolean              @default(false)
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
+  currencyCode String?
+  currency     FinanceCurrency?     @relation(fields: [currencyCode], references: [code])
   user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions FinanceTransaction[]
 
   @@unique([userId, name])
   @@index([userId])
+  @@index([userId, currencyCode])
   @@map("finance_accounts")
 }
 
@@ -601,6 +619,7 @@ model FinanceCurrency {
   decimals     Int                  @default(2)
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
+  accounts     FinanceAccount[]
   transactions FinanceTransaction[]
 
   @@map("finance_currencies")
@@ -717,6 +736,17 @@ model UserAiConfig {
 
   @@unique([userId, providerId])
   @@map("user_ai_configs")
+}
+
+model UserModule {
+  A      String
+  B      String
+  Module Module @relation(fields: [A], references: [id], onDelete: Cascade)
+  User   User   @relation(fields: [B], references: [id], onDelete: Cascade)
+
+  @@id([A, B], map: "_UserModules_AB_pkey")
+  @@index([B], map: "_UserModules_B_index")
+  @@map("_UserModules")
 }
 
 enum AppointmentStatus {

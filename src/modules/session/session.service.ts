@@ -74,9 +74,14 @@ export class SessionService {
     const inst = instanceName.trim();
     const uid = userId.trim();
 
+    // this.logger.error(`Buscando session para remoteJid: "${rj}", instanceId: "${inst}", userId: "${uid}"`, 'SessionService');
+
     const session = await this.prisma.session.findFirst({
       where: { remoteJid: rj, instanceId: inst, userId: uid },
     });
+
+    // this.logger.error(`Session encontrada: ${session ? 'Sí' : 'No'}`, 'SessionService');
+    // this.logger.error(`Session encontrada: ${JSON.stringify(session)}`, 'SessionService');
 
     return !!session?.agentDisabled;
   }
@@ -101,7 +106,7 @@ export class SessionService {
   // Update state session by remoteJid y instanceId
   async updateSessionStatus(remoteJid: string, instanceId: string, status: boolean, userId: string) {
     return this.prisma.session.updateMany({
-      where: { remoteJid, userId },
+      where: { remoteJid, userId, instanceId },
       data: { status },
     });
   }

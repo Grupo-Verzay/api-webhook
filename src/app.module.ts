@@ -15,6 +15,8 @@ import { AutoRepliesService } from './modules/auto-replies/auto-replies.service'
 import { NotificacionToolService } from './modules/ai-agent/tools/notificacion/notificacion.service';
 import { AiCreditsService } from './modules/ai-credits/ai-credits.service';
 import { SessionTriggerService } from './modules/session-trigger/session-trigger.service';
+import { LeadFunnelModule } from './modules/lead-funnel/lead-funnel.module';
+import { RegistrosModule } from './modules/registros/registros.module';
 
 @Module({
   imports: [
@@ -25,7 +27,9 @@ import { SessionTriggerService } from './modules/session-trigger/session-trigger
     WebhookModule,
     LoggerModule,
     DatabaseModule,
-    AiAgentModule
+    AiAgentModule,
+    LeadFunnelModule,
+    RegistrosModule
   ],
   providers: [
     ServicesService,

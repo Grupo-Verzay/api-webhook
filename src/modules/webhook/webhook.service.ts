@@ -29,6 +29,7 @@ import {
 } from 'src/types/open-ai';
 import { AntifloodService } from './services/antiflood/antiflood.service';
 import { executeWorkflow } from 'src/utils/execute-workflow';
+import { LeadFunnelService } from '../lead-funnel/services/lead-funnel/lead-funnel.service';
 
 @Injectable()
 export class WebhookService implements OnModuleInit {
@@ -54,6 +55,7 @@ export class WebhookService implements OnModuleInit {
     private readonly aiCreditsService: AiCreditsService,
     private readonly sessionTriggerService: SessionTriggerService,
     private readonly antifloodService: AntifloodService,
+    private readonly leadFunnelService: LeadFunnelService
   ) { }
 
   onModuleInit(): void {
@@ -300,6 +302,21 @@ export class WebhookService implements OnModuleInit {
             );
             return;
           };
+
+          //TODO: Lead Funnel (bucket/sintetizador)
+          if (sessionActiveNow?.id) {
+            const history = await this.chatHistoryService.getChatHistory(sessionHistoryId);
+
+            await this.leadFunnelService.processIncomingText({
+              userId,
+              instanceId,
+              remoteJid: canonicalRemoteJid,
+              pushName,
+              sessionDbId: sessionActiveNow.id,
+              text: mergedTextStr,
+              history,
+            });
+          }
 
           const resumed = await this.workflowService.continuePausedWorkflow(
             server_url, apikey, instanceName, canonicalRemoteJid, userId, mergedTextStr

@@ -9,7 +9,7 @@ import { Prisma, Session, WorkflowNode } from '@prisma/client';
 import { SessionService } from 'src/modules/session/session.service';
 import { SessionTriggerService } from 'src/modules/session-trigger/session-trigger.service';
 import { PrismaService } from 'src/database/prisma.service';
-
+import { ChatHistoryService } from '../../../chat-history/chat-history.service';
 import type { AiAgentService } from '../../../ai-agent/ai-agent.service';
 
 type NodeDB = WorkflowNode;
@@ -47,6 +47,7 @@ export class WorkflowService implements OnModuleInit {
         private sessionService: SessionService,
         private readonly sessionTriggerService: SessionTriggerService,
         private readonly moduleRef: ModuleRef,
+        private readonly chatHistoryService: ChatHistoryService,
     ) { }
 
     onModuleInit() {
@@ -55,6 +56,11 @@ export class WorkflowService implements OnModuleInit {
     }
 
     private readonly NODE_TIMEOUT_MS = 15000;
+
+    private async getRecentUserTextsForIntention(sessionId: number, maxAttempts: number): Promise<string[]> {
+        const chatHistory = await this.chatHistoryService.getChatHistory(sessionId.toString());
+        return chatHistory.slice(maxAttempts).map(t => (t ?? '').trim()).filter(Boolean);
+    }
 
     /**
      * Ejecuta un workflow enviando los nodos correspondientes (texto, imagen, video, etc).
@@ -219,8 +225,8 @@ export class WorkflowService implements OnModuleInit {
                     }
 
                     const prevData = (state.intentionData as any) ?? {};
-                    const prevRecent: string[] = Array.isArray(prevData.recentUserTexts) ? prevData.recentUserTexts : [];
-                    const recentUserTexts = [...prevRecent, text].slice(-maxAttempts);
+                    //TODO: Se quema maxAttempts para no traer todo el historial, pero ideal sería marcar de alguna forma los mensajes relacionados a la intención (ej: con metadata) para traer solo esos. 
+                    const recentUserTexts = await this.getRecentUserTextsForIntention(session.id, 15);
 
                     state = await this.prisma.sessionWorkflowState.update({
                         where: { id: state.id },

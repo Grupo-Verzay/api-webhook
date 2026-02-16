@@ -306,7 +306,7 @@ export class WebhookService implements OnModuleInit {
           //TODO: Lead Funnel (bucket/sintetizador)
           // if (sessionActiveNow?.id && (userWithRelations.role === 'admin' || userWithRelations.role === 'reseller')) {
           if (sessionActiveNow?.id) {
-            this.logger.debug(`Entrando a sintetizador...`);
+            this.logger.debug(`Entrando a sintetizador... instanceID=${instanceId} userId=${userId} remoteJid=${canonicalRemoteJid}`);
             const history = await this.chatHistoryService.getChatHistory(sessionHistoryId);
 
             const funnelRes = await this.leadFunnelService.processIncomingText({

@@ -164,14 +164,12 @@ export class LeadClassifierIaService {
 
         const historyText = history.slice(-5).join('\n');
         const finalInput = `
-MENSAJE_ACTUAL:
-${text}
+            MENSAJE_ACTUAL:
+            ${text}
 
-ULTIMO_CONTEXTO:
-${historyText}
-`.trim();
-
-        this.logger.debug(`[classify] sending to LLM. finalInputLen=${finalInput.length}`);
+            ULTIMO_CONTEXTO:
+            ${historyText}
+            `.trim();
 
         const messages = [
             new SystemMessage({ content: [{ type: 'text', text: systemPrompt }] }),

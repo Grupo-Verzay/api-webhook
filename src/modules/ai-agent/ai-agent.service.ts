@@ -348,6 +348,97 @@ export class AiAgentService {
     return String(content ?? '').trim();
   }
 
+  private extractWorkflowNameFromLiteral(text: string): string | null {
+    const raw = (text || "").trim();
+
+    const m =
+      raw.match(/ejecuta\s+el\s+flujo\s+['"`]([^'"`]+)['"`]/i) ??
+      raw.match(/\bflujo\b\s*[:\-]?\s*['"`]([^'"`]+)['"`]/i);
+
+    return m?.[1]?.trim() || null;
+  }
+
+  private sanitizeOutgoingText(text: string): string {
+    const lines = (text || "").split("\n");
+
+    const banned = (line: string) => {
+      const s = line.trim();
+
+      // bullets típicos del prompt
+      if (/^\-\s*\(\d+\)\s*\*\*función\*\*/i.test(s)) return true;
+      if (/\*\*función\*\*/i.test(s) && /ejecuta\s+el\s+flujo/i.test(s)) return true;
+
+      if (/\*\*regla\/parámetro\*\*/i.test(s)) return true;
+      if (/comportamiento\s+obligatorio/i.test(s)) return true;
+      if (/^####\s*elementos/i.test(s)) return true;
+
+      // opcional si también se te están colando headers internos
+      if (/^###\s*paso\s+\d+/i.test(s)) return true;
+
+      return false;
+    };
+
+    const cleaned = lines.filter(l => !banned(l)).join("\n").trim();
+    return cleaned.replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  /**
+   * Ejecuta un workflow por nombre exacto (case-insensitive),
+   * con control anti-duplicados (usa el mismo registro en chatHistory + session).
+   */
+  private async executeWorkflowByNameIfPossible(params: {
+    workflowName: string;
+    userId: string;
+    sessionId: string;
+    server_url: string;
+    apikey: string;
+    instanceName: string;
+    remoteJid: string;
+  }): Promise<boolean> {
+    const { workflowName, userId, sessionId, server_url, apikey, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    const workflows = await this.workflowService.getWorkflow(userId).catch(() => []);
+    if (!Array.isArray(workflows) || workflows.length === 0) return false;
+
+    const currentWorkflow = workflows.find(
+      (w: any) => (w?.name || "").toLowerCase() === workflowName.toLowerCase(),
+    );
+    if (!currentWorkflow) return false;
+
+    const alreadyExecuted = await this.chatHistoryService.hasIntentionBeenExecuted(
+      sessionId,
+      currentWorkflow.name,
+    );
+
+    if (alreadyExecuted) return true; // ya estaba hecho, igual “consumimos” la instrucción literal
+
+    await this.chatHistoryService.registerExecutedIntention(
+      sessionId,
+      currentWorkflow.name,
+      "intention",
+    );
+
+    await this.workflowService.executeWorkflow(
+      currentWorkflow.name,
+      server_url,
+      apikey,
+      instanceName,
+      remoteJid,
+      userId,
+    );
+
+    await this.sessionService.registerWorkflow(
+      currentWorkflow.name,
+      remoteJid,
+      instanceName,
+      userId,
+    );
+
+    logger.log(`OutboundGuard: workflow ejecutado por literal => ${currentWorkflow.name}`);
+    return true;
+  }
+
   /**
    * Proceso principal de entrada (AGENTE PRINCIPAL).
    * Llamado desde el webhook.
@@ -508,14 +599,47 @@ export class AiAgentService {
       // Por ahora no tenemos usage_metadata directo desde LangGraph
       await this.aiCredits.trackTokens(userId, 0);
 
-      const finalText = this.extractReactAgentReply(result);
+      // const finalText = this.extractReactAgentReply(result);
 
-      if (!finalText || !finalText.trim()) {
+      // if (!finalText || !finalText.trim()) {
+      //   logger.warn('Respuesta vacía del agente ReAct, usamos mensaje plano de fallback.');
+      //   return 'No pude procesar tu solicitud correctamente. ¿Puedes reformular tu mensaje?';
+      // }
+
+      // return finalText;
+      const finalTextRaw = this.extractReactAgentReply(result);
+
+      if (!finalTextRaw || !finalTextRaw.trim()) {
         logger.warn('Respuesta vacía del agente ReAct, usamos mensaje plano de fallback.');
         return 'No pude procesar tu solicitud correctamente. ¿Puedes reformular tu mensaje?';
       }
 
+      // CAPA A: si viene literal “Ejecuta el flujo X” => ejecutar workflow y NO responder texto raro
+      const literalFlow = this.extractWorkflowNameFromLiteral(finalTextRaw);
+      if (literalFlow) {
+        const executed = await this.executeWorkflowByNameIfPossible({
+          workflowName: literalFlow,
+          userId,
+          sessionId,
+          server_url,
+          apikey,
+          instanceName,
+          remoteJid,
+        });
+
+        if (executed) return '';
+        // si no existe el workflow, seguimos a sanitizar (y evitamos mandar el meta-texto)
+      }
+
+      // CAPA B: sanitizar meta-salida
+      const finalText = this.sanitizeOutgoingText(finalTextRaw);
+      if (!finalText) {
+        logger.warn('OutboundGuard: salida vacía tras sanitizar. No se envía nada.');
+        return '';
+      }
+
       return finalText;
+
     } catch (error: any) {
       const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
@@ -722,9 +846,9 @@ export class AiAgentService {
           response_format: "text",
         });
 
-        return transcription; 
+        return transcription;
       }
-      
+
       this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
 
       const message = new HumanMessage({

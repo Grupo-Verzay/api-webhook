@@ -232,6 +232,7 @@ model Registro {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
   id        Int          @id @default(autoincrement())
+  crmFollowUps CrmFollowUp[]
   session   Session      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([tipo, fecha])
@@ -286,7 +287,12 @@ model Session {
   agentDisabled       Boolean                @default(false)
   flujos              String?                @default("")
   remoteJidAlt        String?
+  leadStatus          LeadStatus?
+  leadStatusReason    String?                @map("lead_status_reason")
+  leadStatusSourceHash String?               @map("lead_status_source_hash")
+  leadStatusUpdatedAt DateTime?              @map("lead_status_updated_at")
   appointments        Appointment[]
+  crmFollowUps        CrmFollowUp[]
   registros           Registro[]
   user                User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   sessionTags         SessionTag[]
@@ -418,6 +424,59 @@ model User {
   reseller_reseller_reselleridToUser Reseller[]            @relation("reseller_reselleridToUser")
   reseller_reseller_userIdToUser     Reseller[]            @relation("reseller_userIdToUser")
   aiConfigs                          UserAiConfig[]
+  crmFollowUps                       CrmFollowUp[]
+}
+
+enum LeadStatus {
+  FRIO
+  TIBIO
+  CALIENTE
+  FINALIZADO
+  DESCARTADO
+}
+
+enum CrmFollowUpStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  CANCELLED
+  SKIPPED
+}
+
+model CrmFollowUp {
+  id                 String            @id @default(cuid())
+  sessionId          Int
+  userId             String
+  sourceReportId     Int?
+  remoteJid          String
+  instanceId         String
+  leadStatusSnapshot LeadStatus
+  summarySnapshot    String?           @map("summary_snapshot")
+  ruleKey            String            @map("rule_key")
+  sourceHash         String?           @map("source_hash")
+  scheduledFor       DateTime          @map("scheduled_for")
+  status             CrmFollowUpStatus @default(PENDING)
+  cancelOnReply      Boolean           @default(true) @map("cancel_on_reply")
+  maxAttempts        Int               @default(2) @map("max_attempts")
+  attemptCount       Int               @default(0) @map("attempt_count")
+  generatedMessage   String?           @map("generated_message")
+  errorReason        String?           @map("error_reason")
+  lastProcessedAt    DateTime?         @map("last_processed_at")
+  sentAt             DateTime?         @map("sent_at")
+  cancelledAt        DateTime?         @map("cancelled_at")
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  sourceReport       Registro?         @relation(fields: [sourceReportId], references: [id], onDelete: SetNull)
+  session            Session           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, status])
+  @@index([status, scheduledFor])
+  @@index([userId, status])
+  @@index([remoteJid, instanceId, status])
+  @@unique([sessionId, ruleKey, sourceHash])
+  @@map("crm_follow_ups")
 }
 
 model UserAvailability {

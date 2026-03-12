@@ -5,16 +5,25 @@ import { RegistroService } from './services/registro/registro.service';
 import { ReporteSintesisService } from './services/reporte-sintesis/reporte-sintesis.service';
 import { LeadFunnelController } from './lead-funnel.controller';
 import { AiAgentModule } from '../ai-agent/ai-agent.module';
+import { ChatHistoryModule } from '../chat-history/chat-history.module';
+import { LeadStatusIaService } from './services/lead-status-ia.service';
+import { CrmFollowUpPlannerService } from './services/crm-follow-up-planner.service';
+import { CrmFollowUpRunnerService } from './services/crm-follow-up-runner.service';
+import { CrmFollowUpRunnerSchedulerService } from './services/crm-follow-up-runner.scheduler.service';
 
 @Module({
-  imports: [AiAgentModule],
+  imports: [AiAgentModule, ChatHistoryModule],
   providers: [
     LeadFunnelService,
     LeadClassifierIaService,
     RegistroService,
     ReporteSintesisService,
+    LeadStatusIaService,
+    CrmFollowUpPlannerService,
+    CrmFollowUpRunnerService,
+    CrmFollowUpRunnerSchedulerService,
   ],
   controllers: [LeadFunnelController],
-  exports: [LeadFunnelService], 
+  exports: [LeadFunnelService, CrmFollowUpRunnerService],
 })
 export class LeadFunnelModule {}

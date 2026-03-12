@@ -7,6 +7,11 @@ export default () => ({
         intervalMs: process.env.FOLLOW_UP_RUNNER_INTERVAL_MS || '60000',
         limit: process.env.FOLLOW_UP_RUNNER_LIMIT || '25',
     },
+    crmFollowUpRunner: {
+        enabled: process.env.CRM_FOLLOW_UP_RUNNER_ENABLED || 'false',
+        intervalMs: process.env.CRM_FOLLOW_UP_RUNNER_INTERVAL_MS || '60000',
+        limit: process.env.CRM_FOLLOW_UP_RUNNER_LIMIT || '25',
+    },
 
     // Auth
     authSecret: process.env.AUTH_SECRET,

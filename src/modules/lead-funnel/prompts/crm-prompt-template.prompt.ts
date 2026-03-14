@@ -2,12 +2,7 @@ import { PrismaService } from 'src/database/prisma.service';
 
 import { buildLeadFunnelPrompt } from './lead-funnel.prompt';
 import { buildLeadStatusPrompt } from './lead-status.prompt';
-
-const CRM_AGENT_PROMPT_IDS = {
-  leadStatus: 'crm-lead-status-classifier',
-  leadFunnel: 'crm-lead-funnel-synthesizer',
-} as const;
-
+import { CRM_AGENT_PROMPT_IDS } from '../../../types/CRM_AGENT_PROMPT_IDS';
 const CRM_LEAD_NAME_JSON_PLACEHOLDER = '{{leadNameJson}}';
 
 async function findPromptText(prisma: PrismaService, userId: string, agentId: string) {

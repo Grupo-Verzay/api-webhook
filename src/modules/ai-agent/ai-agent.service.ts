@@ -31,6 +31,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { systemPromptWorkflow } from './utils/rulesPrompt';
 import OpenAI from "openai";
 import { toFile } from "openai/uploads";
+import { CRM_AGENT_PROMPT_IDS } from '../../types/CRM_AGENT_PROMPT_IDS';
 
 @Injectable()
 export class AiAgentService {
@@ -461,7 +462,7 @@ export class AiAgentService {
       // Inicializar LLM (LangChain client)
       this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
 
-      const systemPrompt = await this.promptService.getPromptUserId(userId).catch(() => '');
+      const systemPrompt = await this.promptService.getPromptUserId(userId, CRM_AGENT_PROMPT_IDS.systemPrompAI).catch(() => '');
 
       //logger.log('PROMPT:', systemPrompt);
 
@@ -966,7 +967,7 @@ export class AiAgentService {
 
     try {
       const client = await this.getClientForUser(userId);
-      const systemPrompt = await this.promptService.getPromptUserId(userId).catch(() => '');
+      const systemPrompt = await this.promptService.getPromptUserId(userId, CRM_AGENT_PROMPT_IDS.systemPrompAI).catch(() => '');
       const extraRules = await this.promptService
         .getPromptPadre('cm842kthc0000qd2l66nbnytv')
         .catch(() => '');

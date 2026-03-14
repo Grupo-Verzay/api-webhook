@@ -5,14 +5,12 @@ import { PrismaService } from 'src/database/prisma.service';
 export class PromptService {
   constructor(private readonly prisma: PrismaService) { }
 
-  async getPromptUserId(userId: string): Promise<string> {
+  async getPromptUserId(userId: string, agentId: string): Promise<string> {
     const systemMessages = await this.prisma.agentPrompt.findMany({
-      where: { userId },
+      where: { userId, agentId },
       orderBy: { createdAt: 'asc' }, // Opcional: 'asc' si quieres en orden antiguo a nuevo
       select: {
-
         promptText: true
-
       },
     });
 

@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { LoggerService } from 'src/core/logger/logger.service';
+import {
+  buildWhatsAppJidCandidates,
+  normalizeWhatsAppConversationJid,
+  pickExplicitWhatsAppPhoneJid,
+  pickObservedAlternateRemoteJid,
+  pickPreferredWhatsAppRemoteJid,
+} from 'src/utils/whatsapp-jid.util';
 
 @Injectable()
 export class SessionService {
@@ -8,6 +15,41 @@ export class SessionService {
     private readonly prisma: PrismaService,
     private readonly logger: LoggerService
   ) { }
+
+  private clean(value?: string | null) {
+    return (value ?? '').trim();
+  }
+
+  private buildRemoteJidCandidates(
+    remoteJid: string,
+    extras: Array<string | null | undefined> = [],
+  ) {
+    return buildWhatsAppJidCandidates(remoteJid, extras);
+  }
+
+  private resolvePreferredRemoteJid(values: Array<string | null | undefined>) {
+    return (
+      pickExplicitWhatsAppPhoneJid(values) ||
+      pickPreferredWhatsAppRemoteJid(values) ||
+      normalizeWhatsAppConversationJid(values.find((value) => value?.trim()) ?? '') ||
+      values.find((value) => value?.trim())?.trim() ||
+      ''
+    );
+  }
+
+  private async findSessionByCandidates(userId: string, instanceId: string, candidates: string[]) {
+    return this.prisma.session.findFirst({
+      where: {
+        userId,
+        instanceId,
+        OR: [
+          { remoteJid: { in: candidates } },
+          { remoteJidAlt: { in: candidates } },
+        ],
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
 
   /**
    * Crea o actualiza una sesión.
@@ -26,35 +68,28 @@ export class SessionService {
     pushName: string,
     instanceId: string,
     remoteJidAlt?: string | null,
+    senderPn?: string | null,
   ) {
-    const clean = (s?: string | null) => (s ?? '').trim();
-    const isBadName = (n: string) =>
-      n === '' || n === '.' || n.toLowerCase() === 'desconocido';
+    const isBadName = (n: string) => n === '' || n === '.' || n.toLowerCase() === 'desconocido';
 
-    const rj = clean(remoteJid);
-    const rjAlt = clean(remoteJidAlt);
-    const pn = clean(pushName);
+    const pn = this.clean(pushName);
+    const observedAliases = [
+      this.clean(remoteJid),
+      this.clean(remoteJidAlt),
+      this.clean(senderPn),
+    ];
+    const rj = this.resolvePreferredRemoteJid(observedAliases);
+    const candidates = this.buildRemoteJidCandidates(rj, observedAliases);
 
-    const jidsToSearch: string[] = [rj];
-    if (rjAlt) jidsToSearch.push(rjAlt);
-
-    const existingSession = await this.prisma.session.findFirst({
-      where: {
-        userId,
-        instanceId,
-        remoteJid: { in: jidsToSearch },
-      },
-    });
+    const existingSession = await this.findSessionByCandidates(userId, instanceId, candidates);
 
     if (existingSession) {
-      // Solo mejoramos el nombre si llega uno “bueno”
       const nextPushName = !isBadName(pn) ? pn : existingSession.pushName;
-
-      // Si estamos cambiando el remoteJid principal, guardamos el anterior como alt
-      const nextAlt =
-        rjAlt ||
-        existingSession.remoteJidAlt ||
-        (existingSession.remoteJid !== rj ? existingSession.remoteJid : null);
+      const nextAlt = pickObservedAlternateRemoteJid(rj, [
+        ...observedAliases,
+        existingSession.remoteJid,
+        existingSession.remoteJidAlt,
+      ]);
 
       return this.prisma.session.update({
         where: { id: existingSession.id },
@@ -62,7 +97,7 @@ export class SessionService {
           remoteJid: rj,
           remoteJidAlt: nextAlt,
           pushName: nextPushName,
-          instanceId,
+          instanceId: this.clean(instanceId),
           updatedAt: new Date(),
         },
       });
@@ -72,9 +107,9 @@ export class SessionService {
       data: {
         userId,
         remoteJid: rj,
-        remoteJidAlt: rjAlt || null,
+        remoteJidAlt: pickObservedAlternateRemoteJid(rj, observedAliases),
         pushName: !isBadName(pn) ? pn : 'Desconocido',
-        instanceId,
+        instanceId: this.clean(instanceId),
         status: true,
         updatedAt: new Date(),
       },
@@ -83,18 +118,12 @@ export class SessionService {
 
   // Nuevo método para obtener el estado de agentDisabled
   async getAgentDisabled(remoteJid: string, instanceName: string, userId: string): Promise<boolean> {
-    const rj = remoteJid.trim();
-    const inst = instanceName.trim();
-    const uid = userId.trim();
+    const rj = this.clean(remoteJid);
+    const inst = this.clean(instanceName);
+    const uid = this.clean(userId);
+    const candidates = this.buildRemoteJidCandidates(rj);
 
-    // this.logger.error(`Buscando session para remoteJid: "${rj}", instanceId: "${inst}", userId: "${uid}"`, 'SessionService');
-
-    const session = await this.prisma.session.findFirst({
-      where: { remoteJid: rj, instanceId: inst, userId: uid },
-    });
-
-    // this.logger.error(`Session encontrada: ${session ? 'Sí' : 'No'}`, 'SessionService');
-    // this.logger.error(`Session encontrada: ${JSON.stringify(session)}`, 'SessionService');
+    const session = await this.findSessionByCandidates(uid, inst, candidates);
 
     return !!session?.agentDisabled;
   }
@@ -102,13 +131,8 @@ export class SessionService {
 
   // Get a specific session by remoteJid and instanceId
   async getSession(remoteJid: string, instanceId: string, userId: string) {
-    return this.prisma.session.findFirst({
-      where: {
-        remoteJid,
-        userId,
-        instanceId
-      },
-    });
+    const candidates = this.buildRemoteJidCandidates(this.clean(remoteJid));
+    return this.findSessionByCandidates(this.clean(userId), this.clean(instanceId), candidates);
   }
 
   async updateSessionRemoteJid(id: number, newRemoteJid: string) {
@@ -128,18 +152,23 @@ export class SessionService {
 
   // Update state session by remoteJid y instanceId
   async updateSessionStatus(remoteJid: string, instanceId: string, status: boolean, userId: string) {
+    const candidates = this.buildRemoteJidCandidates(this.clean(remoteJid));
     return this.prisma.session.updateMany({
-      where: { remoteJid, userId, instanceId },
+      where: {
+        userId: this.clean(userId),
+        instanceId: this.clean(instanceId),
+        OR: [
+          { remoteJid: { in: candidates } },
+          { remoteJidAlt: { in: candidates } },
+        ],
+      },
       data: { status },
     });
   }
 
   // Consulta el estado del chat
   async isSessionActive(remoteJid: string, userId: string, instanceId: string): Promise<boolean> {
-    const session = await this.prisma.session.findFirst({
-      where: { remoteJid, userId },
-      select: { status: true },
-    });
+    const session = await this.getSession(remoteJid, instanceId, userId);
     return session?.status ?? false;
   }
 
@@ -150,11 +179,15 @@ export class SessionService {
     userId: string,
   ) {
     try {
+      const candidates = this.buildRemoteJidCandidates(this.clean(remoteJid));
       const updatedSession = await this.prisma.session.updateMany({
         where: {
-          remoteJid,
-          instanceId,
-          userId,
+          userId: this.clean(userId),
+          instanceId: this.clean(instanceId),
+          OR: [
+            { remoteJid: { in: candidates } },
+            { remoteJidAlt: { in: candidates } },
+          ],
         },
         data: { seguimientos },
       });
@@ -163,9 +196,7 @@ export class SessionService {
         return null;
       }
 
-      const session = await this.prisma.session.findFirst({
-        where: { remoteJid, instanceId, userId },
-      });
+      const session = await this.getSession(remoteJid, instanceId, userId);
 
       return session;
     } catch (error) {
@@ -180,11 +211,15 @@ export class SessionService {
     userId: string,
   ) {
     try {
+      const candidates = this.buildRemoteJidCandidates(this.clean(remoteJid));
       const updatedSession = await this.prisma.session.updateMany({
         where: {
-          remoteJid,
-          instanceId,
-          userId,
+          userId: this.clean(userId),
+          instanceId: this.clean(instanceId),
+          OR: [
+            { remoteJid: { in: candidates } },
+            { remoteJidAlt: { in: candidates } },
+          ],
         },
         data: { flujos },
       });
@@ -193,9 +228,7 @@ export class SessionService {
         return null;
       }
 
-      const session = await this.prisma.session.findFirst({
-        where: { remoteJid, instanceId, userId },
-      });
+      const session = await this.getSession(remoteJid, instanceId, userId);
 
       return session;
     } catch (error) {
@@ -214,9 +247,7 @@ export class SessionService {
     remoteJid: string,
     instanceId: string,
   ): Promise<void> {
-    const session = await this.prisma.session.findFirst({
-      where: { userId, remoteJid, instanceId },
-    });
+    const session = await this.getSession(remoteJid, instanceId, userId);
 
     if (!session || !session.inactividad) {
       // No hay inactividad registrada para esta sesión
@@ -274,9 +305,7 @@ export class SessionService {
   ): Promise<void> {
     if (!ids.length) return;
 
-    const session = await this.prisma.session.findFirst({
-      where: { userId, remoteJid, instanceId },
-    });
+    const session = await this.getSession(remoteJid, instanceId, userId);
 
     if (!session) return;
 

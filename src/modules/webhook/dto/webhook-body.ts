@@ -9,16 +9,18 @@ export class WebhookBodyDto {
     data: WebhookDataDto;
   }
   
-  export class WebhookDataDto {
-    key: {
-        remoteJid: string;
-        remoteJidAlt?:string;
-        fromMe: boolean;
-        id: string;
-        senderLid?: string; // Add this field, as it is present in the object but not the original type
-    };
-    pushName: string;
-    status: string;
+export class WebhookDataDto {
+  key: {
+      remoteJid: string;
+      remoteJidAlt?:string;
+      fromMe: boolean;
+      id: string;
+      senderLid?: string; // Add this field, as it is present in the object but not the original type
+      senderPn?: string;
+  };
+  pushName: string;
+  senderPn?: string;
+  status: string;
     message?: {
         conversation?: string;
         mediaUrl?: string;

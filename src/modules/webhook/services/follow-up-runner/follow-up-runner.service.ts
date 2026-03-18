@@ -9,6 +9,7 @@ import { buildChatHistorySessionId } from 'src/modules/chat-history/chat-history
 import { isLegacyWorkflowSeguimiento } from 'src/modules/seguimientos/legacy-workflow-follow-up.helper';
 import { SessionService } from 'src/modules/session/session.service';
 import { NodeSenderService } from 'src/modules/workflow/services/node-sender.service.ts/node-sender.service';
+import { buildWhatsAppJidCandidates } from 'src/utils/whatsapp-jid.util';
 
 @Injectable()
 export class FollowUpRunnerService {
@@ -20,6 +21,61 @@ export class FollowUpRunnerService {
     private readonly sessionService: SessionService,
     private readonly nodeSenderService: NodeSenderService,
   ) { }
+
+  private clean(value?: string | null) {
+    return (value ?? '').trim();
+  }
+
+  private buildRemoteJidCandidates(
+    remoteJid: string,
+    extras: Array<string | null | undefined> = [],
+  ) {
+    return buildWhatsAppJidCandidates(this.clean(remoteJid), extras);
+  }
+
+  private buildSeguimientoPairsForSession(session: {
+    remoteJid: string;
+    remoteJidAlt?: string | null;
+    instanceId: string;
+  }) {
+    const pairs = new Map<string, { remoteJid: string; instancia: string }>();
+    const instanceId = this.clean(session.instanceId);
+
+    for (const alias of [session.remoteJid, session.remoteJidAlt]) {
+      const remoteJid = this.clean(alias);
+      if (!remoteJid || !instanceId) continue;
+
+      pairs.set(`${instanceId}::${remoteJid}`, {
+        remoteJid,
+        instancia: instanceId,
+      });
+    }
+
+    return Array.from(pairs.values());
+  }
+
+  private async findSessionByRemoteJid(remoteJid: string, instanceId: string) {
+    const candidates = this.buildRemoteJidCandidates(remoteJid);
+
+    return this.prisma.session.findFirst({
+      where: {
+        instanceId: this.clean(instanceId),
+        OR: [
+          { remoteJid: { in: candidates } },
+          { remoteJidAlt: { in: candidates } },
+        ],
+      },
+      select: {
+        id: true,
+        userId: true,
+        remoteJid: true,
+        remoteJidAlt: true,
+        instanceId: true,
+        pushName: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
 
   private parseDelaySeconds(value?: string | null): number {
     const parsed = Number.parseInt((value ?? '').trim(), 10);
@@ -68,14 +124,14 @@ export class FollowUpRunnerService {
 
   private async resolveFollowUpMessage(
     seguimiento: Seguimiento,
-    session: { id: number; userId: string; pushName: string | null },
+    session: { id: number; userId: string; pushName: string | null; remoteJid: string },
   ) {
     const fallbackMessage = (seguimiento.mensaje ?? '').trim();
     if (seguimiento.followUpMode !== 'ai') return fallbackMessage;
 
     const sessionHistoryId = buildChatHistorySessionId(
       seguimiento.instancia ?? '',
-      seguimiento.remoteJid ?? '',
+      session.remoteJid || seguimiento.remoteJid || '',
     );
 
     return this.aiAgentService.generateFollowUpMessage({
@@ -91,10 +147,14 @@ export class FollowUpRunnerService {
     });
   }
 
-  private async sendSeguimiento(seguimiento: Seguimiento, finalMessage: string) {
+  private async sendSeguimiento(
+    seguimiento: Seguimiento,
+    finalMessage: string,
+    targetRemoteJid?: string,
+  ) {
     const serverUrl = (seguimiento.serverurl ?? '').trim();
     const instanceName = (seguimiento.instancia ?? '').trim();
-    const remoteJid = (seguimiento.remoteJid ?? '').trim();
+    const remoteJid = this.clean(targetRemoteJid) || (seguimiento.remoteJid ?? '').trim();
     const apikey = (seguimiento.apikey ?? '').trim();
     const media = (seguimiento.media ?? '').trim();
     const tipoBase = this.getTipoBase(seguimiento.tipo);
@@ -166,6 +226,8 @@ export class FollowUpRunnerService {
         followUpAttempt: { increment: 1 },
         generatedMessage: finalMessage || null,
         errorReason: null,
+        remoteJid: sessionData.remoteJid,
+        instancia: sessionData.instanceId,
       },
     });
 
@@ -193,6 +255,12 @@ export class FollowUpRunnerService {
         followUpAttempt: nextAttempt,
         followUpStatus: nextStatus,
         errorReason: normalizedErrorReason || null,
+        ...(sessionData
+          ? {
+              remoteJid: sessionData.remoteJid,
+              instancia: sessionData.instanceId,
+            }
+          : {}),
       },
     });
 
@@ -212,9 +280,10 @@ export class FollowUpRunnerService {
     instanceName: string;
   }) {
     const { userId, remoteJid, instanceName } = args;
+    const candidates = this.buildRemoteJidCandidates(remoteJid);
     const pending = await this.prisma.seguimiento.findMany({
       where: {
-        remoteJid,
+        remoteJid: { in: candidates },
         instancia: instanceName,
         followUpStatus: 'pending',
         followUpCancelOnReply: true,
@@ -251,27 +320,37 @@ export class FollowUpRunnerService {
       | undefined;
 
     if (scope?.userId || scope?.instanceId || scope?.remoteJid) {
+      const sessionWhere: {
+        userId?: string;
+        instanceId?: string;
+        OR?: Array<{ remoteJid: { in: string[] } } | { remoteJidAlt: { in: string[] } }>;
+      } = {
+        ...(scope?.userId ? { userId: scope.userId } : {}),
+        ...(scope?.instanceId ? { instanceId: scope.instanceId } : {}),
+      };
+
+      if (scope?.remoteJid) {
+        const candidates = this.buildRemoteJidCandidates(scope.remoteJid);
+        sessionWhere.OR = [
+          { remoteJid: { in: candidates } },
+          { remoteJidAlt: { in: candidates } },
+        ];
+      }
+
       const sessions = await this.prisma.session.findMany({
-        where: {
-          ...(scope?.userId ? { userId: scope.userId } : {}),
-          ...(scope?.instanceId ? { instanceId: scope.instanceId } : {}),
-          ...(scope?.remoteJid ? { remoteJid: scope.remoteJid } : {}),
-        },
+        where: sessionWhere,
         select: {
           remoteJid: true,
+          remoteJidAlt: true,
           instanceId: true,
         },
       });
 
       const sessionPairsMap = new Map<string, { remoteJid: string; instancia: string }>();
       for (const session of sessions) {
-        const remoteJid = (session.remoteJid ?? '').trim();
-        const instanceId = (session.instanceId ?? '').trim();
-        if (!remoteJid || !instanceId) continue;
-        sessionPairsMap.set(`${instanceId}::${remoteJid}`, {
-          remoteJid,
-          instancia: instanceId,
-        });
+        for (const pair of this.buildSeguimientoPairsForSession(session)) {
+          sessionPairsMap.set(`${pair.instancia}::${pair.remoteJid}`, pair);
+        }
       }
 
       const sessionPairs = Array.from(sessionPairsMap.values());
@@ -326,19 +405,10 @@ export class FollowUpRunnerService {
         continue;
       }
 
-      const session = await this.prisma.session.findFirst({
-        where: {
-          remoteJid: seguimiento.remoteJid ?? '',
-          instanceId: seguimiento.instancia ?? '',
-        },
-        select: {
-          id: true,
-          userId: true,
-          remoteJid: true,
-          instanceId: true,
-          pushName: true,
-        },
-      });
+      const session = await this.findSessionByRemoteJid(
+        seguimiento.remoteJid ?? '',
+        seguimiento.instancia ?? '',
+      );
 
       const loggerCtx = `[FOLLOW_UP][id=${seguimiento.id}][instance=${seguimiento.instancia ?? '-'}][remoteJid=${seguimiento.remoteJid ?? '-'}]`;
 
@@ -351,12 +421,12 @@ export class FollowUpRunnerService {
 
       try {
         const finalMessage = await this.resolveFollowUpMessage(seguimiento, session);
-        await this.sendSeguimiento(seguimiento, finalMessage);
+        await this.sendSeguimiento(seguimiento, finalMessage, session.remoteJid);
 
         if (finalMessage.trim()) {
           const sessionHistoryId = buildChatHistorySessionId(
             seguimiento.instancia ?? '',
-            seguimiento.remoteJid ?? '',
+            session.remoteJid,
           );
           await this.chatHistoryService.saveMessage(sessionHistoryId, finalMessage, 'ia');
         }

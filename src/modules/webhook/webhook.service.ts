@@ -29,6 +29,11 @@ import {
 } from 'src/types/open-ai';
 import { AntifloodService } from './services/antiflood/antiflood.service';
 import { executeWorkflow } from 'src/utils/execute-workflow';
+import {
+  pickExplicitWhatsAppPhoneJid,
+  pickObservedAlternateRemoteJid,
+  pickPreferredWhatsAppRemoteJid,
+} from 'src/utils/whatsapp-jid.util';
 import { LeadFunnelService } from '../lead-funnel/services/lead-funnel/lead-funnel.service';
 import { buildChatHistorySessionId } from '../chat-history/chat-history-session.helper';
 import { FollowUpRunnerService } from './services/follow-up-runner/follow-up-runner.service';
@@ -127,19 +132,19 @@ export class WebhookService implements OnModuleInit {
     );
     this.logger.log(`[MESSAGE] M=${data?.message?.conversation ?? ''}`);
 
-    // 🔁 Normalización de JIDs: priorizar @s.whatsapp.net sobre @lid
     const rawRemoteJid = data?.key?.remoteJid ?? '';
     const rawRemoteJidAlt = data?.key?.remoteJidAlt ?? '';
-
-    const jidWhats = [rawRemoteJid, rawRemoteJidAlt].find(
-      (j) => j && j.endsWith('@s.whatsapp.net'),
-    );
-    const jidLid = [rawRemoteJid, rawRemoteJidAlt].find((j) => j && j.endsWith('@lid'));
-
-    // Canon: preferimos @s.whatsapp.net, luego @lid, luego lo que haya
-    const remoteJid = jidWhats || jidLid || rawRemoteJid || rawRemoteJidAlt || '';
-    // Alternativo: si el canon es @s.whatsapp.net, el alterno será @lid (si existe), y viceversa
-    const remoteJidAlt = remoteJid === jidWhats ? jidLid || '' : jidWhats || '';
+    const rawSenderLid = data?.key?.senderLid ?? '';
+    const rawSenderPn = data?.key?.senderPn ?? data?.senderPn ?? '';
+    const observedJids = [rawRemoteJid, rawRemoteJidAlt, rawSenderPn, rawSenderLid];
+    const remoteJid =
+      pickExplicitWhatsAppPhoneJid(observedJids) ||
+      pickPreferredWhatsAppRemoteJid(observedJids) ||
+      rawRemoteJid ||
+      rawRemoteJidAlt ||
+      rawSenderLid ||
+      '';
+    const remoteJidAlt = pickObservedAlternateRemoteJid(remoteJid, observedJids) || '';
 
     const pushName = data?.pushName || 'Desconocido';
 
@@ -184,6 +189,7 @@ export class WebhookService implements OnModuleInit {
       pushName,
       userWithRelations,
       remoteJidAlt,
+      rawSenderPn,
     );
     const canonicalRemoteJid = sessionRes.canonicalRemoteJid;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid: canonicalRemoteJid });
@@ -543,6 +549,7 @@ export class WebhookService implements OnModuleInit {
     pushName: string,
     userWithRelations: UserWithPausar,
     remoteJidAlt?: string,
+    senderPn?: string,
   ): Promise<{ status: boolean; canonicalRemoteJid: string }> {
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
@@ -572,6 +579,24 @@ export class WebhookService implements OnModuleInit {
     }
 
     if (session) {
+      if (
+        session.remoteJid !== remoteJid ||
+        ((session.remoteJidAlt ?? '') !== (remoteJidAlt ?? '') && Boolean(remoteJidAlt))
+      ) {
+        try {
+          session = await this.sessionService.registerSession(
+            userId,
+            remoteJid,
+            pushName,
+            instanceName,
+            remoteJidAlt,
+            senderPn,
+          );
+        } catch (error) {
+          logger.error('Error normalizando la sesión existente.', error);
+        }
+      }
+
       logger.log(`[SESSION] Usuario ya registrado: ${session.remoteJid}`);
 
       const hasTrigger = await this.sessionTriggerService.findBySessionId(session.id.toString());
@@ -593,7 +618,14 @@ export class WebhookService implements OnModuleInit {
     }
 
     // 3) Registrar usando el canon
-    await this.sessionService.registerSession(userId, remoteJid, pushName, instanceName);
+    await this.sessionService.registerSession(
+      userId,
+      remoteJid,
+      pushName,
+      instanceName,
+      remoteJidAlt,
+      senderPn,
+    );
     logger.log(`✅ Registro exitoso para ${remoteJid}`);
     return { status: true, canonicalRemoteJid: remoteJid };
   }

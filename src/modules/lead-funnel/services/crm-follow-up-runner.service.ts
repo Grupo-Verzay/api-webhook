@@ -7,6 +7,7 @@ import { AiAgentService } from 'src/modules/ai-agent/ai-agent.service';
 import { ChatHistoryService } from 'src/modules/chat-history/chat-history.service';
 import { buildChatHistorySessionId } from 'src/modules/chat-history/chat-history-session.helper';
 import { NodeSenderService } from 'src/modules/workflow/services/node-sender.service.ts/node-sender.service';
+import { buildWhatsAppJidCandidates } from 'src/utils/whatsapp-jid.util';
 import {
   computeNextCrmFollowUpDate,
   isWithinCrmFollowUpWindow,
@@ -25,13 +26,17 @@ export class CrmFollowUpRunnerService {
     private readonly crmFollowUpRuleService: CrmFollowUpRuleService,
   ) {}
 
+  private buildRemoteJidCandidates(remoteJid: string) {
+    return buildWhatsAppJidCandidates((remoteJid ?? '').trim());
+  }
+
   private normalizeServerUrl(serverUrl: string) {
     const trimmed = (serverUrl ?? '').trim().replace(/\/+$/, '');
     if (!trimmed) return '';
     return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   }
 
-  private async markSent(followUpId: string, message: string) {
+  private async markSent(followUpId: string, message: string, remoteJid?: string) {
     await this.prisma.crmFollowUp.update({
       where: { id: followUpId },
       data: {
@@ -41,11 +46,16 @@ export class CrmFollowUpRunnerService {
         errorReason: null,
         sentAt: new Date(),
         lastProcessedAt: new Date(),
+        remoteJid: remoteJid?.trim() || undefined,
       },
     });
   }
 
-  private async markFailure(followUp: Pick<CrmFollowUp, 'id' | 'attemptCount' | 'maxAttempts'>, error: string) {
+  private async markFailure(
+    followUp: Pick<CrmFollowUp, 'id' | 'attemptCount' | 'maxAttempts'>,
+    error: string,
+    remoteJid?: string,
+  ) {
     const nextAttempt = (followUp.attemptCount ?? 0) + 1;
     const exhausted = nextAttempt >= Math.max(followUp.maxAttempts ?? 1, 1);
 
@@ -57,6 +67,7 @@ export class CrmFollowUpRunnerService {
         errorReason: error.slice(0, 500),
         lastProcessedAt: new Date(),
         scheduledFor: exhausted ? undefined : new Date(Date.now() + 15 * 60_000),
+        remoteJid: remoteJid?.trim() || undefined,
       },
     });
   }
@@ -91,9 +102,10 @@ export class CrmFollowUpRunnerService {
     remoteJid: string;
     instanceId: string;
   }) {
+    const candidates = this.buildRemoteJidCandidates(args.remoteJid);
     const result = await this.prisma.crmFollowUp.updateMany({
       where: {
-        remoteJid: args.remoteJid,
+        remoteJid: { in: candidates },
         instanceId: args.instanceId,
         status: CrmFollowUpStatus.PENDING,
         cancelOnReply: true,
@@ -109,6 +121,9 @@ export class CrmFollowUpRunnerService {
 
   async processDueFollowUps(limit = 25, scope?: { userId?: string; instanceId?: string; remoteJid?: string }) {
     const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 100) : 25;
+    const remoteJidCandidates = scope?.remoteJid
+      ? this.buildRemoteJidCandidates(scope.remoteJid)
+      : [];
 
     const pending = await this.prisma.crmFollowUp.findMany({
       where: {
@@ -118,7 +133,7 @@ export class CrmFollowUpRunnerService {
         },
         ...(scope?.userId ? { userId: scope.userId } : {}),
         ...(scope?.instanceId ? { instanceId: scope.instanceId } : {}),
-        ...(scope?.remoteJid ? { remoteJid: scope.remoteJid } : {}),
+        ...(remoteJidCandidates.length ? { remoteJid: { in: remoteJidCandidates } } : {}),
       },
       orderBy: [{ scheduledFor: 'asc' }, { createdAt: 'asc' }],
       take: safeLimit,
@@ -155,6 +170,7 @@ export class CrmFollowUpRunnerService {
             select: {
               id: true,
               remoteJid: true,
+              remoteJidAlt: true,
               instanceId: true,
               pushName: true,
             },
@@ -252,7 +268,7 @@ export class CrmFollowUpRunnerService {
       try {
         const finalMessage = await this.aiAgentService.generateFollowUpMessage({
           userId: followUp.userId,
-          sessionId: buildChatHistorySessionId(followUp.instanceId, followUp.remoteJid),
+          sessionId: buildChatHistorySessionId(followUp.instanceId, followUp.session.remoteJid),
           goal: (followUp.goalSnapshot ?? currentRule.goal).trim(),
           customPrompt: (followUp.promptSnapshot ?? currentRule.prompt).trim(),
           attempt: (followUp.attemptCount ?? 0) + 1,
@@ -271,7 +287,7 @@ export class CrmFollowUpRunnerService {
         const ok = await this.nodeSenderService.sendTextNode(
           `${serverUrl}/message/sendText/${followUp.instanceId}`,
           apiKey,
-          followUp.remoteJid,
+          followUp.session.remoteJid,
           safeMessage,
         );
 
@@ -280,12 +296,12 @@ export class CrmFollowUpRunnerService {
         }
 
         await this.chatHistoryService.saveMessage(
-          buildChatHistorySessionId(followUp.instanceId, followUp.remoteJid),
+          buildChatHistorySessionId(followUp.instanceId, followUp.session.remoteJid),
           safeMessage,
           'ia',
         );
 
-        await this.markSent(followUp.id, safeMessage);
+        await this.markSent(followUp.id, safeMessage, followUp.session.remoteJid);
         summary.sent += 1;
       } catch (error: any) {
         this.logger.error(
@@ -293,7 +309,11 @@ export class CrmFollowUpRunnerService {
           error?.message || error,
           'CrmFollowUpRunnerService',
         );
-        await this.markFailure(candidate, error?.message || String(error));
+        await this.markFailure(
+          candidate,
+          error?.message || String(error),
+          followUp.session.remoteJid,
+        );
         summary.failed += 1;
       }
     }

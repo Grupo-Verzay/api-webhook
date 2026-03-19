@@ -879,6 +879,8 @@ export class WebhookService implements OnModuleInit {
           muteAgentResponses: !!userWithRelations.muteAgentResponses,
         });
 
+        /* Deja la session con status en true siempre despues de ejecutar  una respuesta rapida  */
+        await this.sessionService.updateSessionStatus(remoteJid, instanceName, true, userWithRelations.id);
       }
     } catch (error) {
       logger.error('Error al procesar autoReplies', error);

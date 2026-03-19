@@ -28,7 +28,7 @@ export function convertDelayToSeconds(delay: string): string {
 
     const seconds = value * unitToSeconds[unit];
 
-    // 🛠️ TODO #1: Darle el formato DD/MM/YYYY HH:MM
+    //  #1: Darle el formato DD/MM/YYYY HH:MM
     const now = new Date();
     const day = String(now.getDate()).padStart(2, '0');
     const month = String(now.getMonth() + 1).padStart(2, '0'); // ¡Importante! Enero es 0
@@ -38,7 +38,7 @@ export function convertDelayToSeconds(delay: string): string {
 
     const formattedNow = `${day}/${month}/${year} ${hours}:${minutes}`;
 
-    // 🛠️ TODO #2: Sumar segundos a la fecha actual
+    //  #2: Sumar segundos a la fecha actual
     const futureDate = new Date(now.getTime() + seconds * 1000);
 
     const futureDay = String(futureDate.getDate()).padStart(2, '0');

@@ -876,37 +876,6 @@ export class WorkflowService implements OnModuleInit {
         return { byId, outgoing, startNodeId };
     }
 
-    private parseWorkflowSeguimientoDelaySeconds(rawDelay?: string | null): string | null {
-        const normalized = String(rawDelay ?? '').trim().toLowerCase();
-        if (!normalized) {
-            return null;
-        }
-
-        if (/^\d+$/.test(normalized)) {
-            return normalized;
-        }
-
-        const [unit, valueStr] = normalized.split('-');
-        const value = Number.parseInt(valueStr ?? '', 10);
-
-        if (!Number.isFinite(value) || value < 0) {
-            return null;
-        }
-
-        const unitSeconds: Record<string, number> = {
-            seconds: 1,
-            minutes: 60,
-            hours: 60 * 60,
-            days: 60 * 60 * 24,
-        };
-
-        if (!(unit in unitSeconds)) {
-            return null;
-        }
-
-        return String(value * unitSeconds[unit]);
-    }
-
     private async scheduleWorkflowSeguimiento(args: {
         node: WorkflowNode;
         urlevo: string;
@@ -929,15 +898,7 @@ export class WorkflowService implements OnModuleInit {
             return;
         }
 
-        const delaySeconds = this.parseWorkflowSeguimientoDelaySeconds(node.delay);
-        if (delaySeconds === null) {
-            this.logger.warn(
-                `Nodo seguimiento con delay inválido "${node.delay ?? ''}" (nodeId=${node.id}).`,
-                'WorkflowService',
-            );
-            return;
-        }
-
+        const delaySeguimiento = convertDelayToSeconds(node.delay ?? '') ?? 0;
         const seguimiento = await this.prisma.seguimiento.create({
             data: {
                 idNodo: node.id,
@@ -947,7 +908,7 @@ export class WorkflowService implements OnModuleInit {
                 remoteJid,
                 mensaje: node.message ?? '',
                 tipo: node.tipo,
-                time: delaySeconds,
+                time: delaySeguimiento,
                 media: node.url ?? null,
                 followUpMode: 'static',
                 followUpStatus: 'pending',
@@ -984,7 +945,7 @@ export class WorkflowService implements OnModuleInit {
         }
 
         this.logger.log(
-            `Seguimiento workflow programado (${seguimiento.id}) para ${remoteJid} con delay ${delaySeconds}s.`,
+            `Seguimiento workflow programado (${seguimiento.id}) para ${remoteJid} con delay ${delaySeguimiento}.`,
             'WorkflowService',
         );
     }

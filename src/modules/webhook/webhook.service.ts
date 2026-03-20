@@ -161,7 +161,11 @@ export class WebhookService implements OnModuleInit {
     const remoteJidAlt =
       pickObservedAlternateRemoteJid(remoteJid, observedJids) || '';
 
-    const pushName = data?.pushName || 'Desconocido';
+    const fromMe = data?.key?.fromMe ?? false;
+    const incomingPushName = (data?.pushName ?? '').trim();
+    // Outbound webhooks often carry the business display name, not the contact name.
+    const pushName =
+      !fromMe && incomingPushName ? incomingPushName : 'Desconocido';
 
     // Buscar userId por instancia
     const prismaInstancia = await this.instancesService.getUserId(instanceName);
@@ -204,7 +208,6 @@ export class WebhookService implements OnModuleInit {
       }
     }
 
-    const fromMe = data?.key?.fromMe ?? false;
     const messageType = data?.messageType ?? '';
 
     //Check de sesión + normalización entre @lid y @s.whatsapp.net

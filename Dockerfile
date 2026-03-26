@@ -2,6 +2,8 @@ FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 
+RUN apt-get update -y && apt-get install -y openssl
+
 COPY package.json package-lock.json ./
 COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 COPY src ./src
@@ -15,6 +17,8 @@ FROM node:22-bookworm-slim AS runner
 
 ENV NODE_ENV=production
 WORKDIR /app
+
+RUN apt-get update -y && apt-get install -y openssl
 
 COPY --from=builder /app/package.json /app/package-lock.json ./
 COPY --from=builder /app/node_modules ./node_modules

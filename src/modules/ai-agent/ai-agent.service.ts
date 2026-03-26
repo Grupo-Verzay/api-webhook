@@ -371,7 +371,40 @@ export class AiAgentService {
       },
     );
 
-    return [notificacionAsesor, ejecutarFlujos, listarWorkflows, consultarDatosCliente];
+    // Tool: buscar_cliente_por_dato
+    // @ts-ignore - evitar problemas de tipos profundos con LangChain + zod
+    const buscarClientePorDato = tool(
+      async ({ campo, valor }: { campo: string; valor: string }) => {
+        logger.log(`Tool buscar_cliente_por_dato: campo="${campo}" valor="${valor}"`);
+
+        const data = await this.externalClientDataService.getByDataField(
+          userId,
+          campo,
+          valor,
+        );
+
+        if (!data || Object.keys(data).length === 0) {
+          return `No se encontró ningún cliente con ${campo.toUpperCase()}: ${valor} en el sistema.`;
+        }
+
+        return this.externalClientDataService.formatForAgent(data);
+      },
+      {
+        name: 'buscar_cliente_por_dato',
+        description:
+          'Busca la información de un cliente a partir de un dato conocido como cédula, RIF, correo u otro campo registrado. Solo consulta datos del usuario actual, nunca cruza información de otros clientes. Úsala cuando alguien pregunte por los datos de un tercero y proporcione su cédula, correo u otro identificador.',
+        schema: z.object({
+          campo: z
+            .string()
+            .describe('Nombre del campo por el que buscar. Ejemplos: "CEDULA-RIF", "CORREO", "NOMBRE".'),
+          valor: z
+            .string()
+            .describe('Valor a buscar. Ejemplos: "V27548446", "juan@email.com".'),
+        }),
+      },
+    );
+
+    return [notificacionAsesor, ejecutarFlujos, listarWorkflows, consultarDatosCliente, buscarClientePorDato];
   }
 
   /**

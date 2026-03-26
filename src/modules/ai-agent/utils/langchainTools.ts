@@ -31,4 +31,17 @@ export const langchainTools = [
       'Consulta el perfil externo del cliente actual: cédula, correo, servicio contratado, monto, sector, convenio u otros campos configurados por el administrador. Úsala cuando el cliente pregunte por su información de cuenta, servicio o datos personales registrados.',
     schema: z.object({}),
   },
+  {
+    name: 'buscar_cliente_por_dato',
+    description:
+      'Busca la información de un cliente a partir de un dato conocido como cédula, RIF, correo u otro campo registrado. Solo consulta datos del usuario actual, nunca cruza información de otros clientes. Úsala cuando alguien pregunte por los datos de un tercero y proporcione su cédula, correo u otro identificador.',
+    schema: z.object({
+      campo: z
+        .string()
+        .describe('Nombre del campo por el que buscar. Ejemplos: "CEDULA-RIF", "CORREO", "NOMBRE".'),
+      valor: z
+        .string()
+        .describe('Valor a buscar. Ejemplos: "V27548446", "juan@email.com".'),
+    }),
+  },
 ];

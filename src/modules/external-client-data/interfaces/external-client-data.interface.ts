@@ -16,6 +16,17 @@ export interface IExternalClientDataProvider {
   ): Promise<ExternalClientDataRecord | null>;
 
   /**
+   * Busca un registro cuyo campo data[fieldName] coincida con value.
+   * La búsqueda es case-insensitive y siempre scoped al userId del dueño.
+   * Retorna null si no hay coincidencia.
+   */
+  getByDataField(
+    userId: string,
+    fieldName: string,
+    value: string,
+  ): Promise<ExternalClientDataRecord | null>;
+
+  /**
    * Formatea los datos como texto legible para incluir en el contexto del agente.
    */
   formatForAgent(data: ExternalClientDataRecord): string;

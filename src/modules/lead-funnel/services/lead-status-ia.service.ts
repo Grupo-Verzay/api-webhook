@@ -276,6 +276,9 @@ export class LeadStatusIaService {
         leadStatusReason: resolved.reason.slice(0, 500),
         leadStatusSourceHash: sourceHash,
         leadStatusUpdatedAt: new Date(),
+        ...(resolved.leadStatus === LeadStatus.DESCARTADO && {
+          agentDisabled: true,
+        }),
       },
     });
 

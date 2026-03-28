@@ -140,7 +140,7 @@ export async function executeWorkflow(params: {
   }
 
   // 3) Prompt post-workflow (por defecto)
-  const defaultPrompt = `Acabas de ejecutar el flujo "${workflowName}". Genera SOLO un mensaje literal (---). No menciones "workflow", no repitas el contenido del flujo, no ejecutes acciones ni herramientas.`;
+  const defaultPrompt = `Acabas de ejecutar el flujo "${workflowName}". No respondas nada. No menciones "workflow", no repitas el contenido del flujo, no ejecutes acciones ni herramientas.`;
   //   const defaultPrompt = `Acabas de ejecutar el flujo "${workflowName}".
   // Genera SOLO un mensaje corto (1–2 líneas) confirmando que ya se envió la información y preguntando qué más necesita.
   // No menciones "workflow", no repitas el contenido del flujo, no ejecutes acciones ni herramientas.`;

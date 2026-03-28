@@ -28,7 +28,7 @@ export class NodeSenderService {
     try {
       const body = {
         number: remoteJid,
-        delay: 400,
+        delay: 5000,
         // options: { delay: 100, presence: 'composing' },
         text,
       };

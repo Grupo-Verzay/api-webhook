@@ -390,6 +390,10 @@ export class WorkflowService implements OnModuleInit {
           null;
 
         currentId = next?.targetId;
+
+        if (currentId) {
+          await new Promise((res) => setTimeout(res, 5000));
+        }
       }
 
       this.logger.log(
@@ -875,6 +879,11 @@ export class WorkflowService implements OnModuleInit {
         session,
       );
       executedCount++;
+
+      const isLast = node === nodes[nodes.length - 1];
+      if (!isLast) {
+        await new Promise((res) => setTimeout(res, 5000));
+      }
     }
 
     this.logger.log(

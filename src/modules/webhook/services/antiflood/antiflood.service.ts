@@ -16,15 +16,19 @@ export class AntifloodService implements OnModuleInit, OnModuleDestroy {
   // 🔧 Patrón sincronizado
   private readonly maxHistory = 20;
   private readonly toleranceMs = 2000;
-  private readonly minRequired = 5;
-  private readonly minSimilarCount = 7;
+  private readonly minRequired = 3;
+  private readonly minSimilarCount = 4;
 
-  // 🔧 Ventana de alta frecuencia (AI-to-AI)
+  // 🔧 Ventana de alta frecuencia (AI-to-AI): 6 msgs en 60s
   private readonly windowMs = 60_000;
-  private readonly maxMsgInWindow = 10;
+  private readonly maxMsgInWindow = 6;
 
-  // 🔧 Cooldown tras detección
-  private readonly cooldownMs = 5 * 60_000;
+  // 🔧 Ventana de media frecuencia: 5 msgs en 2 min (loops lentos AI-to-AI)
+  private readonly mediumWindowMs = 120_000;
+  private readonly maxMsgInMediumWindow = 5;
+
+  // 🔧 Cooldown tras detección: 30 min para dar tiempo a intervención manual
+  private readonly cooldownMs = 30 * 60_000;
 
   // 🔧 Cleanup de entradas inactivas
   private readonly staleThresholdMs = 5 * 60_000;
@@ -247,6 +251,44 @@ export class AntifloodService implements OnModuleInit, OnModuleDestroy {
       `[FREQ_CHECK] Frecuencia normal → resultado: false`,
       'AntifloodService',
     );
+    return false;
+  }
+
+  isMediumFrequencyBurst(remoteJid: string, instanceName: string): boolean {
+    const key = this.buildKey(remoteJid, instanceName);
+    const entry = this.messageMap.get(key);
+
+    if (!entry) return false;
+
+    if (this.isInCooldown(entry)) {
+      const remaining = Math.round(
+        ((entry.blockedUntil ?? 0) - Date.now()) / 1000,
+      );
+      this.logger.debug(
+        `[MEDIUM_CHECK] Cooldown activo → bloqueado. Restante: ${remaining}s`,
+        'AntifloodService',
+      );
+      return true;
+    }
+
+    const now = Date.now();
+    const recent = entry.timestamps.filter(
+      (t) => now - t <= this.mediumWindowMs,
+    );
+
+    this.logger.debug(
+      `[MEDIUM_CHECK] Msgs en ventana ${this.mediumWindowMs / 1000}s: ${recent.length}/${this.maxMsgInMediumWindow} máx`,
+      'AntifloodService',
+    );
+
+    if (recent.length >= this.maxMsgInMediumWindow) {
+      this.logger.warn(
+        `🚨 Burst de media frecuencia detectado para ${remoteJid} (${recent.length} msgs en ${this.mediumWindowMs / 1000}s) → posible loop AI-to-AI lento`,
+        'AntifloodService',
+      );
+      return true;
+    }
+
     return false;
   }
 

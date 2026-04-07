@@ -46,6 +46,16 @@ export class WebhookService implements OnModuleInit {
   private readonly processedMsgIds = new Map<string, number>();
   /** Contactos con un callback de buffer actualmente en ejecución */
   private readonly processingContacts = new Set<string>();
+  /**
+   * Deduplicación de respuestas salientes: evita enviar el mismo contenido
+   * al mismo contacto en menos de OUTGOING_DEDUPE_TTL_MS milisegundos.
+   * Clave: `${instanceName}:${remoteJid}` → hash simple del último texto enviado + timestamp.
+   */
+  private readonly outgoingResponseCache = new Map<
+    string,
+    { hash: string; ts: number }
+  >();
+  private static readonly OUTGOING_DEDUPE_TTL_MS = 10 * 60_000; // 10 min
 
   constructor(
     private readonly moduleRef: ModuleRef,
@@ -71,6 +81,45 @@ export class WebhookService implements OnModuleInit {
   onModuleInit(): void {
     const { AiAgentService } = require('../ai-agent/ai-agent.service');
     this.aiAgentService = this.moduleRef.get(AiAgentService, { strict: false });
+  }
+
+  /**
+   * Genera un hash liviano (no criptográfico) de un string para comparar contenido.
+   */
+  private simpleHash(text: string): string {
+    let h = 0;
+    for (let i = 0; i < text.length; i++) {
+      h = (Math.imul(31, h) + text.charCodeAt(i)) | 0;
+    }
+    return h.toString(36);
+  }
+
+  /**
+   * Verifica si ya enviamos esta respuesta (o una igual) a este contacto recientemente.
+   * Devuelve true si debe omitirse (duplicado), false si es nueva y la registra.
+   */
+  private isDuplicateOutgoingResponse(
+    instanceName: string,
+    remoteJid: string,
+    responseText: string,
+  ): boolean {
+    const key = `${instanceName}:${remoteJid}`;
+    const hash = this.simpleHash(responseText.trim());
+    const now = Date.now();
+    const ttl = WebhookService.OUTGOING_DEDUPE_TTL_MS;
+
+    // Limpiar entradas expiradas
+    for (const [k, v] of this.outgoingResponseCache.entries()) {
+      if (now - v.ts > ttl) this.outgoingResponseCache.delete(k);
+    }
+
+    const cached = this.outgoingResponseCache.get(key);
+    if (cached && cached.hash === hash && now - cached.ts < ttl) {
+      return true;
+    }
+
+    this.outgoingResponseCache.set(key, { hash, ts: now });
+    return false;
   }
 
   private isDuplicateMessage(key: string, ttlMs = 120000): boolean {
@@ -328,8 +377,17 @@ export class WebhookService implements OnModuleInit {
       this.antifloodService.isHighFrequencyContact(canonicalRemoteJid, instanceName);
     logger.debug(`[ANTIFLOOD] isHighFrequencyContact → ${isHighFreq}`);
 
-    if (isFlood || isHighFreq) {
-      const reason = isFlood ? 'Patrón sincronizado' : 'Alta frecuencia AI-to-AI';
+    logger.debug(`[ANTIFLOOD] Evaluando isMediumFrequencyBurst...`);
+    const isMediumBurst =
+      this.antifloodService.isMediumFrequencyBurst(canonicalRemoteJid, instanceName);
+    logger.debug(`[ANTIFLOOD] isMediumFrequencyBurst → ${isMediumBurst}`);
+
+    if (isFlood || isHighFreq || isMediumBurst) {
+      const reason = isFlood
+        ? 'Patrón sincronizado'
+        : isHighFreq
+          ? 'Alta frecuencia AI-to-AI'
+          : 'Burst de media frecuencia (loop lento AI-to-AI)';
       logger.debug(
         `[ANTIFLOOD] Detección confirmada (${reason}). Reseteando buffer y marcando bloqueo...`,
       );
@@ -536,6 +594,21 @@ export class WebhookService implements OnModuleInit {
           const aiResponse =
             await this.aiAgentService.processInput(dataProccessInput);
           if (!aiResponse || aiResponse === '') return;
+
+          // Deduplicación de respuesta saliente: evita reenviar el mismo
+          // contenido al mismo contacto en menos de OUTGOING_DEDUPE_TTL_MS.
+          if (
+            this.isDuplicateOutgoingResponse(
+              instanceName,
+              canonicalRemoteJid,
+              aiResponse,
+            )
+          ) {
+            logger.warn(
+              `[OUTGOING_DEDUPE] Respuesta idéntica detectada para ${canonicalRemoteJid} → omitida para evitar loop.`,
+            );
+            return;
+          }
 
           await this.chatHistoryService.saveMessage(
             sessionHistoryId,
@@ -1056,6 +1129,7 @@ export class WebhookService implements OnModuleInit {
 
       if (matchedReply) {
         logger.log(`Respuesta rápida encontrada: ${matchedReply.mensaje}`);
+        if (!matchedReply.workflowId) return;
         const workflow = await this.workflowService.getWorkflowByWorkflowId(
           matchedReply.workflowId,
         );

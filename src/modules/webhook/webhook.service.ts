@@ -255,7 +255,7 @@ export class WebhookService implements OnModuleInit {
       return;
     }
 
-    if (!canonicalSession?.status) return;
+    if (!(canonicalSession?.status ?? sessionRes.status)) return;
 
     const sessionHistoryId = buildChatHistorySessionId(
       instanceName,
@@ -296,11 +296,7 @@ export class WebhookService implements OnModuleInit {
     }
 
     logger.log(`Is from me: ${fromMe}`);
-
-    const sessionActive = canonicalSession?.status ?? false;
-    logger.log(`Estado de la session: ${sessionActive}`);
-
-    if (!sessionActive) return;
+    logger.log(`Estado de la session: ${canonicalSession?.status ?? sessionRes.status}`);
 
     /* Extract content */
     const model = defaultModel?.name || 'gpt-4o-mini';
@@ -324,16 +320,23 @@ export class WebhookService implements OnModuleInit {
       this.antifloodService.isHighFrequencyContact(canonicalRemoteJid);
 
     if (isFlood || isHighFreq) {
+      const reason = isFlood ? 'Patrón sincronizado' : 'Alta frecuencia AI-to-AI';
       this.messageBufferService.reset(canonicalRemoteJid);
-      await this.sessionService.disableSession(
-        canonicalRemoteJid,
-        instanceName,
-        userWithRelations.id,
-      );
+      // markBlocked primero (en-memoria, nunca falla) para garantizar
+      // protección aunque la escritura a BD falle después.
       this.antifloodService.markBlocked(canonicalRemoteJid);
-      logger.warn(
-        `${isFlood ? 'Patrón sincronizado' : 'Alta frecuencia AI-to-AI'} detectado → sesión desactivada y agente bloqueado.`,
-      );
+      try {
+        await this.sessionService.disableSession(
+          canonicalRemoteJid,
+          instanceName,
+          userWithRelations.id,
+        );
+      } catch (err: any) {
+        logger.error(
+          `[ANTIFLOOD] Error desactivando sesión en BD (cooldown en-memoria activo). ${err?.message}`,
+        );
+      }
+      logger.warn(`${reason} detectado → sesión desactivada y agente bloqueado.`);
       return;
     }
 

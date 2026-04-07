@@ -261,10 +261,10 @@ export class SessionService {
       ],
     };
 
-    await this.prisma.$transaction([
-      this.prisma.session.updateMany({ where, data: { status: false } }),
-      this.prisma.session.updateMany({ where, data: { agentDisabled: true } }),
-    ]);
+    await this.prisma.session.updateMany({
+      where,
+      data: { status: false, agentDisabled: true },
+    });
   }
 
   // Consulta el estado del chat

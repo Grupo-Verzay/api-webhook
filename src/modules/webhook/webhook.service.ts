@@ -78,7 +78,7 @@ export class WebhookService implements OnModuleInit {
     private readonly leadFunnelService: LeadFunnelService,
     private readonly followUpRunnerService: FollowUpRunnerService,
     private readonly paymentReceiptProcessor: PaymentReceiptProcessorService,
-  ) {}
+  ) { }
 
   onModuleInit(): void {
     const { AiAgentService } = require('../ai-agent/ai-agent.service');
@@ -307,6 +307,7 @@ export class WebhookService implements OnModuleInit {
     }
 
     if (!(canonicalSession?.status ?? sessionRes.status)) return;
+    if (!sessionRes.status) return;
 
     const sessionHistoryId = buildChatHistorySessionId(
       instanceName,

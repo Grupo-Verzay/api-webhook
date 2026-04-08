@@ -696,22 +696,21 @@ export class AiAgentService {
 
           try {
             const apiUrl = `${server_url}/message/sendText/${instanceName}`;
-            const notificationPhone =
-              await this.agentNotificationService.getNotificationPhone(
+            const notificationPhones =
+              await this.agentNotificationService.getNotificationPhones(
                 userId,
                 remoteJid,
               );
 
-            if (notificationPhone) {
+            if (notificationPhones.length > 0) {
               const aviso =
                 '⚠️ Tu *agente IA* alcanzó el límite de uso del proveedor de IA.\n\n' +
                 '🧐 Por favor revisa el plan o la facturación del modelo configurado\n\n' +
                 '👉 https://platform.openai.com/settings/organization/billing/overview';
-              await this.nodeSenderService.sendTextNode(
-                apiUrl,
-                apikey,
-                notificationPhone,
-                aviso,
+              await Promise.all(
+                notificationPhones.map((phone) =>
+                  this.nodeSenderService.sendTextNode(apiUrl, apikey, phone, aviso),
+                ),
               );
             } else {
               logger.warn(
@@ -803,22 +802,21 @@ export class AiAgentService {
 
         try {
           const apiUrl = `${server_url}/message/sendText/${instanceName}`;
-          const notificationPhone =
-            await this.agentNotificationService.getNotificationPhone(
+          const notificationPhones =
+            await this.agentNotificationService.getNotificationPhones(
               userId,
               remoteJid,
             );
 
-          if (notificationPhone) {
+          if (notificationPhones.length > 0) {
             const aviso =
               '⚠️ La *APIKey* introducida en *Agente IA* es inválida o no tiene permisos. Por favor revisa e ingresa una API Key válida.\n\n' +
               '👉 https://agente.ia-app.com/profile';
 
-            await this.nodeSenderService.sendTextNode(
-              apiUrl,
-              apikey,
-              notificationPhone,
-              aviso,
+            await Promise.all(
+              notificationPhones.map((phone) =>
+                this.nodeSenderService.sendTextNode(apiUrl, apikey, phone, aviso),
+              ),
             );
           } else {
             logger.warn(

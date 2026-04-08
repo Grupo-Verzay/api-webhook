@@ -446,6 +446,19 @@ model User {
   Module                             Module[]              @relation("UserModules")
   externalClientData                 ExternalClientData[]
   chatConversationPreferences        ChatConversationPreference[]
+  notificationContacts               UserNotificationContact[]
+}
+
+model UserNotificationContact {
+  id        String   @id @default(uuid())
+  userId    String
+  phone     String
+  label     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model CrmFollowUp {

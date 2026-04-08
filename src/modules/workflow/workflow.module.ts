@@ -8,6 +8,7 @@ import { SessionService } from '../session/session.service';
 import { SessionTriggerModule } from 'src/modules/session-trigger/session-trigger.module';
 import { AiAgentModule } from '../ai-agent/ai-agent.module';
 import { ChatHistoryModule } from '../chat-history/chat-history.module';
+import { NotificationContactsService } from '../ai-agent/services/notificacionService/notification-contacts.service';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { ChatHistoryModule } from '../chat-history/chat-history.module';
     NodeSenderService,
     SeguimientosService,
     SessionService,
+    NotificationContactsService,
   ],
   exports: [WorkflowService],
 })

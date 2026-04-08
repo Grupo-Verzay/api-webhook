@@ -17,6 +17,7 @@ import { PromptCompressorService } from './services/prompt-compressor/prompt-com
 import { LlmClientFactory } from './services/llmClientFactory/llmClientFactory.service';
 import { UserService } from '../user/user.service';
 import { AgentNotificationService } from './services/notificacionService/notificacion.service';
+import { NotificationContactsService } from './services/notificacionService/notification-contacts.service';
 import { ExternalClientDataModule } from '../external-client-data/external-client-data.module';
 
 @Module({
@@ -34,6 +35,7 @@ import { ExternalClientDataModule } from '../external-client-data/external-clien
     AiCreditsService,
     LlmClientFactory,
     AgentNotificationService,
+    NotificationContactsService,
     UserService,
   ],
   exports: [

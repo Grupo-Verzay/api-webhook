@@ -1,14 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { NodeSenderService } from 'src/modules/workflow/services/node-sender.service.ts/node-sender.service';
 import { LoggerService } from 'src/core/logger/logger.service';
-import { PrismaService } from 'src/database/prisma.service';
+import { NotificationContactsService } from 'src/modules/ai-agent/services/notificacionService/notification-contacts.service';
 
 @Injectable()
 export class NotificacionToolService {
   constructor(
     private readonly nodeSenderService: NodeSenderService,
     private readonly logger: LoggerService,
-    private readonly prisma: PrismaService,
+    private readonly notificationContactsService: NotificationContactsService,
   ) {}
 
   async handleNotificacionTool(
@@ -20,26 +20,24 @@ export class NotificacionToolService {
     remoteJid: string,
   ): Promise<string> {
     try {
-      // 🔍 Buscar el número de notificación desde la sesión
-      const user = await this.prisma.user.findUnique({
-        where: { id: sessionId },
-      });
+      const phones = await this.notificationContactsService.getActiveNumbers(sessionId);
 
-      const notificacionNumber = user?.notificationNumber;
-      const celular = remoteJid.split('@')[0];
-
-      if (!notificacionNumber) {
+      if (phones.length === 0) {
         throw new Error(
-          'El usuario no tiene un número de notificación configurado',
+          'El usuario no tiene números de notificación configurados',
         );
       }
 
-      await this.nodeSenderService.sendTextNode(
-        server_url + '/message/sendText/' + instanceName,
-        apikey,
-        notificacionNumber,
-        `✅ *Tienes Nueva Solicitud:*\n\n👤 *Nombre:* ${args.nombre}\n📝 *Descripción:*\n${args.detalles}\n\n📱 *WhatsApp del usuario:*\n\n👉 +${celular}`,
+      const celular = remoteJid.split('@')[0];
+      const message = `✅ *Tienes Nueva Solicitud:*\n\n👤 *Nombre:* ${args.nombre}\n📝 *Descripción:*\n${args.detalles}\n\n📱 *WhatsApp del usuario:*\n\n👉 +${celular}`;
+      const url = `${server_url}/message/sendText/${instanceName}`;
+
+      await Promise.all(
+        phones.map((phone) =>
+          this.nodeSenderService.sendTextNode(url, apikey, phone, message),
+        ),
       );
+
       return `ok`;
     } catch (error) {
       this.logger.error(

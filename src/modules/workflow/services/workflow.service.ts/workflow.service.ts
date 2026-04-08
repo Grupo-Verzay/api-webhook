@@ -11,6 +11,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { ChatHistoryService } from '../../../chat-history/chat-history.service';
 import { buildChatHistorySessionId } from '../../../chat-history/chat-history-session.helper';
 import type { AiAgentService } from '../../../ai-agent/ai-agent.service';
+import { NotificationContactsService } from 'src/modules/ai-agent/services/notificacionService/notification-contacts.service';
 
 type NodeDB = WorkflowNode;
 type EdgeDB = {
@@ -50,6 +51,7 @@ export class WorkflowService implements OnModuleInit {
     private readonly sessionTriggerService: SessionTriggerService,
     private readonly moduleRef: ModuleRef,
     private readonly chatHistoryService: ChatHistoryService,
+    private readonly notificationContactsService: NotificationContactsService,
   ) {}
 
   onModuleInit() {
@@ -687,15 +689,11 @@ export class WorkflowService implements OnModuleInit {
     const { node, session, urlevo, apikey, instanceName, remoteJid, userId } =
       args;
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { notificationNumber: true },
-    });
+    const phones = await this.notificationContactsService.getActiveNumbers(userId);
 
-    const notificationNumber = (user?.notificationNumber ?? '').trim();
-    if (!notificationNumber || notificationNumber === '0000000000') {
+    if (phones.length === 0) {
       this.logger.warn(
-        `Nodo notify sin notificationNumber configurado (userId=${userId}, nodeId=${node.id}).`,
+        `Nodo notify sin números de notificación configurados (userId=${userId}, nodeId=${node.id}).`,
         'WorkflowService',
       );
       return;
@@ -725,25 +723,27 @@ export class WorkflowService implements OnModuleInit {
     });
 
     const url = `${urlevo}/message/sendText/${instanceName}`;
-    const sent = await this.nodeSenderService.sendTextNode(
-      url,
-      apikey,
-      notificationNumber,
-      notifyMessage,
+    const results = await Promise.all(
+      phones.map((phone) =>
+        this.nodeSenderService.sendTextNode(url, apikey, phone, notifyMessage),
+      ),
     );
 
-    if (!sent) {
+    const failed = phones.filter((_, i) => !results[i]);
+    if (failed.length > 0) {
       this.logger.warn(
-        `Nodo notify no pudo enviar mensaje a ${notificationNumber} (nodeId=${node.id}).`,
+        `Nodo notify no pudo enviar a ${failed.join(', ')} (nodeId=${node.id}).`,
         'WorkflowService',
       );
-      return;
     }
 
-    this.logger.log(
-      `Nodo notify enviado a ${notificationNumber} para cliente ${remoteJid} (nodeId=${node.id}).`,
-      'WorkflowService',
-    );
+    const sent = phones.filter((_, i) => results[i]);
+    if (sent.length > 0) {
+      this.logger.log(
+        `Nodo notify enviado a [${sent.join(', ')}] para cliente ${remoteJid} (nodeId=${node.id}).`,
+        'WorkflowService',
+      );
+    }
   }
 
   private buildWorkflowNotificationMessage(args: {

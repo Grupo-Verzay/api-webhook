@@ -1,50 +1,65 @@
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/core/logger/logger.service';
-import { UserService } from '../../../user/user.service'; // <- AJUSTA la ruta si es distinta
+import { NotificationContactsService } from './notification-contacts.service';
 
 @Injectable()
 export class AgentNotificationService {
   constructor(
     private readonly logger: LoggerService,
-    private readonly userService: UserService,
+    private readonly notificationContactsService: NotificationContactsService,
   ) {}
 
-  async getNotificationPhone(
+  /**
+   * Devuelve todos los números de notificación activos para el usuario.
+   * Si no hay ninguno, retorna el fallbackRemoteJid como único elemento (si existe).
+   */
+  async getNotificationPhones(
     userId: string,
     fallbackRemoteJid?: string,
-  ): Promise<string | null> {
+  ): Promise<string[]> {
     try {
       if (!userId) {
         this.logger.warn(
-          '[AgentNotificationService] userId vacío al intentar obtener notificationNumber',
+          '[AgentNotificationService] userId vacío al intentar obtener números de notificación',
         );
-        return fallbackRemoteJid ?? null;
+        return fallbackRemoteJid ? [fallbackRemoteJid] : [];
       }
 
-      const user = await this.userService.getUserWithPausar(userId);
-      const notificationNumber = user?.notificationNumber?.trim();
+      const phones = await this.notificationContactsService.getActiveNumbers(userId);
 
-      if (notificationNumber) {
-        return notificationNumber;
+      if (phones.length > 0) {
+        return phones;
       }
 
       if (fallbackRemoteJid) {
         this.logger.warn(
-          `[AgentNotificationService] Usuario sin notificationNumber, usando fallback remoteJid=${fallbackRemoteJid}`,
+          `[AgentNotificationService] Sin números configurados, usando fallback remoteJid=${fallbackRemoteJid}`,
         );
-        return fallbackRemoteJid;
+        return [fallbackRemoteJid];
       }
 
       this.logger.warn(
-        '[AgentNotificationService] No se encontró notificationNumber ni fallbackRemoteJid',
+        '[AgentNotificationService] No se encontró ningún número de notificación ni fallbackRemoteJid',
       );
-      return null;
+      return [];
     } catch (error) {
       this.logger.error(
-        `[AgentNotificationService] Error obteniendo notificationNumber para userId=${userId}`,
+        `[AgentNotificationService] Error obteniendo números para userId=${userId}`,
         error,
       );
-      return fallbackRemoteJid ?? null;
+      return fallbackRemoteJid ? [fallbackRemoteJid] : [];
     }
+  }
+
+  /**
+   * @deprecated Usar getNotificationPhones() para soporte multi-número.
+   * Mantenido por compatibilidad con código existente que espera un solo string.
+   */
+  async getNotificationPhone(
+    userId: string,
+    fallbackRemoteJid?: string,
+  ): Promise<string | null> {
+    const phones = await this.getNotificationPhones(userId, fallbackRemoteJid);
+    return phones[0] ?? null;
   }
 }

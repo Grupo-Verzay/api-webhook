@@ -306,6 +306,38 @@ export class WebhookService implements OnModuleInit {
       return;
     }
 
+    const model = defaultModel?.name || 'gpt-4o-mini';
+    const provider = defaultProvider?.name || 'openai';
+    const isAdminInstance = userId === process.env.ADMIN_USER_ID;
+
+    // ── Detección de pagos: siempre activa, sin importar guards ──────────────
+    // Para la instancia admin extraemos el contenido UNA sola vez aquí,
+    // antes de cualquier validación (sesión, créditos, grupo, agentDisabled).
+    // El resultado se reutiliza más abajo en el flujo normal para evitar
+    // llamar dos veces a Vision API en mensajes de imagen.
+    let preExtractedMessage: string | null = null;
+
+    if (isAdminInstance) {
+      const earlyContent =
+        await this.messageTypeHandlerService.extractContentByType(
+          messageType,
+          defaultApiKey ?? '',
+          data,
+          model,
+          provider,
+        );
+      preExtractedMessage = earlyContent.toString().trim();
+      if (preExtractedMessage) {
+        void this.paymentReceiptProcessor
+          .handle({ content: preExtractedMessage, remoteJid: canonicalRemoteJid })
+          .catch((err: unknown) =>
+            logger.error(
+              `[PaymentReceipt] Error procesando comprobante: ${(err as any)?.message ?? err}`,
+            ),
+          );
+      }
+    }
+
     if (!(canonicalSession?.status ?? sessionRes.status)) return;
     if (!sessionRes.status) return;
 
@@ -350,30 +382,18 @@ export class WebhookService implements OnModuleInit {
     logger.log(`Is from me: ${fromMe}`);
     logger.log(`Estado de la session: ${canonicalSession?.status ?? sessionRes.status}`);
 
-    /* Extract content */
-    const model = defaultModel?.name || 'gpt-4o-mini';
-    const provider = defaultProvider?.name || 'openai';
-    const extractedContent =
-      await this.messageTypeHandlerService.extractContentByType(
-        messageType,
-        defaultApiKey ?? '',
-        data,
-        model,
-        provider,
-      );
-
-    const incomingMessage = extractedContent.toString().trim();
-
-    /* Detección de comprobantes de pago en la instancia del admin */
-    if (userId === process.env.ADMIN_USER_ID && incomingMessage) {
-      void this.paymentReceiptProcessor
-        .handle({ content: incomingMessage, remoteJid: canonicalRemoteJid })
-        .catch((err: unknown) =>
-          logger.error(
-            `[PaymentReceipt] Error procesando comprobante: ${(err as any)?.message ?? err}`,
-          ),
-        );
-    }
+    /* Extract content — reutiliza la extracción temprana si ya se hizo (admin) */
+    const incomingMessage = preExtractedMessage !== null
+      ? preExtractedMessage
+      : (
+          await this.messageTypeHandlerService.extractContentByType(
+            messageType,
+            defaultApiKey ?? '',
+            data,
+            model,
+            provider,
+          )
+        ).toString().trim();
 
     /* Anti-flood */
     logger.debug(

@@ -39,9 +39,12 @@ export class ChatHistoryService {
    */
   async getChatHistory(sessionId: string): Promise<string[]> {
     const messages = await this.prisma.n8nChatHistory.findMany({
-      where: { sessionId: sessionId },
+      where: {
+        sessionId: sessionId,
+        message: { path: ['type'], not: 'intention' },
+      },
       orderBy: { id: 'desc' }, // más recientes primero
-      take: 10,
+      take: 15,
     });
 
     return messages

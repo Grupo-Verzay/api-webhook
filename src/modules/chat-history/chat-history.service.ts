@@ -44,7 +44,7 @@ export class ChatHistoryService {
         message: { path: ['type'], not: 'intention' },
       },
       orderBy: { id: 'desc' }, // más recientes primero
-      take: 15,
+      take: 30,
     });
 
     return messages

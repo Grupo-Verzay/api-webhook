@@ -1134,7 +1134,7 @@ export class WorkflowService implements OnModuleInit {
     } catch (error) {
       this.logger.error(
         'Error al obtener los workflows:"',
-        error,
+        (error as any)?.message || String(error),
         'WorkflowService',
       );
       return [];
@@ -1165,7 +1165,7 @@ export class WorkflowService implements OnModuleInit {
       );
     } catch (error) {
       this.logger.error(
-        `Error almacenando ID de seguimiento ${id} en sesiÃ³n ${remoteJid}: ${error.message}`,
+        `Error almacenando ID de seguimiento ${id} en sesiÃ³n ${remoteJid}: ${(error as any)?.message || String(error)}`,
         'WorkflowService',
       );
     }
@@ -1191,7 +1191,7 @@ export class WorkflowService implements OnModuleInit {
     } catch (error) {
       this.logger.error(
         `Error obteniendo la sesiÃ³n de ${remoteJid} en la instancia ${instanceName}`,
-        error?.message || error,
+        (error as any)?.message || String(error),
         'WorkflowService',
       );
       return null;
@@ -1232,7 +1232,7 @@ export class WorkflowService implements OnModuleInit {
     } catch (error) {
       this.logger.error(
         'Error al obtener los workflows:"',
-        error,
+        (error as any)?.message || String(error),
         'WorkflowService',
       );
       return null;

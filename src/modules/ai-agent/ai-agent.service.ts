@@ -210,7 +210,7 @@ export class AiAgentService {
     } catch (error) {
       logger.error(
         'Error procesando entrada con OpenAI (detección de flujos).',
-        error?.response?.data || error.message,
+        (error as any)?.response?.data || (error as any)?.message,
       );
       return { content: null };
     }

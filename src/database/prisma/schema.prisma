@@ -876,10 +876,12 @@ model ExternalDataToolConfig {
   toolKey         String
   displayName     String
   toolDescription String
+  toolCategory    String   @default("data_query")
   toolType        String   @default("search_by_field")
   searchField     String?
   promptTemplate  String?
   isEnabled       Boolean  @default(true)
+  isDefault       Boolean  @default(false)
   sortOrder       Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

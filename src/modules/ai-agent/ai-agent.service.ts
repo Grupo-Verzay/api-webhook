@@ -221,6 +221,19 @@ export class AiAgentService {
    * Cada tool llama a los servicios internos de NestJS.
    * OJO: usamos `// @ts-ignore` para evitar que TS intente expandir genéricos infinitos.
    */
+  /**
+   * Construye el array de herramientas LangChain para el agente ReAct.
+   *
+   * ESTRATEGIA:
+   *  - Si el usuario tiene configs en DB → se usan exclusivamente esas (config-driven).
+   *  - Si el usuario NO tiene configs → se devuelven todas las tools hardcodeadas
+   *    (safety net de retrocompatibilidad: clientes existentes sin configurar no se rompen).
+   *
+   * DISPATCHER:
+   *  Cada config con toolCategory='builtin' se despacha según toolType a su
+   *  implementación fija. Las de toolCategory='data_query' y toolType='search_by_field'
+   *  son totalmente dinámicas. toolType='auto_inject' se ignora aquí (es para system prompt).
+   */
   private async buildReactTools(params: {
     userId: string;
     sessionId: string;
@@ -230,222 +243,284 @@ export class AiAgentService {
     remoteJid: string;
     toolConfigs?: any[];
   }): Promise<any[]> {
-    const { userId, sessionId, server_url, apikey, instanceName, remoteJid, toolConfigs: preloadedConfigs } =
-      params;
+    const {
+      userId,
+      toolConfigs: preloadedConfigs,
+    } = params;
+    const logger = this.scopedLogger({
+      userId,
+      instanceName: params.instanceName,
+      remoteJid: params.remoteJid,
+    });
+
+    // Obtener configs (ya precargadas desde processInput para evitar doble query)
+    const allConfigs =
+      preloadedConfigs ??
+      (await this.externalClientDataService.getToolConfigs(userId).catch(() => []));
+
+    // ── SAFETY NET ──────────────────────────────────────────────────────────
+    // Si el usuario no tiene NINGUNA config → fallback completo a las tools
+    // hardcodeadas. Esto garantiza que clientes existentes no se vean afectados.
+    if (allConfigs.length === 0) {
+      logger.warn(
+        'Sin ExternalDataToolConfig para este usuario → usando tools hardcodeadas por defecto',
+      );
+      return this.buildHardcodedDefaultTools(params);
+    }
+
+    // ── CONFIG-DRIVEN ───────────────────────────────────────────────────────
+    // Solo se incluyen las configs habilitadas; auto_inject no es una tool de LangChain.
+    const tools: any[] = [];
+
+    for (const cfg of allConfigs) {
+      if (!cfg.isEnabled) continue;
+      if (cfg.toolType === 'auto_inject') continue; // lo maneja processInput
+
+      const builtTool = this.buildToolFromConfig(cfg, params);
+      if (builtTool) {
+        tools.push(builtTool);
+      } else {
+        logger.warn(
+          `[buildReactTools] toolType desconocido o config inválida: toolKey="${cfg.toolKey}" toolType="${cfg.toolType}" — omitida`,
+        );
+      }
+    }
+
+    return tools;
+  }
+
+  /**
+   * Despacha la construcción de una tool LangChain según el toolType de la config.
+   * Retorna null para toolTypes desconocidos o configs incompletas (campo requerido vacío).
+   */
+  private buildToolFromConfig(cfg: any, params: {
+    userId: string;
+    sessionId: string;
+    server_url: string;
+    apikey: string;
+    instanceName: string;
+    remoteJid: string;
+  }): any | null {
+    switch (cfg.toolType) {
+      case 'notificacion_asesor':
+        return this.buildNotificacionAsesorTool(cfg, params);
+      case 'ejecutar_flujos':
+        return this.buildEjecutarFlujosTool(cfg, params);
+      case 'listar_workflows':
+        return this.buildListarWorkflowsTool(cfg, params);
+      case 'consultar_datos_cliente':
+        return this.buildConsultarDatosClienteTool(cfg, params);
+      case 'buscar_cliente_por_dato':
+        return this.buildBuscarClientePorDatoTool(cfg, params);
+      case 'search_by_field':
+        return cfg.searchField
+          ? this.buildSearchByFieldTool(cfg, params)
+          : null;
+      default:
+        return null;
+    }
+  }
+
+  // ─── Individual tool builders ─────────────────────────────────────────────
+
+  private buildNotificacionAsesorTool(cfg: any, params: {
+    userId: string; server_url: string; apikey: string;
+    instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, server_url, apikey, instanceName, remoteJid } = params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
-    // Tool: Notificacion_Asesor
     // @ts-ignore - evitar problemas de tipos profundos con LangChain + zod
-    const notificacionAsesor = tool(
+    return tool(
       async ({ nombre, detalles }: { nombre: string; detalles: string }) => {
-        logger.log(`Tool Notificacion_Asesor llamada para: ${nombre}`);
-
-        const args = { nombre, detalles };
-
+        logger.log(`Tool "${cfg.toolKey}" (notificacion_asesor) llamada para: ${nombre}`);
         const res = await this.notificacionTool.handleNotificacionTool(
-          args as any,
-          userId,
-          server_url,
-          apikey,
-          instanceName,
-          remoteJid,
+          { nombre, detalles } as any,
+          userId, server_url, apikey, instanceName, remoteJid,
         );
-
-        if (res === 'ok') {
-          return `Notificación enviada al asesor para el cliente "${nombre}". Detalle: ${detalles}`;
-        }
-
-        return `No se pudo notificar al asesor. Detalle original del cliente: ${detalles}`;
+        return res === 'ok'
+          ? `Notificación enviada al asesor para el cliente "${nombre}". Detalle: ${detalles}`
+          : `No se pudo notificar al asesor. Detalle original del cliente: ${detalles}`;
       },
       {
-        name: 'Notificacion_Asesor',
-        description:
-          'Utiliza esta herramienta cuando un usuario necesite la ayuda directa de un asesor humano (reclamos, solicitudes complejas, dudas de pago o agendamiento).',
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
         schema: z.object({
           nombre: z.string().describe('Nombre del usuario'),
-          detalles: z
-            .string()
-            .describe('Detalle de la notificación o solicitud'),
+          detalles: z.string().describe('Detalle de la notificación o solicitud'),
         }),
       },
     );
+  }
 
-    // Tool: Ejecutar_Flujos
-    // @ts-ignore - evitar problemas de tipos profundos con LangChain + zod
-    const ejecutarFlujos = tool(
-      async ({
-        nombre_flujo,
-        detalles,
-      }: {
-        nombre_flujo: string;
-        detalles: string;
-      }) => {
-        logger.log(
-          `Tool Ejecutar_Flujos llamada con flujo sugerido "${nombre_flujo}"`,
-        );
+  private buildEjecutarFlujosTool(cfg: any, params: {
+    userId: string; sessionId: string; server_url: string;
+    apikey: string; instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, sessionId, server_url, apikey, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
-        const args: any = {
-          nombre_flujo: [nombre_flujo],
-          descripcion: detalles,
-        };
-
+    // @ts-ignore
+    return tool(
+      async ({ nombre_flujo, detalles }: { nombre_flujo: string; detalles: string }) => {
+        logger.log(`Tool "${cfg.toolKey}" (ejecutar_flujos) → "${nombre_flujo}"`);
         const follow = await this.handleExecuteWorkflowTool(
-          args,
-          userId,
-          sessionId,
-          server_url,
-          apikey,
-          instanceName,
-          remoteJid,
+          { nombre_flujo: [nombre_flujo], descripcion: detalles } as any,
+          userId, sessionId, server_url, apikey, instanceName, remoteJid,
         );
-
         return follow || `ℹ️ Flujo "${nombre_flujo}" ejecutado.`;
       },
       {
-        name: 'Ejecutar_Flujos',
-        description:
-          'Siempre consulta y ejecuta si existen flujos disponibles en la base de datos que correspondan a la solicitud del usuario. Si se encuentra un flujo, se ejecuta. Si no hay flujos, la IA continúa la conversación normalmente.',
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
         schema: z.object({
-          nombre_flujo: z
-            .string()
-            .describe('Nombre del flujo que se debe ejecutar'),
-          detalles: z
-            .string()
-            .describe(
-              'Texto original de la solicitud del usuario o contexto adicional',
-            ),
+          nombre_flujo: z.string().describe('Nombre del flujo que se debe ejecutar'),
+          detalles: z.string().describe('Texto original de la solicitud del usuario o contexto adicional'),
         }),
       },
     );
+  }
 
-    // Tool: listar_workflows
-    // @ts-ignore - evitar problemas de tipos profundos con LangChain + zod
-    const listarWorkflows = tool(
+  private buildListarWorkflowsTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    // @ts-ignore
+    return tool(
       async () => {
-        logger.log('Tool listar_workflows llamada.');
-
-        const workflows = await this.workflowService
-          .getWorkflow(userId)
-          .catch(() => []);
+        logger.log(`Tool "${cfg.toolKey}" (listar_workflows) llamada.`);
+        const workflows = await this.workflowService.getWorkflow(userId).catch(() => []);
         if (!Array.isArray(workflows) || workflows.length === 0) {
           return 'No hay flujos configurados actualmente para este usuario.';
         }
-
-        const formatted = workflows
-          .map(
-            (w: any, index: number) =>
-              `${index + 1}. ${w.name ?? 'SIN_NOMBRE'}`,
-          )
-          .join('\n');
-
-        return `Flujos disponibles:\n${formatted}`;
+        return `Flujos disponibles:\n${workflows.map((w: any, i: number) => `${i + 1}. ${w.name ?? 'SIN_NOMBRE'}`).join('\n')}`;
       },
       {
-        name: 'listar_workflows',
-        description: 'Devuelve todos los flujos disponibles para este usuario.',
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
         schema: z.object({}),
       },
     );
+  }
 
-    // Tool: consultar_datos_cliente
-    // @ts-ignore - evitar problemas de tipos profundos con LangChain + zod
-    const consultarDatosCliente = tool(
+  private buildConsultarDatosClienteTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    // @ts-ignore
+    return tool(
       async () => {
-        logger.log('Tool consultar_datos_cliente llamada.');
-
-        const data = await this.externalClientDataService.getByRemoteJid(
-          userId,
-          remoteJid,
-        );
-
+        logger.log(`Tool "${cfg.toolKey}" (consultar_datos_cliente) llamada.`);
+        const data = await this.externalClientDataService.getByRemoteJid(userId, remoteJid);
         if (!data || Object.keys(data).length === 0) {
           return 'No hay datos externos registrados para este cliente.';
         }
-
         return this.externalClientDataService.formatForAgent(data);
       },
       {
-        name: 'consultar_datos_cliente',
-        description:
-          'Consulta el perfil externo del cliente actual: cédula, correo, servicio contratado, monto, sector, convenio u otros campos configurados por el administrador. Úsala cuando el cliente pregunte por su información de cuenta, servicio o datos personales registrados.',
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
         schema: z.object({}),
       },
     );
+  }
 
-    // Tool: buscar_cliente_por_dato
-    // @ts-ignore - evitar problemas de tipos profundos con LangChain + zod
-    const buscarClientePorDato = tool(
+  private buildBuscarClientePorDatoTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    // @ts-ignore
+    return tool(
       async ({ campo, valor }: { campo: string; valor: string }) => {
-        logger.log(`Tool buscar_cliente_por_dato: campo="${campo}" valor="${valor}"`);
-
-        const data = await this.externalClientDataService.getByDataField(
-          userId,
-          campo,
-          valor,
-        );
-
+        logger.log(`Tool "${cfg.toolKey}" (buscar_cliente_por_dato): campo="${campo}" valor="${valor}"`);
+        const data = await this.externalClientDataService.getByDataField(userId, campo, valor);
         if (!data || Object.keys(data).length === 0) {
           return `No se encontró ningún cliente con ${campo.toUpperCase()}: ${valor} en el sistema.`;
         }
-
         return this.externalClientDataService.formatForAgent(data);
       },
       {
-        name: 'buscar_cliente_por_dato',
-        description:
-          'Busca la información de un cliente a partir de un dato conocido como cédula, RIF, correo u otro campo registrado. Solo consulta datos del usuario actual, nunca cruza información de otros clientes. Úsala cuando alguien pregunte por los datos de un tercero y proporcione su cédula, correo u otro identificador.',
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
         schema: z.object({
-          campo: z
-            .string()
-            .describe('Nombre del campo por el que buscar. Ejemplos: "CEDULA-RIF", "CORREO", "NOMBRE".'),
-          valor: z
-            .string()
-            .describe('Valor a buscar. Ejemplos: "V27548446", "juan@email.com".'),
+          campo: z.string().describe('Nombre del campo por el que buscar. Ejemplos: "CEDULA-RIF", "CORREO", "NOMBRE".'),
+          valor: z.string().describe('Valor a buscar. Ejemplos: "V27548446", "juan@email.com".'),
         }),
       },
     );
+  }
 
-    // ─── Dynamic tools from ExternalDataToolConfig ───────────────────────────
-    const toolConfigs = preloadedConfigs ??
-      await this.externalClientDataService.getToolConfigs(userId).catch(() => []);
+  private buildSearchByFieldTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
-    const dynamicTools = toolConfigs
-      .filter((cfg) => cfg.toolType === 'search_by_field' && cfg.searchField)
-      .map((cfg) => {
-        // @ts-ignore - evitar problemas de tipos profundos con LangChain + zod
-        return tool(
-          async ({ valor }: { valor: string }) => {
-            logger.log(
-              `Tool dinámica "${cfg.toolKey}" llamada: campo="${cfg.searchField}" valor="${valor}"`,
-            );
+    // @ts-ignore
+    return tool(
+      async ({ valor }: { valor: string }) => {
+        logger.log(`Tool dinámica "${cfg.toolKey}" (search_by_field): campo="${cfg.searchField}" valor="${valor}"`);
+        const data = await this.externalClientDataService.getByDataField(userId, cfg.searchField!, valor);
+        if (!data || Object.keys(data).length === 0) {
+          return `No se encontró ningún registro con ${cfg.searchField!.toUpperCase()}: ${valor}.`;
+        }
+        return this.externalClientDataService.formatForAgent(data);
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({
+          valor: z.string().describe(
+            `Valor de ${cfg.searchField} a buscar. Ejemplo: si el campo es CEDULA-RIF, el valor sería "V27548446".`,
+          ),
+        }),
+      },
+    );
+  }
 
-            const data = await this.externalClientDataService.getByDataField(
-              userId,
-              cfg.searchField!,
-              valor,
-            );
+  /**
+   * Safety net: devuelve las 5 tools hardcodeadas originales.
+   * Solo se usa cuando un usuario no tiene NINGUNA ExternalDataToolConfig en DB.
+   * Garantiza retrocompatibilidad total con clientes pre-configuración dinámica.
+   */
+  private buildHardcodedDefaultTools(params: {
+    userId: string;
+    sessionId: string;
+    server_url: string;
+    apikey: string;
+    instanceName: string;
+    remoteJid: string;
+  }): any[] {
+    const HARDCODED_BUILTIN_CONFIGS = [
+      {
+        toolKey: 'Notificacion_Asesor', toolType: 'notificacion_asesor',
+        toolDescription: 'Utiliza esta herramienta cuando un usuario necesite la ayuda directa de un asesor humano (reclamos, solicitudes complejas, dudas de pago o agendamiento).',
+      },
+      {
+        toolKey: 'Ejecutar_Flujos', toolType: 'ejecutar_flujos',
+        toolDescription: 'Siempre consulta y ejecuta si existen flujos disponibles en la base de datos que correspondan a la solicitud del usuario. Si se encuentra un flujo, se ejecuta. Si no hay flujos, la IA continúa la conversación normalmente.',
+      },
+      {
+        toolKey: 'listar_workflows', toolType: 'listar_workflows',
+        toolDescription: 'Devuelve todos los flujos disponibles para este usuario.',
+      },
+      {
+        toolKey: 'consultar_datos_cliente', toolType: 'consultar_datos_cliente',
+        toolDescription: 'Consulta el perfil externo del cliente actual: cédula, correo, servicio contratado, monto, sector, convenio u otros campos configurados por el administrador.',
+      },
+      {
+        toolKey: 'buscar_cliente_por_dato', toolType: 'buscar_cliente_por_dato',
+        toolDescription: 'Busca la información de un cliente a partir de un dato conocido como cédula, RIF, correo u otro campo registrado. Solo consulta datos del usuario actual.',
+      },
+    ];
 
-            if (!data || Object.keys(data).length === 0) {
-              return `No se encontró ningún registro con ${cfg.searchField!.toUpperCase()}: ${valor}.`;
-            }
-
-            return this.externalClientDataService.formatForAgent(data);
-          },
-          {
-            name: cfg.toolKey,
-            description: cfg.toolDescription,
-            schema: z.object({
-              valor: z
-                .string()
-                .describe(
-                  `Valor de ${cfg.searchField} a buscar. Ejemplo: si el campo es CEDULA-RIF, el valor sería "V27548446".`,
-                ),
-            }),
-          },
-        );
-      });
-
-    return [notificacionAsesor, ejecutarFlujos, listarWorkflows, consultarDatosCliente, buscarClientePorDato, ...dynamicTools];
+    return HARDCODED_BUILTIN_CONFIGS.map((cfg) => this.buildToolFromConfig(cfg, params)).filter(Boolean);
   }
 
   /**

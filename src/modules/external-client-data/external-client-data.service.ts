@@ -98,6 +98,28 @@ export class ExternalClientDataService implements IExternalClientDataProvider {
   }
 
   /**
+   * Obtiene todas las herramientas dinámicas configuradas para un usuario.
+   * Se usan para generar tools de LangChain en tiempo de ejecución.
+   */
+  async getToolConfigs(userId: string) {
+    if (!userId) return [];
+
+    try {
+      return await this.prisma.externalDataToolConfig.findMany({
+        where: { userId, isEnabled: true },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      });
+    } catch (error: any) {
+      this.logger.error(
+        `[ExternalClientData] Error al obtener tool configs para userId=${userId}`,
+        error?.message,
+        'ExternalClientDataService',
+      );
+      return [];
+    }
+  }
+
+  /**
    * Convierte el mapa de datos en una cadena legible para el agente de IA.
    * Ejemplo: "CEDULA: 12345678 | SERVICIO: Internet 10Mb | MONTO: $25.00"
    */
@@ -106,5 +128,12 @@ export class ExternalClientDataService implements IExternalClientDataProvider {
       .filter(([, value]) => value !== null && value !== undefined && value !== '')
       .map(([key, value]) => `${key.toUpperCase()}: ${String(value)}`)
       .join(' | ');
+  }
+
+  /**
+   * Aplica el template de prompt, reemplazando {data} con los datos formateados.
+   */
+  applyPromptTemplate(template: string, formattedData: string): string {
+    return template.replace(/\{data\}/g, formattedData);
   }
 }

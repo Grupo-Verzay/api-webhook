@@ -221,15 +221,16 @@ export class AiAgentService {
    * Cada tool llama a los servicios internos de NestJS.
    * OJO: usamos `// @ts-ignore` para evitar que TS intente expandir genéricos infinitos.
    */
-  private buildReactTools(params: {
+  private async buildReactTools(params: {
     userId: string;
     sessionId: string;
     server_url: string;
     apikey: string;
     instanceName: string;
     remoteJid: string;
-  }): any[] {
-    const { userId, sessionId, server_url, apikey, instanceName, remoteJid } =
+    toolConfigs?: any[];
+  }): Promise<any[]> {
+    const { userId, sessionId, server_url, apikey, instanceName, remoteJid, toolConfigs: preloadedConfigs } =
       params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
@@ -404,7 +405,47 @@ export class AiAgentService {
       },
     );
 
-    return [notificacionAsesor, ejecutarFlujos, listarWorkflows, consultarDatosCliente, buscarClientePorDato];
+    // ─── Dynamic tools from ExternalDataToolConfig ───────────────────────────
+    const toolConfigs = preloadedConfigs ??
+      await this.externalClientDataService.getToolConfigs(userId).catch(() => []);
+
+    const dynamicTools = toolConfigs
+      .filter((cfg) => cfg.toolType === 'search_by_field' && cfg.searchField)
+      .map((cfg) => {
+        // @ts-ignore - evitar problemas de tipos profundos con LangChain + zod
+        return tool(
+          async ({ valor }: { valor: string }) => {
+            logger.log(
+              `Tool dinámica "${cfg.toolKey}" llamada: campo="${cfg.searchField}" valor="${valor}"`,
+            );
+
+            const data = await this.externalClientDataService.getByDataField(
+              userId,
+              cfg.searchField!,
+              valor,
+            );
+
+            if (!data || Object.keys(data).length === 0) {
+              return `No se encontró ningún registro con ${cfg.searchField!.toUpperCase()}: ${valor}.`;
+            }
+
+            return this.externalClientDataService.formatForAgent(data);
+          },
+          {
+            name: cfg.toolKey,
+            description: cfg.toolDescription,
+            schema: z.object({
+              valor: z
+                .string()
+                .describe(
+                  `Valor de ${cfg.searchField} a buscar. Ejemplo: si el campo es CEDULA-RIF, el valor sería "V27548446".`,
+                ),
+            }),
+          },
+        );
+      });
+
+    return [notificacionAsesor, ejecutarFlujos, listarWorkflows, consultarDatosCliente, buscarClientePorDato, ...dynamicTools];
   }
 
   /**
@@ -583,13 +624,27 @@ export class AiAgentService {
         .catch(() => '');
 
       // Datos externos del cliente (cédula, correo, servicio, monto, etc.)
-      const externalClientData = await this.externalClientDataService
-        .getByRemoteJid(userId, remoteJid)
-        .catch(() => null);
+      const [externalClientData, toolConfigs] = await Promise.all([
+        this.externalClientDataService.getByRemoteJid(userId, remoteJid).catch(() => null),
+        this.externalClientDataService.getToolConfigs(userId).catch(() => []),
+      ]);
 
-      const externalDataBlock = externalClientData
-        ? `\n\n---\n## PERFIL DEL CLIENTE (datos registrados en el sistema)\n${this.externalClientDataService.formatForAgent(externalClientData)}\nUsa estos datos para personalizar tus respuestas. No los repitas todos de golpe; solo menciona los relevantes según el contexto. No inventes ni modifiques ninguno de estos valores.\n---`
-        : '';
+      let externalDataBlock = '';
+      if (externalClientData && Object.keys(externalClientData).length > 0) {
+        const formattedData = this.externalClientDataService.formatForAgent(externalClientData);
+        const autoInjectConfig = toolConfigs.find(
+          (c: any) => c.toolType === 'auto_inject' && c.isEnabled,
+        );
+
+        if (autoInjectConfig?.promptTemplate) {
+          externalDataBlock = `\n\n---\n${this.externalClientDataService.applyPromptTemplate(
+            autoInjectConfig.promptTemplate,
+            formattedData,
+          )}\n---`;
+        } else {
+          externalDataBlock = `\n\n---\n## PERFIL DEL CLIENTE (datos registrados en el sistema)\n${formattedData}\nUsa estos datos para personalizar tus respuestas. No los repitas todos de golpe; solo menciona los relevantes según el contexto. No inventes ni modifiques ninguno de estos valores.\n---`;
+        }
+      }
 
       // Prompt PRINCIPAL del agente
       const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}`.trim();
@@ -625,13 +680,14 @@ export class AiAgentService {
       const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
       // Tools + agente ReAct
-      const tools = this.buildReactTools({
+      const tools = await this.buildReactTools({
         userId,
         sessionId,
         server_url,
         apikey,
         instanceName,
         remoteJid,
+        toolConfigs,
       });
 
       const createReactAgentWithRetry = async () => {

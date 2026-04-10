@@ -445,6 +445,7 @@ model User {
   aiConfigs                          UserAiConfig[]
   Module                             Module[]              @relation("UserModules")
   externalClientData                 ExternalClientData[]
+  externalDataToolConfigs            ExternalDataToolConfig[]
   chatConversationPreferences        ChatConversationPreference[]
   notificationContacts               UserNotificationContact[]
 }
@@ -867,6 +868,27 @@ model ExternalClientData {
   @@unique([userId, remoteJid])
   @@index([userId])
   @@map("external_client_data")
+}
+
+model ExternalDataToolConfig {
+  id              String   @id @default(uuid())
+  userId          String
+  toolKey         String
+  displayName     String
+  toolDescription String
+  toolType        String   @default("search_by_field")
+  searchField     String?
+  promptTemplate  String?
+  isEnabled       Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, toolKey])
+  @@index([userId])
+  @@index([isEnabled])
+  @@map("external_data_tool_configs")
 }
 
 model UserAiConfig {

@@ -477,6 +477,8 @@ export class WebhookService implements OnModuleInit {
 
     // Cancelar seguimientos de inactividad INMEDIATAMENTE al recibir respuesta del cliente,
     // antes del buffer, para evitar race condition con el scheduler de follow-ups.
+    // El scheduler puede disparar durante los segundos de delay del buffer; esta llamada
+    // garantiza que se cancele antes de que eso ocurra.
     void this.followUpRunnerService
       .cancelPendingFollowUpsOnReply({
         userId,

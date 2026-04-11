@@ -272,11 +272,16 @@ export class AiAgentService {
     // Solo se incluyen las configs habilitadas; auto_inject no es una tool de LangChain.
     const tools: any[] = [];
 
+    // Ref compartido entre tools del mismo turno del agente para evitar que
+    // Notificacion_Asesor se dispare más de una vez (ej: después de Ejecutar_Flujos
+    // que ya incluyó un nodo-notify en el workflow).
+    const notificationSentThisTurn = { value: false };
+
     for (const cfg of allConfigs) {
       if (!cfg.isEnabled) continue;
       if (cfg.toolType === 'auto_inject') continue; // lo maneja processInput
 
-      const builtTool = this.buildToolFromConfig(cfg, params);
+      const builtTool = this.buildToolFromConfig(cfg, params, notificationSentThisTurn);
       if (builtTool) {
         tools.push(builtTool);
       } else {
@@ -300,12 +305,12 @@ export class AiAgentService {
     apikey: string;
     instanceName: string;
     remoteJid: string;
-  }): any | null {
+  }, notificationSentThisTurn?: { value: boolean }): any | null {
     switch (cfg.toolType) {
       case 'notificacion_asesor':
-        return this.buildNotificacionAsesorTool(cfg, params);
+        return this.buildNotificacionAsesorTool(cfg, params, notificationSentThisTurn);
       case 'ejecutar_flujos':
-        return this.buildEjecutarFlujosTool(cfg, params);
+        return this.buildEjecutarFlujosTool(cfg, params, notificationSentThisTurn);
       case 'listar_workflows':
         return this.buildListarWorkflowsTool(cfg, params);
       case 'consultar_datos_cliente':
@@ -326,18 +331,25 @@ export class AiAgentService {
   private buildNotificacionAsesorTool(cfg: any, params: {
     userId: string; server_url: string; apikey: string;
     instanceName: string; remoteJid: string;
-  }): any {
+  }, notificationSentThisTurn?: { value: boolean }): any {
     const { userId, server_url, apikey, instanceName, remoteJid } = params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
     // @ts-ignore - evitar problemas de tipos profundos con LangChain + zod
     return tool(
       async ({ nombre, detalles }: { nombre: string; detalles: string }) => {
+        if (notificationSentThisTurn?.value) {
+          logger.warn(
+            `[NOTIF_DEDUPE] Tool "${cfg.toolKey}" omitida: ya se envió una notificación en este turno del agente.`,
+          );
+          return `Notificación ya enviada en este turno. Sin duplicado para "${nombre}".`;
+        }
         logger.log(`Tool "${cfg.toolKey}" (notificacion_asesor) llamada para: ${nombre}`);
         const res = await this.notificacionTool.handleNotificacionTool(
           { nombre, detalles } as any,
           userId, server_url, apikey, instanceName, remoteJid,
         );
+        if (notificationSentThisTurn) notificationSentThisTurn.value = true;
         return res === 'ok'
           ? `Notificación enviada al asesor para el cliente "${nombre}". Detalle: ${detalles}`
           : `No se pudo notificar al asesor. Detalle original del cliente: ${detalles}`;
@@ -356,7 +368,7 @@ export class AiAgentService {
   private buildEjecutarFlujosTool(cfg: any, params: {
     userId: string; sessionId: string; server_url: string;
     apikey: string; instanceName: string; remoteJid: string;
-  }): any {
+  }, notificationSentThisTurn?: { value: boolean }): any {
     const { userId, sessionId, server_url, apikey, instanceName, remoteJid } = params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
@@ -368,6 +380,9 @@ export class AiAgentService {
           { nombre_flujo: [nombre_flujo], descripcion: detalles } as any,
           userId, sessionId, server_url, apikey, instanceName, remoteJid,
         );
+        // El workflow puede incluir un nodo-notify. Marcar como notificado para
+        // impedir que Notificacion_Asesor se dispare en el mismo turno del agente.
+        if (notificationSentThisTurn) notificationSentThisTurn.value = true;
         return follow || `ℹ️ Flujo "${nombre_flujo}" ejecutado.`;
       },
       {
@@ -520,7 +535,8 @@ export class AiAgentService {
       },
     ];
 
-    return HARDCODED_BUILTIN_CONFIGS.map((cfg) => this.buildToolFromConfig(cfg, params)).filter(Boolean);
+    const notificationSentThisTurn = { value: false };
+    return HARDCODED_BUILTIN_CONFIGS.map((cfg) => this.buildToolFromConfig(cfg, params, notificationSentThisTurn)).filter(Boolean);
   }
 
   /**

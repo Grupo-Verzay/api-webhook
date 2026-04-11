@@ -130,26 +130,21 @@ export async function executeWorkflow(params: {
     userId,
   );
 
-  // 2) Si está muteado, no generamos ni enviamos mensaje IA
-  if (muteAgentResponses) {
+  // 2) Si está muteado o no hay prompt personalizado → salir sin llamar a la IA.
+  // Cuando no se provee postPromptBuilder, el prompt por defecto dice "No respondas nada",
+  // pero el ReAct agent tiene acceso a herramientas (incluida Notificacion_Asesor) y
+  // podría dispararlas aunque el texto final sea vacío, causando notificaciones duplicadas.
+  if (muteAgentResponses || !postPromptBuilder) {
     logger?.log?.(
-      `Agente muteado: workflow ejecutado (${workflowName}) sin mensaje post.`,
+      `Workflow ejecutado (${workflowName}) sin paso post-IA (muteado=${muteAgentResponses}, sinPromptPersonalizado=${!postPromptBuilder}).`,
       context,
     );
     return;
   }
 
-  // 3) Prompt post-workflow (por defecto)
-  const defaultPrompt = `Acabas de ejecutar el flujo "${workflowName}". No respondas nada. No menciones "workflow", no repitas el contenido del flujo, no ejecutes acciones ni herramientas.`;
-  //   const defaultPrompt = `Acabas de ejecutar el flujo "${workflowName}".
-  // Genera SOLO un mensaje corto (1–2 líneas) confirmando que ya se envió la información y preguntando qué más necesita.
-  // No menciones "workflow", no repitas el contenido del flujo, no ejecutes acciones ni herramientas.`;
+  const postFlowPrompt = postPromptBuilder(workflowName);
 
-  const postFlowPrompt = postPromptBuilder
-    ? postPromptBuilder(workflowName)
-    : defaultPrompt;
-
-  // 4) Generar mensaje con IA
+  // 3) Generar mensaje con IA
   let aiText = '';
   try {
     aiText = await aiAgentService.processInput({

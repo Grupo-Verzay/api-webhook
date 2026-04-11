@@ -44,6 +44,15 @@ export class AntifloodService implements OnModuleInit, OnModuleDestroy {
   private readonly internalRepetitionThreshold = 0.6;
   private readonly internalRepetitionMinWords = 5;
 
+  // 🔧 Tolerancia a ráfagas humanas
+  // Los LLMs tardan >3s en responder; una ráfaga humana tiene deltas <3s.
+  // Si la mediana de deltas entre mensajes es menor a este valor, se trata
+  // como escritura humana natural y se omiten los checks de flood.
+  private readonly humanBurstMinDeltaMs = 3_000;
+  // Ventana de tiempo para agrupar mensajes en una misma "ráfaga":
+  // mensajes con menos de 3s de separación se colapsan a un solo evento.
+  private readonly humanBurstWindowMs = 3_000;
+
   // 🔧 Lista blanca: estos números de teléfono omiten todos los checks de antiflood
   private readonly WHITELIST_PHONES = new Set<string>([
     '573233246305',
@@ -222,6 +231,17 @@ export class AntifloodService implements OnModuleInit, OnModuleDestroy {
     }
 
     const ref = this.median(deltas);
+
+    // Si la mediana de deltas es menor al mínimo de un bot, es una ráfaga humana.
+    // Los LLMs tardan >3s en responder; el humano escribe varios mensajes cortos en <3s.
+    if (ref < this.humanBurstMinDeltaMs) {
+      this.logger.debug(
+        `[SYNC_CHECK] Ráfaga humana detectada (mediana=${Math.round(ref)}ms < ${this.humanBurstMinDeltaMs}ms) → skip`,
+        'AntifloodService',
+      );
+      return false;
+    }
+
     const similares = deltas.filter(
       (d) => Math.abs(d - ref) <= this.toleranceMs,
     );
@@ -269,10 +289,13 @@ export class AntifloodService implements OnModuleInit, OnModuleDestroy {
     }
 
     const now = Date.now();
-    const recent = entry.timestamps.filter((t) => now - t <= this.windowMs);
+    // Colapsar ráfagas humanas: mensajes con <humanBurstWindowMs de separación
+    // cuentan como un solo evento para evitar falsos positivos de escritura rápida.
+    const recentRaw = entry.timestamps.filter((t) => now - t <= this.windowMs);
+    const recent = this.collapseBursts(recentRaw);
 
     this.logger.debug(
-      `[FREQ_CHECK] Msgs en ventana ${this.windowMs / 1000}s: ${recent.length}/${this.maxMsgInWindow} máx`,
+      `[FREQ_CHECK] Msgs en ventana ${this.windowMs / 1000}s: ${recentRaw.length} brutos → ${recent.length} eventos / ${this.maxMsgInWindow} máx`,
       'AntifloodService',
     );
 
@@ -309,12 +332,13 @@ export class AntifloodService implements OnModuleInit, OnModuleDestroy {
     }
 
     const now = Date.now();
-    const recent = entry.timestamps.filter(
+    const recentRaw = entry.timestamps.filter(
       (t) => now - t <= this.mediumWindowMs,
     );
+    const recent = this.collapseBursts(recentRaw);
 
     this.logger.debug(
-      `[MEDIUM_CHECK] Msgs en ventana ${this.mediumWindowMs / 1000}s: ${recent.length}/${this.maxMsgInMediumWindow} máx`,
+      `[MEDIUM_CHECK] Msgs en ventana ${this.mediumWindowMs / 1000}s: ${recentRaw.length} brutos → ${recent.length} eventos / ${this.maxMsgInMediumWindow} máx`,
       'AntifloodService',
     );
 
@@ -493,6 +517,22 @@ export class AntifloodService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ─── Internos ─────────────────────────────────────────────────────────────
+
+  /**
+   * Colapsa una lista de timestamps ordenados agrupando los que llegan dentro
+   * de humanBurstWindowMs entre sí. Devuelve un timestamp representativo por
+   * cada "ráfaga", de modo que 4 mensajes enviados en 2s cuentan como 1 evento.
+   */
+  private collapseBursts(timestamps: number[]): number[] {
+    if (timestamps.length === 0) return [];
+    const collapsed: number[] = [timestamps[0]];
+    for (let i = 1; i < timestamps.length; i++) {
+      if (timestamps[i] - timestamps[i - 1] > this.humanBurstWindowMs) {
+        collapsed.push(timestamps[i]);
+      }
+    }
+    return collapsed;
+  }
 
   private isInCooldown(entry: MessageTracker): boolean {
     return !!entry.blockedUntil && Date.now() < entry.blockedUntil;

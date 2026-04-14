@@ -290,6 +290,15 @@ export class FollowUpRunnerService {
     }
   }
 
+  private async shouldAbortFollowUp(seguimientoId: number) {
+    const current = await this.prisma.seguimiento.findUnique({
+      where: { id: seguimientoId },
+      select: { followUpStatus: true },
+    });
+
+    return !current || current.followUpStatus !== 'processing';
+  }
+
   async cancelPendingFollowUpsOnReply(args: {
     userId: string;
     remoteJid: string;
@@ -297,17 +306,17 @@ export class FollowUpRunnerService {
   }) {
     const { userId, remoteJid, instanceName } = args;
     const candidates = this.buildRemoteJidCandidates(remoteJid);
-    const pending = await this.prisma.seguimiento.findMany({
+    const cancellable = await this.prisma.seguimiento.findMany({
       where: {
         remoteJid: { in: candidates },
         instancia: instanceName,
-        followUpStatus: 'pending',
+        followUpStatus: { in: ['pending', 'processing'] },
         followUpCancelOnReply: true,
       },
       select: { id: true, idNodo: true, tipo: true },
     });
 
-    const legacyPending = pending.filter((item) =>
+    const legacyPending = cancellable.filter((item) =>
       this.isLegacyWorkflowFollowUp(
         item as Pick<Seguimiento, 'idNodo' | 'tipo'>,
       ),
@@ -461,6 +470,12 @@ export class FollowUpRunnerService {
           seguimiento,
           session,
         );
+
+        if (await this.shouldAbortFollowUp(seguimiento.id)) {
+          summary.skipped++;
+          continue;
+        }
+
         await this.sendSeguimiento(
           seguimiento,
           finalMessage,

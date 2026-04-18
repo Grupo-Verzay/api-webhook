@@ -17,7 +17,6 @@ import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { SessionService } from '../session/session.service';
 import { ExternalClientDataService } from '../external-client-data/external-client-data.service';
-import { DEFAULT_EXTERNAL_TOOL_CONFIGS } from '../external-client-data/default-tool-configs';
 
 // Refactor
 import { LlmClientFactory } from './services/llmClientFactory/llmClientFactory.service';
@@ -513,15 +512,14 @@ export class AiAgentService {
     instanceName: string;
     remoteJid: string;
   }): any[] {
-    const HARDCODED_BUILTIN_CONFIGS = DEFAULT_EXTERNAL_TOOL_CONFIGS as any[];
-    /*
+    const HARDCODED_BUILTIN_CONFIGS = [
       {
         toolKey: 'Notificacion_Asesor', toolType: 'notificacion_asesor',
         toolDescription: 'Utiliza esta *tool* solo cuando un usuario necesite la ayuda directa de un asesor humano o exista un registro ya guardado de (solicitud, pedido, reclamo, cita, reserva o el usuario envía una *imagen de comprobante de pago* que requiere validación).',
       },
       {
         toolKey: 'Ejecutar_Flujos', toolType: 'ejecutar_flujos',
-        toolDescription: 'Siempre consulta y ejecuta si existen flujos disponibles en la base de datos que correspondan a la solicitud del usuario. Si se encuentra un flujo, se ejecuta. Si no hay flujos, la IA continúa la conversación normalmente.',
+        toolDescription: 'Siempre consulta esta *tool* y ejecutala si existen flujos disponibles en la base de conocimiento que correspondan a la solicitud del usuario o declarado por algún paso. Si se encuentra un flujo, se ejecuta. Si no hay flujos, la IA continúa la conversación normalmente.',
       },
       {
         toolKey: 'listar_workflows', toolType: 'listar_workflows',
@@ -537,11 +535,8 @@ export class AiAgentService {
       },
     ];
 
-    */
     const notificationSentThisTurn = { value: false };
-    return HARDCODED_BUILTIN_CONFIGS.map((cfg) =>
-      this.buildToolFromConfig(cfg, params, notificationSentThisTurn),
-    ).filter(Boolean);
+    return HARDCODED_BUILTIN_CONFIGS.map((cfg) => this.buildToolFromConfig(cfg, params, notificationSentThisTurn)).filter(Boolean);
   }
 
   /**

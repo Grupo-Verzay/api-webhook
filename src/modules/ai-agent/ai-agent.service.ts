@@ -504,9 +504,10 @@ export class AiAgentService {
   }
 
   private buildBuscarProductoTool(cfg: any, params: {
-    userId: string; instanceName: string; remoteJid: string;
+    userId: string; server_url: string; apikey: string;
+    instanceName: string; remoteJid: string;
   }): any {
-    const { userId, instanceName, remoteJid } = params;
+    const { userId, server_url, apikey, instanceName, remoteJid } = params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
     // @ts-ignore
@@ -526,6 +527,26 @@ export class AiAgentService {
 
         if (products.length === 0) {
           return 'No se encontraron productos con los criterios indicados.';
+        }
+
+        // Enviar imágenes de los productos encontrados (máximo 5 para no saturar el chat)
+        const sendMediaUrl = `${server_url.replace(/\/+$/, '')}/message/sendMedia/${encodeURIComponent(instanceName)}`;
+        const productsWithImages = products.filter(
+          (p) => Array.isArray(p.images) && (p.images as string[]).length > 0 && (p.images as string[])[0]?.trim(),
+        );
+
+        logger.log(`[buscar_producto] ${products.length} producto(s) encontrado(s), ${productsWithImages.length} con imagen. sendMediaUrl=${sendMediaUrl}`);
+
+        for (const product of productsWithImages.slice(0, 5)) {
+          const imageUrl = (product.images as string[])[0];
+          logger.log(`[buscar_producto] Enviando imagen de "${product.title}": ${imageUrl}`);
+          const sent = await this.nodeSenderService.sendMediaNode(
+            sendMediaUrl, apikey, remoteJid,
+            'image',
+            `${product.title} — $${Number(product.price).toLocaleString('es-CO')}`,
+            imageUrl,
+          );
+          logger.log(`[buscar_producto] Resultado envío imagen "${product.title}": ${sent ? 'OK' : 'FALLÓ'}`);
         }
 
         const formatted = products
@@ -551,9 +572,10 @@ export class AiAgentService {
   }
 
   private buildListarProductosTool(cfg: any, params: {
-    userId: string; instanceName: string; remoteJid: string;
+    userId: string; server_url: string; apikey: string;
+    instanceName: string; remoteJid: string;
   }): any {
-    const { userId, instanceName, remoteJid } = params;
+    const { userId, server_url, apikey, instanceName, remoteJid } = params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
     // @ts-ignore
@@ -568,6 +590,26 @@ export class AiAgentService {
 
         if (products.length === 0) {
           return 'No hay productos disponibles en este momento.';
+        }
+
+        // Enviar imágenes de los productos (máximo 5 para no saturar el chat)
+        const sendMediaUrl = `${server_url.replace(/\/+$/, '')}/message/sendMedia/${encodeURIComponent(instanceName)}`;
+        const productsWithImages = products.filter(
+          (p) => Array.isArray(p.images) && (p.images as string[]).length > 0 && (p.images as string[])[0]?.trim(),
+        );
+
+        logger.log(`[listar_productos] ${products.length} producto(s), ${productsWithImages.length} con imagen. sendMediaUrl=${sendMediaUrl}`);
+
+        for (const product of productsWithImages.slice(0, 5)) {
+          const imageUrl = (product.images as string[])[0];
+          logger.log(`[listar_productos] Enviando imagen de "${product.title}": ${imageUrl}`);
+          const sent = await this.nodeSenderService.sendMediaNode(
+            sendMediaUrl, apikey, remoteJid,
+            'image',
+            `${product.title} — $${Number(product.price).toLocaleString('es-CO')}`,
+            imageUrl,
+          );
+          logger.log(`[listar_productos] Resultado envío imagen "${product.title}": ${sent ? 'OK' : 'FALLÓ'}`);
         }
 
         const formatted = products

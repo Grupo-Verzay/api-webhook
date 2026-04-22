@@ -9,6 +9,7 @@ import { buildChatHistorySessionId } from 'src/modules/chat-history/chat-history
 import { isLegacyWorkflowSeguimiento } from 'src/modules/seguimientos/legacy-workflow-follow-up.helper';
 import { SessionService } from 'src/modules/session/session.service';
 import { NodeSenderService } from 'src/modules/workflow/services/node-sender.service.ts/node-sender.service';
+import { WorkflowService } from 'src/modules/workflow/services/workflow.service.ts/workflow.service';
 import { buildWhatsAppJidCandidates } from 'src/utils/whatsapp-jid.util';
 
 @Injectable()
@@ -20,6 +21,7 @@ export class FollowUpRunnerService {
     private readonly chatHistoryService: ChatHistoryService,
     private readonly sessionService: SessionService,
     private readonly nodeSenderService: NodeSenderService,
+    private readonly workflowService: WorkflowService,
   ) {}
 
   private clean(value?: string | null) {
@@ -301,6 +303,67 @@ export class FollowUpRunnerService {
     }
   }
 
+  /**
+   * Si el seguimiento proviene de un recordatorio con workflow asignado,
+   * lo ejecuta después de enviar el mensaje de texto.
+   */
+  private async tryExecuteReminderWorkflow(
+    seguimiento: Seguimiento,
+    session: { userId: string; remoteJid: string; instanceId: string },
+  ) {
+    const idNodo = (seguimiento.idNodo ?? '').trim();
+    if (!idNodo.startsWith('reminder-')) return;
+
+    const reminderId = idNodo.replace('reminder-', '').trim();
+    if (!reminderId) return;
+
+    const reminder = await this.prisma.reminders.findUnique({
+      where: { id: reminderId },
+      select: { workflowId: true },
+    });
+
+    if (!reminder?.workflowId) return;
+
+    const workflow = await this.prisma.workflow.findUnique({
+      where: { id: reminder.workflowId },
+      select: { name: true },
+    });
+
+    if (!workflow?.name) {
+      this.logger.warn(
+        `[REMINDER_WORKFLOW] Workflow id=${reminder.workflowId} no encontrado para reminder id=${reminderId}`,
+        'FollowUpRunnerService',
+      );
+      return;
+    }
+
+    const serverUrl = (seguimiento.serverurl ?? '').trim();
+    const instanceName = (seguimiento.instancia ?? '').trim();
+    const apikey = (seguimiento.apikey ?? '').trim();
+
+    this.logger.log(
+      `[REMINDER_WORKFLOW] Ejecutando workflow "${workflow.name}" desde reminder id=${reminderId}`,
+      'FollowUpRunnerService',
+    );
+
+    try {
+      await this.workflowService.executeWorkflow(
+        workflow.name,
+        serverUrl,
+        apikey,
+        instanceName,
+        session.remoteJid,
+        session.userId,
+      );
+    } catch (err: any) {
+      this.logger.error(
+        `[REMINDER_WORKFLOW] Error ejecutando workflow "${workflow.name}": ${err?.message ?? err}`,
+        err,
+        'FollowUpRunnerService',
+      );
+    }
+  }
+
   private async shouldAbortFollowUp(seguimientoId: number) {
     const current = await this.prisma.seguimiento.findUnique({
       where: { id: seguimientoId },
@@ -502,6 +565,13 @@ export class FollowUpRunnerService {
           finalMessage,
           session.remoteJid,
         );
+
+        // Si el recordatorio tiene un workflow asignado, ejecutarlo
+        await this.tryExecuteReminderWorkflow(seguimiento, {
+          userId: session.userId,
+          remoteJid: session.remoteJid,
+          instanceId: session.instanceId,
+        });
 
         if (finalMessage.trim()) {
           const sessionHistoryId = buildChatHistorySessionId(

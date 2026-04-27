@@ -669,6 +669,7 @@ export class WebhookService implements OnModuleInit {
             apikey,
             instanceName,
             remoteJid: canonicalRemoteJid,
+            pushName,
           };
 
           const aiResponse =

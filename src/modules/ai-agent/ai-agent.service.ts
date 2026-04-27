@@ -241,6 +241,7 @@ export class AiAgentService {
     apikey: string;
     instanceName: string;
     remoteJid: string;
+    pushName: string;
     toolConfigs?: any[];
   }): Promise<any[]> {
     const {
@@ -305,6 +306,7 @@ export class AiAgentService {
     apikey: string;
     instanceName: string;
     remoteJid: string;
+    pushName: string;
   }, notificationSentThisTurn?: { value: boolean }): any | null {
     switch (cfg.toolType) {
       case 'notificacion_asesor':
@@ -325,6 +327,12 @@ export class AiAgentService {
         return this.buildBuscarProductoTool(cfg, params);
       case 'listar_productos':
         return this.buildListarProductosTool(cfg, params);
+      case 'listar_servicios_agenda':
+        return this.buildListarServiciosAgendaTool(cfg, params);
+      case 'consultar_slots_disponibles':
+        return this.buildConsultarSlotsDisponiblesTool(cfg, params);
+      case 'crear_cita':
+        return this.buildCrearCitaTool(cfg, params);
       default:
         return null;
     }
@@ -629,6 +637,184 @@ export class AiAgentService {
     );
   }
 
+  // ─── Agenda / citas ──────────────────────────────────────────────────────
+
+  private buildListarServiciosAgendaTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    const nextjsUrl = (process.env.NEXTJS_URL ?? '').replace(/\/+$/, '');
+    const runnerKey = process.env.CRM_FOLLOW_UP_RUNNER_KEY ?? '';
+
+    // @ts-ignore
+    return tool(
+      async () => {
+        logger.log(`Tool "${cfg.toolKey}" (listar_servicios_agenda) llamada.`);
+        try {
+          const res = await axios.get(
+            `${nextjsUrl}/api/schedule/services?userId=${encodeURIComponent(userId)}`,
+            { headers: { Authorization: `Bearer ${runnerKey}` } },
+          );
+          const { services = [], total = 0 } = res.data ?? {};
+          if (!Array.isArray(services) || services.length === 0) {
+            return 'No hay servicios configurados para agendar en este momento.';
+          }
+          const list = services
+            .map((s: any, i: number) =>
+              `${i + 1}. ${s.name}${s.description ? ` — ${s.description}` : ''}  (id: ${s.id})`,
+            )
+            .join('\n');
+          return `Servicios disponibles (${total}):\n${list}`;
+        } catch (err: any) {
+          logger.error(`[listar_servicios_agenda] Error: ${err?.message}`);
+          return 'No fue posible obtener los servicios en este momento. Inténtalo más tarde.';
+        }
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({}),
+      },
+    );
+  }
+
+  private buildConsultarSlotsDisponiblesTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    const nextjsUrl = (process.env.NEXTJS_URL ?? '').replace(/\/+$/, '');
+    const runnerKey = process.env.CRM_FOLLOW_UP_RUNNER_KEY ?? '';
+
+    // @ts-ignore
+    return tool(
+      async ({ date }: { date: string }) => {
+        logger.log(`Tool "${cfg.toolKey}" (consultar_slots_disponibles) date="${date}"`);
+        try {
+          const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { timezone: true },
+          });
+          const timezone = user?.timezone || 'UTC';
+
+          const url =
+            `${nextjsUrl}/api/schedule/slots?userId=${encodeURIComponent(userId)}` +
+            `&date=${encodeURIComponent(date)}&timezone=${encodeURIComponent(timezone)}`;
+
+          const res = await axios.get(url, {
+            headers: { Authorization: `Bearer ${runnerKey}` },
+          });
+
+          const { slots = [], total = 0 } = res.data ?? {};
+          if (!Array.isArray(slots) || slots.length === 0) {
+            return `No hay horarios disponibles para el ${date}.`;
+          }
+
+          const localSlots = slots.map((s: any) => {
+            const start = new Date(s.startTime).toLocaleTimeString('es-CO', {
+              timeZone: timezone,
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: true,
+            });
+            const end = new Date(s.endTime).toLocaleTimeString('es-CO', {
+              timeZone: timezone,
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: true,
+            });
+            return `• ${start} – ${end}  (startTime: ${s.startTime} | endTime: ${s.endTime})`;
+          });
+
+          return `Horarios disponibles para el ${date} (${total}):\n${localSlots.join('\n')}`;
+        } catch (err: any) {
+          logger.error(`[consultar_slots_disponibles] Error: ${err?.message}`);
+          return 'No fue posible consultar los horarios disponibles. Inténtalo más tarde.';
+        }
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({
+          date: z.string().describe('Fecha a consultar en formato YYYY-MM-DD. Ejemplo: "2025-05-20"'),
+        }),
+      },
+    );
+  }
+
+  private buildCrearCitaTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string; pushName: string;
+  }): any {
+    const { userId, instanceName, remoteJid, pushName } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    const nextjsUrl = (process.env.NEXTJS_URL ?? '').replace(/\/+$/, '');
+    const runnerKey = process.env.CRM_FOLLOW_UP_RUNNER_KEY ?? '';
+
+    // @ts-ignore
+    return tool(
+      async ({ serviceId, startTime, endTime }: { serviceId: string; startTime: string; endTime: string }) => {
+        logger.log(`Tool "${cfg.toolKey}" (crear_cita) serviceId="${serviceId}" startTime="${startTime}"`);
+        try {
+          const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { timezone: true },
+          });
+          const timezone = user?.timezone || 'UTC';
+
+          const res = await axios.post(
+            `${nextjsUrl}/api/schedule/appointment`,
+            {
+              userId,
+              serviceId,
+              pushName,
+              phone: remoteJid,
+              instanceName,
+              startTime,
+              endTime,
+              timezone,
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${runnerKey}`,
+                'Content-Type': 'application/json',
+              },
+            },
+          );
+
+          const { message, appointment } = res.data ?? {};
+          const confirmDate = appointment?.startTime
+            ? new Date(appointment.startTime).toLocaleString('es-CO', {
+                timeZone: timezone,
+                dateStyle: 'full',
+                timeStyle: 'short',
+              })
+            : startTime;
+
+          return message
+            ? `${message} — ${confirmDate}`
+            : `Cita agendada exitosamente para el ${confirmDate}.`;
+        } catch (err: any) {
+          const errMsg = err?.response?.data?.message ?? err?.message ?? 'error desconocido';
+          logger.error(`[crear_cita] Error: ${errMsg}`);
+          return `No fue posible agendar la cita: ${errMsg}`;
+        }
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({
+          serviceId: z.string().describe('ID del servicio seleccionado por el cliente (obtenido de listar_servicios_agenda)'),
+          startTime: z.string().describe('Hora de inicio de la cita en formato ISO UTC. Ejemplo: "2025-05-20T14:00:00.000Z"'),
+          endTime: z.string().describe('Hora de fin de la cita en formato ISO UTC. Ejemplo: "2025-05-20T15:00:00.000Z"'),
+        }),
+      },
+    );
+  }
+
   /**
    * Safety net: devuelve las 5 tools hardcodeadas originales.
    * Solo se usa cuando un usuario no tiene NINGUNA ExternalDataToolConfig en DB.
@@ -641,6 +827,7 @@ export class AiAgentService {
     apikey: string;
     instanceName: string;
     remoteJid: string;
+    pushName: string;
   }): any[] {
     const HARDCODED_BUILTIN_CONFIGS = [
       {
@@ -827,6 +1014,7 @@ export class AiAgentService {
     apikey,
     instanceName,
     remoteJid,
+    pushName = '',
   }: proccessInput): Promise<string> {
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
@@ -908,6 +1096,7 @@ export class AiAgentService {
         apikey,
         instanceName,
         remoteJid,
+        pushName: pushName ?? '',
         toolConfigs,
       });
 

@@ -39,6 +39,7 @@ export interface proccessInput {
   apikey: string;
   instanceName: string;
   remoteJid: string;
+  pushName?: string;
   defaultModel: string;
   defaultProvider: string;
 }

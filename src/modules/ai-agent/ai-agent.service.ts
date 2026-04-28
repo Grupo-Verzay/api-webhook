@@ -472,7 +472,7 @@ export class AiAgentService {
           return `No se encontró ningún registro con ${normalizedCampo}: ${valor} en el sistema.\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: No encontraste este dato en la base de datos. Informa al usuario que no tienes esa información disponible. PROHIBIDO inventar, estimar o completar con conocimiento propio.`;
         }
         const formattedData = this.externalClientDataService.formatForAgent(data);
-        return `${formattedData}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: Estos son los ÚNICOS datos válidos del sistema. Preséntaselos al usuario EXACTAMENTE como aparecen arriba. PROHIBIDO modificar valores, agregar modelos, precios u otro dato que no esté en la respuesta anterior.`;
+        return `${formattedData}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: Estos son los ÚNICOS datos válidos. Úsalos para responder al usuario con el formato que indique el sistema, pero los valores (precios, modelos, marcas, etc.) deben ser EXACTAMENTE los que aparecen arriba. PROHIBIDO usar valores distintos, inventar, estimar o dejar placeholders sin reemplazar.`;
       },
       {
         name: cfg.toolKey,
@@ -500,7 +500,7 @@ export class AiAgentService {
           return `No se encontró ningún registro con ${cfg.searchField!.toUpperCase()}: ${valor}.\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: No encontraste este dato en la base de datos. Informa al usuario que no tienes esa información disponible. PROHIBIDO inventar, estimar o completar con conocimiento propio.`;
         }
         const formattedData = this.externalClientDataService.formatForAgent(data);
-        return `${formattedData}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: Estos son los ÚNICOS datos válidos del sistema. Preséntaselos al usuario EXACTAMENTE como aparecen arriba. PROHIBIDO modificar valores, agregar modelos, precios u otro dato que no esté en la respuesta anterior.`;
+        return `${formattedData}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: Estos son los ÚNICOS datos válidos. Úsalos para responder al usuario con el formato que indique el sistema, pero los valores (precios, modelos, marcas, etc.) deben ser EXACTAMENTE los que aparecen arriba. PROHIBIDO usar valores distintos, inventar, estimar o dejar placeholders sin reemplazar.`;
       },
       {
         name: cfg.toolKey,

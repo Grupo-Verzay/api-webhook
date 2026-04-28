@@ -465,19 +465,21 @@ export class AiAgentService {
     // @ts-ignore
     return tool(
       async ({ campo, valor }: { campo: string; valor: string }) => {
-        logger.log(`Tool "${cfg.toolKey}" (buscar_cliente_por_dato): campo="${campo}" valor="${valor}"`);
-        const data = await this.externalClientDataService.getByDataField(userId, campo, valor);
+        const normalizedCampo = campo.trim().toUpperCase();
+        logger.log(`Tool "${cfg.toolKey}" (buscar_cliente_por_dato): campo="${normalizedCampo}" valor="${valor}"`);
+        const data = await this.externalClientDataService.getByDataField(userId, normalizedCampo, valor);
         if (!data || Object.keys(data).length === 0) {
-          return `No se encontró ningún cliente con ${campo.toUpperCase()}: ${valor} en el sistema.`;
+          return `No se encontró ningún registro con ${normalizedCampo}: ${valor} en el sistema.\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: No encontraste este dato en la base de datos. Informa al usuario que no tienes esa información disponible. PROHIBIDO inventar, estimar o completar con conocimiento propio.`;
         }
-        return this.externalClientDataService.formatForAgent(data);
+        const formattedData = this.externalClientDataService.formatForAgent(data);
+        return `${formattedData}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: Estos son los ÚNICOS datos válidos del sistema. Preséntaselos al usuario EXACTAMENTE como aparecen arriba. PROHIBIDO modificar valores, agregar modelos, precios u otro dato que no esté en la respuesta anterior.`;
       },
       {
         name: cfg.toolKey,
         description: cfg.toolDescription,
         schema: z.object({
-          campo: z.string().describe('Nombre del campo por el que buscar. Ejemplos: "CEDULA-RIF", "CORREO", "NOMBRE".'),
-          valor: z.string().describe('Valor a buscar. Ejemplos: "V27548446", "juan@email.com".'),
+          campo: z.string().describe('Nombre exacto del campo (columna) por el que buscar, en mayúsculas. Ejemplos: "CEDULA-RIF", "CORREO", "NOMBRE", "MEDIDA", "SKU", "REFERENCIA".'),
+          valor: z.string().describe('Valor exacto a buscar en ese campo. Ejemplos: "V27548446", "juan@email.com", "185/65R14".'),
         }),
       },
     );
@@ -495,9 +497,10 @@ export class AiAgentService {
         logger.log(`Tool dinámica "${cfg.toolKey}" (search_by_field): campo="${cfg.searchField}" valor="${valor}"`);
         const data = await this.externalClientDataService.getByDataField(userId, cfg.searchField!, valor);
         if (!data || Object.keys(data).length === 0) {
-          return `No se encontró ningún registro con ${cfg.searchField!.toUpperCase()}: ${valor}.`;
+          return `No se encontró ningún registro con ${cfg.searchField!.toUpperCase()}: ${valor}.\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: No encontraste este dato en la base de datos. Informa al usuario que no tienes esa información disponible. PROHIBIDO inventar, estimar o completar con conocimiento propio.`;
         }
-        return this.externalClientDataService.formatForAgent(data);
+        const formattedData = this.externalClientDataService.formatForAgent(data);
+        return `${formattedData}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: Estos son los ÚNICOS datos válidos del sistema. Preséntaselos al usuario EXACTAMENTE como aparecen arriba. PROHIBIDO modificar valores, agregar modelos, precios u otro dato que no esté en la respuesta anterior.`;
       },
       {
         name: cfg.toolKey,
@@ -1089,7 +1092,16 @@ export class AiAgentService {
         ? `\n\n---\n## REGLA CRÍTICA DE AGENDAMIENTO\n**Fecha actual: ${nowLabel}** (zona horaria: ${agentTz}). Usa esta fecha como referencia cuando el usuario mencione "hoy", "mañana", "el lunes", "el 29", etc.\n\nNunca confirmes una cita al usuario sin antes haber llamado exitosamente a la herramienta \`crear_cita\` y recibido una respuesta exitosa.\n\nFlujo obligatorio:\n1. Llama \`consultar_slots_disponibles\` para obtener los horarios disponibles.\n2. Presenta los slots al usuario en hora local.\n3. Cuando el usuario elija un slot, llama \`crear_cita\` con el startTime y endTime EXACTOS devueltos por \`consultar_slots_disponibles\` (valores ISO UTC). NO los reformatees ni construyas fechas propias.\n4. Solo si \`crear_cita\` responde con éxito, confirma la cita al usuario con el mensaje de confirmación. NO agregues frases como "Recibirás un recordatorio por este medio" ni "¿Puedo ayudarte con algo más?" después de confirmar la cita.\n5. Si \`crear_cita\` falla, informa al usuario que hubo un error y ofrece otro horario.\n---`
         : '';
 
-      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}`.trim();
+      const hasDataQueryTools = toolConfigs.some(
+        (c: any) =>
+          ['buscar_cliente_por_dato', 'search_by_field'].includes(c.toolType) &&
+          c.isEnabled,
+      );
+      const dataQueryRuleBlock = hasDataQueryTools
+        ? `\n\n---\n## REGLA CRÍTICA: CONSULTA DE DATOS\nCuando el usuario pregunte por información específica del negocio (precios, modelos, medidas, disponibilidad, datos de clientes, etc.), SIEMPRE usa la herramienta de búsqueda correspondiente ANTES de responder. NUNCA uses tu conocimiento propio o de entrenamiento para dar información de productos, precios, existencias u otros datos del catálogo. Si la herramienta no devuelve resultados, informa al usuario que no tienes esa información — NO inventes respuestas.\n---`
+        : '';
+
+      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${dataQueryRuleBlock}`.trim();
 
       // logger.log('PROMPT:', promptAI);
 

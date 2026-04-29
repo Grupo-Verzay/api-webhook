@@ -855,6 +855,7 @@ export class AiAgentService {
         const sessionIdNum = parseInt(sessionId, 10);
         if (isNaN(sessionIdNum)) return 'Error: sessionId inválido.';
 
+        // 1. Marcar sesión como DESCARTADO y deshabilitar agente
         await this.prisma.session.update({
           where: { id: sessionIdNum },
           data: {
@@ -865,13 +866,28 @@ export class AiAgentService {
           },
         });
 
-        const cancelled = await this.prisma.crmFollowUp.updateMany({
+        // 2. Cancelar follow-ups IA (CrmFollowUp)
+        const cancelledCrm = await this.prisma.crmFollowUp.updateMany({
           where: { sessionId: sessionIdNum, status: 'PENDING' as any },
           data: { status: 'CANCELLED' as any, cancelledAt: new Date() },
         });
 
-        logger.log(`Lead DESCARTADO. Follow-ups cancelados: ${cancelled.count}`);
-        return `OK: lead marcado como DESCARTADO, ${cancelled.count} seguimiento(s) cancelado(s).`;
+        // 3. Cancelar seguimientos de flujos (Seguimiento) por remoteJid
+        const cancelledSeg = await (this.prisma as any).seguimiento.updateMany({
+          where: { remoteJid, followUpStatus: 'pending' },
+          data: { followUpStatus: 'cancelled' },
+        });
+
+        // 4. Resetear estados de flujos activos (en espera de intención del usuario)
+        await this.prisma.sessionWorkflowState.updateMany({
+          where: { sessionId: sessionIdNum, intentionStatus: 'waiting' },
+          data: { intentionStatus: 'cancelled', currentNodeId: null },
+        });
+
+        logger.log(
+          `Lead DESCARTADO. CrmFollowUp: ${cancelledCrm.count}, Seguimientos flujo: ${cancelledSeg.count ?? 0}`,
+        );
+        return `OK: lead DESCARTADO. CrmFollowUp cancelados: ${cancelledCrm.count}, seguimientos de flujo cancelados: ${cancelledSeg.count ?? 0}.`;
       },
       {
         name: 'Marcar_Descartado',

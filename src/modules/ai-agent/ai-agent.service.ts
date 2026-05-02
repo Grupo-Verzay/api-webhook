@@ -1674,6 +1674,7 @@ export class AiAgentService {
       // 🔹 Detectar errores de autenticación tanto de OpenAI como de Google (Gemini)
       const isAuthError =
         msgStr.includes('Incorrect API key provided') || // OpenAI
+        msgStr.includes('No API key provided') || // OpenAI clave vacía
         msgStr.includes('MODEL_AUTHENTICATION') || // OpenAI
         msgStr.includes('API key not valid') || // GoogleGenerativeAI
         msgStr.includes('API_KEY_INVALID') || // GoogleGenerativeAI ErrorInfo
@@ -1721,8 +1722,7 @@ export class AiAgentService {
 
       // 🔹 Otros errores genéricos del proveedor de IA (timeout, 500, etc.)
       logger.error(
-        'Error procesando entrada con el proveedor de IA.',
-        rawError,
+        `Error procesando entrada con el proveedor de IA. Detalle: ${JSON.stringify(rawError)}`,
       );
 
       // Aquí, por ahora, NO notificamos por WhatsApp para evitar usar variables fuera de scope.

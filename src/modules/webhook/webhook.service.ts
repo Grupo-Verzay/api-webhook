@@ -719,12 +719,20 @@ export class WebhookService implements OnModuleInit {
             const voiceId = (userWithRelations as any).voiceId || 'nova';
             logger.log(`🎙️ Generando nota de voz (voice=${voiceId})`, 'TtsService');
             const audioBase64 = await this.ttsService.generateVoiceBase64(fullText, defaultApiKey, voiceId);
+            let audioSent = false;
             if (audioBase64) {
               const audioUrl = `${server_url}/message/sendWhatsAppAudio/${instanceName}`;
-              await this.nodeSenderService.sendAudioNode(audioUrl, apikey, canonicalRemoteJid, audioBase64);
-              logger.log(`✅ Nota de voz enviada a ${canonicalRemoteJid}`, 'TtsService');
+              const audioData = `data:audio/mp3;base64,${audioBase64}`;
+              audioSent = await this.nodeSenderService.sendAudioNode(audioUrl, apikey, canonicalRemoteJid, audioData);
+              if (audioSent) {
+                logger.log(`✅ Nota de voz enviada a ${canonicalRemoteJid}`, 'TtsService');
+              } else {
+                logger.warn(`sendAudioNode falló, enviando como texto`, 'TtsService');
+              }
             } else {
               logger.warn(`TTS falló, enviando como texto`, 'TtsService');
+            }
+            if (!audioSent) {
               for (const msgBlock of msgBlocks) {
                 await this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, canonicalRemoteJid, msgBlock);
                 await new Promise((res) => setTimeout(res, 300));

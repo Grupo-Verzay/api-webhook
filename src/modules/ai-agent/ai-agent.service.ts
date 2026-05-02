@@ -59,7 +59,7 @@ export class AiAgentService {
     private readonly workflowService: WorkflowService,
   ) {}
 
-  private async getClientForUser(userId: string): Promise<BaseChatModel> {
+  private async getClientForUser(userId: string, temperature?: number): Promise<BaseChatModel> {
     // 1) Usuario (default provider/model)
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -73,10 +73,10 @@ export class AiAgentService {
       throw new Error('Usuario sin defaultProviderId/defaultAiModelId');
     }
 
-    // 2) API Key activa
+    // 2) API Key activa + temperatura
     const cfg = await this.prisma.userAiConfig.findFirst({
       where: { userId, isActive: true, providerId: user.defaultProviderId },
-      select: { apiKey: true },
+      select: { apiKey: true, temperature: true },
     });
 
     if (!cfg?.apiKey) throw new Error('No hay apiKey activa para el usuario');
@@ -97,10 +97,13 @@ export class AiAgentService {
     }
 
     // 4) Crear cliente LangChain (BaseChatModel)
+    // temperature: parámetro explícito tiene prioridad; si no, usa el del usuario; si no, 0
+    const resolvedTemperature = temperature ?? cfg.temperature ?? 0;
     return this.llmClientFactory.getClient({
-      provider: provider.name as any, // ideal: tipar provider como 'openai' | 'google'
+      provider: provider.name as any,
       apiKey: cfg.apiKey,
       model: model.name,
+      temperature: resolvedTemperature,
     });
   }
 
@@ -338,6 +341,16 @@ export class AiAgentService {
         return this.buildConsultarSlotsDisponiblesTool(cfg, params);
       case 'crear_cita':
         return this.buildCrearCitaTool(cfg, params);
+      case 'etiquetar_contacto':
+        return this.buildEtiquetarContactoTool(cfg, params);
+      case 'registrar_nota_seguimiento':
+        return this.buildRegistrarNotaSeguimientoTool(cfg, params);
+      case 'crear_recordatorio':
+        return this.buildCrearRecordatorioTool(cfg, params);
+      case 'buscar_plantilla':
+        return this.buildBuscarPlantillaTool(cfg, params);
+      case 'leer_google_sheets':
+        return this.buildLeerGoogleSheetsTool(cfg, params);
       default:
         return null;
     }
@@ -829,6 +842,285 @@ export class AiAgentService {
           serviceId: z.string().describe('ID del servicio seleccionado por el cliente (obtenido de listar_servicios_agenda)'),
           startTime: z.string().describe('Hora de inicio de la cita en formato ISO UTC. Ejemplo: "2025-05-20T14:00:00.000Z"'),
           endTime: z.string().describe('Hora de fin de la cita en formato ISO UTC. Ejemplo: "2025-05-20T15:00:00.000Z"'),
+        }),
+      },
+    );
+  }
+
+  private buildEtiquetarContactoTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    // @ts-ignore
+    return tool(
+      async ({ nombre_etiqueta }: { nombre_etiqueta: string }) => {
+        logger.log(`Tool "${cfg.toolKey}" (etiquetar_contacto) llamada con: ${nombre_etiqueta}`);
+        try {
+          const session = await this.prisma.session.findFirst({
+            where: { userId, remoteJid },
+            select: { id: true },
+          });
+          if (!session) return 'No se encontró la sesión del contacto.';
+
+          const slug = nombre_etiqueta
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[̀-ͯ]/g, '')
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '');
+
+          let tag = await this.prisma.tag.findFirst({ where: { userId, slug } });
+          if (!tag) {
+            tag = await this.prisma.tag.create({
+              data: { userId, name: nombre_etiqueta.trim(), slug },
+            });
+          }
+
+          await this.prisma.sessionTag.upsert({
+            where: { sessionId_tagId: { sessionId: session.id, tagId: tag.id } },
+            create: { sessionId: session.id, tagId: tag.id },
+            update: {},
+          });
+
+          return `Etiqueta "${tag.name}" aplicada correctamente al contacto.`;
+        } catch (err: any) {
+          logger.error(`[etiquetar_contacto] Error: ${err?.message}`);
+          return 'No se pudo aplicar la etiqueta. Intenta nuevamente.';
+        }
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({
+          nombre_etiqueta: z.string().describe('Nombre de la etiqueta a aplicar al contacto (ej: "interesado", "cliente activo", "soporte pendiente")'),
+        }),
+      },
+    );
+  }
+
+  private buildRegistrarNotaSeguimientoTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    // @ts-ignore
+    return tool(
+      async ({ nota }: { nota: string }) => {
+        logger.log(`Tool "${cfg.toolKey}" (registrar_nota_seguimiento) llamada.`);
+        try {
+          const session = await this.prisma.session.findFirst({
+            where: { userId, remoteJid },
+            select: { id: true, seguimientos: true },
+          });
+          if (!session) return 'No se encontró la sesión del contacto.';
+
+          const timestamp = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
+          const nuevaNota = `[${timestamp}] ${nota}`;
+          const seguimientosActualizados = session.seguimientos
+            ? `${session.seguimientos}\n${nuevaNota}`
+            : nuevaNota;
+
+          await this.prisma.session.update({
+            where: { id: session.id },
+            data: { seguimientos: seguimientosActualizados },
+          });
+
+          return `Nota de seguimiento registrada: "${nota}"`;
+        } catch (err: any) {
+          logger.error(`[registrar_nota_seguimiento] Error: ${err?.message}`);
+          return 'No se pudo registrar la nota. Intenta nuevamente.';
+        }
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({
+          nota: z.string().describe('Texto de la nota o seguimiento a registrar para este contacto'),
+        }),
+      },
+    );
+  }
+
+  private buildCrearRecordatorioTool(cfg: any, params: {
+    userId: string; server_url: string; apikey: string; instanceName: string; remoteJid: string; pushName: string;
+  }): any {
+    const { userId, server_url, apikey, instanceName, remoteJid, pushName } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    // @ts-ignore
+    return tool(
+      async ({ titulo, descripcion, fecha_iso }: { titulo: string; descripcion?: string; fecha_iso: string }) => {
+        logger.log(`Tool "${cfg.toolKey}" (crear_recordatorio) llamada: ${titulo} para ${fecha_iso}`);
+        try {
+          await this.prisma.reminders.create({
+            data: {
+              title: titulo,
+              description: descripcion ?? '',
+              time: fecha_iso,
+              repeatType: 'NONE' as any,
+              userId,
+              remoteJid,
+              instanceName,
+              serverUrl: server_url,
+              apikey,
+              pushName,
+            },
+          });
+          return `Recordatorio "${titulo}" creado para ${fecha_iso}.`;
+        } catch (err: any) {
+          logger.error(`[crear_recordatorio] Error: ${err?.message}`);
+          return 'No se pudo crear el recordatorio. Intenta nuevamente.';
+        }
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({
+          titulo: z.string().describe('Título del recordatorio'),
+          descripcion: z.string().optional().describe('Detalle adicional del recordatorio'),
+          fecha_iso: z.string().describe('Fecha y hora en formato ISO 8601 (ej: 2025-06-15T10:00:00)'),
+        }),
+      },
+    );
+  }
+
+  private buildBuscarPlantillaTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    // @ts-ignore
+    return tool(
+      async ({ busqueda }: { busqueda: string }) => {
+        logger.log(`Tool "${cfg.toolKey}" (buscar_plantilla) llamada con: ${busqueda}`);
+        try {
+          const templates = await this.prisma.promptTemplate.findMany({
+            where: {
+              isActive: true,
+              OR: [
+                { name: { contains: busqueda, mode: 'insensitive' } },
+                { category: { contains: busqueda, mode: 'insensitive' } },
+                { description: { contains: busqueda, mode: 'insensitive' } },
+              ],
+            },
+            take: 5,
+            orderBy: { name: 'asc' },
+          });
+          if (!templates.length) return `No se encontraron plantillas para "${busqueda}".`;
+          return `Plantillas encontradas (${templates.length}):\n\n${templates
+            .map((t, i) =>
+              `${i + 1}. ${t.name}${t.category ? ` [${t.category}]` : ''}\n${t.description ? `   ${t.description}\n` : ''}---\n${t.content}`,
+            )
+            .join('\n\n')}`;
+        } catch (err: any) {
+          logger.error(`[buscar_plantilla] Error: ${err?.message}`);
+          return 'No se pudo buscar plantillas. Intenta nuevamente.';
+        }
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({
+          busqueda: z.string().describe('Término de búsqueda: nombre, categoría o descripción de la plantilla'),
+        }),
+      },
+    );
+  }
+
+  private buildLeerGoogleSheetsTool(cfg: any, params: {
+    userId: string;
+    instanceName: string;
+    remoteJid: string;
+  }): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    // @ts-ignore
+    return tool(
+      async ({ url, columna, valor }: { url: string; columna?: string; valor?: string }) => {
+        logger.log(`Tool "${cfg.toolKey}" (leer_google_sheets) llamada. url="${url}"`);
+        try {
+          const parsed = new URL(url);
+          const pathMatch = parsed.pathname.match(/\/spreadsheets\/d\/([^/]+)/);
+          if (!pathMatch) return 'URL inválida. Usa la URL completa de Google Sheets.';
+
+          const spreadsheetId = pathMatch[1];
+          const gid = parsed.searchParams.get('gid') ?? parsed.hash.replace('#gid=', '').trim() || '0';
+          const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`;
+
+          const response = await axios.get<string>(csvUrl, { responseType: 'text', timeout: 10000 });
+          const csvText = (response.data as string).replace(/^﻿/, '');
+
+          const lines = csvText.split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l.trim());
+          if (lines.length < 2) return 'La hoja no contiene datos o está vacía.';
+
+          const parseRow = (line: string): string[] => {
+            const result: string[] = [];
+            let current = '';
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+              const ch = line[i];
+              if (ch === '"') {
+                if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+                else inQuotes = !inQuotes;
+              } else if (ch === ',' && !inQuotes) {
+                result.push(current.trim());
+                current = '';
+              } else {
+                current += ch;
+              }
+            }
+            result.push(current.trim());
+            return result;
+          };
+
+          const headers = parseRow(lines[0]);
+          const rows = lines.slice(1)
+            .map((line) => {
+              const values = parseRow(line);
+              return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? '']));
+            })
+            .filter((row) => Object.values(row).some((v) => v !== ''));
+
+          let results = rows;
+          if (columna && valor) {
+            results = rows.filter((row) => {
+              const key = Object.keys(row).find((k) => k.toLowerCase() === columna.toLowerCase());
+              return key && row[key].toLowerCase().includes(valor.toLowerCase());
+            });
+          }
+
+          if (!results.length) {
+            return columna
+              ? `No se encontraron filas donde "${columna}" contenga "${valor}".`
+              : 'La hoja no contiene datos.';
+          }
+
+          const preview = results.slice(0, 10);
+          const header = `📊 Google Sheets — ${results.length} fila(s)${results.length > 10 ? ' (mostrando primeras 10)' : ''}:\n\n`;
+          const body = preview
+            .map((row, i) => `${i + 1}. ${Object.entries(row).map(([k, v]) => `*${k}*: ${v}`).join(' | ')}`)
+            .join('\n');
+
+          return header + body;
+        } catch (err: any) {
+          logger.error(`[leer_google_sheets] Error: ${err?.message}`);
+          if (err?.response?.status === 403 || err?.response?.status === 401)
+            return 'Error: La hoja no es pública. Comparte como "Cualquiera con el enlace puede ver".';
+          return `No se pudo leer la hoja. Verifica que sea pública. Error: ${err?.message ?? 'desconocido'}`;
+        }
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({
+          url: z.string().describe('URL completa de la hoja de Google Sheets (debe ser pública)'),
+          columna: z.string().optional().describe('Nombre de columna para filtrar resultados (opcional)'),
+          valor: z.string().optional().describe('Valor a buscar en la columna indicada (opcional)'),
         }),
       },
     );
@@ -1360,6 +1652,17 @@ export class AiAgentService {
         return '';
       }
 
+      // CAPA C: Intent Triggers — disparadores automáticos por intención del usuario
+      await this.checkAndFireIntentTriggers({
+        input,
+        userId,
+        sessionId,
+        server_url,
+        apikey,
+        instanceName,
+        remoteJid,
+      });
+
       return finalText;
     } catch (error: any) {
       const logger = this.scopedLogger({ userId, instanceName, remoteJid });
@@ -1531,6 +1834,83 @@ export class AiAgentService {
     }
 
     return 'No pude iniciar ningún flujo en este momento. ¿Te puedo ayudar con otra cosa?';
+  }
+
+  private async checkAndFireIntentTriggers(params: {
+    input: string;
+    userId: string;
+    sessionId: string;
+    server_url: string;
+    apikey: string;
+    instanceName: string;
+    remoteJid: string;
+  }): Promise<void> {
+    const { input, userId, sessionId, server_url, apikey, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    try {
+      const triggers = await this.prisma.intentTrigger.findMany({
+        where: { userId, isActive: true },
+      });
+
+      if (!triggers.length) return;
+
+      const workflows = await this.workflowService.getWorkflow(userId).catch(() => []);
+
+      for (const trigger of triggers) {
+        let matches = false;
+
+        if (trigger.mode === 'keywords') {
+          const keywords = trigger.condition
+            .split(',')
+            .map((k: string) => k.trim().toLowerCase())
+            .filter(Boolean);
+          matches = keywords.some((kw: string) => input.toLowerCase().includes(kw));
+        } else {
+          matches = await this.classifyInputWithPrompt(input, trigger.condition);
+        }
+
+        if (!matches) continue;
+
+        const workflow = Array.isArray(workflows)
+          ? workflows.find((w: any) => w.id === trigger.workflowId)
+          : null;
+
+        if (!workflow) {
+          logger.warn(`IntentTrigger "${trigger.name}": flujo ${trigger.workflowId} no encontrado.`);
+          continue;
+        }
+
+        const alreadyExecuted = await this.chatHistoryService
+          .hasIntentionBeenExecuted(sessionId, workflow.name)
+          .catch(() => false);
+
+        if (alreadyExecuted) continue;
+
+        logger.log(`IntentTrigger "${trigger.name}" disparado → flujo "${workflow.name}"`);
+
+        await this.chatHistoryService.registerExecutedIntention(sessionId, workflow.name, 'intent_trigger');
+        await this.workflowService.executeWorkflow(workflow.name, server_url, apikey, instanceName, remoteJid, userId);
+        await this.sessionService.registerWorkflow({ id: workflow.id, name: workflow.name }, remoteJid, instanceName, userId);
+      }
+    } catch (err: any) {
+      logger.error('Error en checkAndFireIntentTriggers:', err?.message || err);
+    }
+  }
+
+  private async classifyInputWithPrompt(input: string, condition: string): Promise<boolean> {
+    try {
+      const response = await this.aiClient.invoke([
+        new SystemMessage({
+          content: `Eres un clasificador. Responde ÚNICAMENTE con "SI" o "NO".\n¿El siguiente mensaje del usuario cumple con esta condición: "${condition}"?`,
+        }),
+        new HumanMessage({ content: input }),
+      ]);
+      const text = typeof response.content === 'string' ? response.content : '';
+      return text.trim().toUpperCase().startsWith('SI');
+    } catch {
+      return false;
+    }
   }
 
   // Transcribe audio (usado por message-type-handler)
@@ -1717,7 +2097,7 @@ export class AiAgentService {
     const logger = this.scopedLogger({ userId });
 
     try {
-      const client = await this.getClientForUser(userId);
+      const client = await this.getClientForUser(userId, 0.5);
       const systemPrompt = await this.promptService
         .getPromptUserId(userId, CRM_AGENT_PROMPT_IDS.systemPrompAI)
         .catch(() => '');

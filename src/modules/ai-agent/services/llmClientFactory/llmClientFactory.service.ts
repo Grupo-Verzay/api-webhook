@@ -15,8 +15,11 @@ export class LlmClientFactory {
     const { provider, model, apiKey, temperature = 0 } = config;
 
     switch (provider) {
-      case 'openai':
-        return new ChatOpenAI({ apiKey, model, temperature });
+      case 'openai': {
+        // o-series and gpt-5+ reasoning models only accept temperature=1 (their default)
+        const supportsTemperature = !/^(o\d|gpt-5)/i.test(model);
+        return new ChatOpenAI({ apiKey, model, ...(supportsTemperature ? { temperature } : {}) });
+      }
 
       case 'google':
         return new ChatGoogleGenerativeAI({ apiKey, model, temperature });

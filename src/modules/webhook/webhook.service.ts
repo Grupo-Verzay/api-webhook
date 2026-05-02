@@ -39,6 +39,7 @@ import { CrmFollowUpRunnerService } from '../lead-funnel/services/crm-follow-up-
 import { buildChatHistorySessionId } from '../chat-history/chat-history-session.helper';
 import { FollowUpRunnerService } from './services/follow-up-runner/follow-up-runner.service';
 import { PaymentReceiptProcessorService } from 'src/modules/payment-receipt/services/payment-receipt-processor.service';
+import { TtsService } from '../ai-agent/services/tts/tts.service';
 
 @Injectable()
 export class WebhookService implements OnModuleInit {
@@ -80,6 +81,7 @@ export class WebhookService implements OnModuleInit {
     private readonly followUpRunnerService: FollowUpRunnerService,
     private readonly crmFollowUpRunnerService: CrmFollowUpRunnerService,
     private readonly paymentReceiptProcessor: PaymentReceiptProcessorService,
+    private readonly ttsService: TtsService,
   ) { }
 
   onModuleInit(): void {
@@ -710,18 +712,38 @@ export class WebhookService implements OnModuleInit {
             return;
           }
 
-          for (const [index, msgBlock] of msgBlocks.entries()) {
-            logger.log(
-              `📤 Enviando bloque ${index + 1}/${msgBlocks.length}`,
-              'NodeSenderService',
-            );
-            await this.nodeSenderService.sendTextNode(
-              apiMsgUrl,
-              apikey,
-              canonicalRemoteJid,
-              msgBlock,
-            );
-            await new Promise((res) => setTimeout(res, 300));
+          const voiceEnabled = !!(userWithRelations as any).enableVoiceResponses && !!defaultApiKey;
+
+          if (voiceEnabled) {
+            const fullText = msgBlocks.join('\n\n');
+            const voiceId = (userWithRelations as any).voiceId || 'nova';
+            logger.log(`🎙️ Generando nota de voz (voice=${voiceId})`, 'TtsService');
+            const audioBase64 = await this.ttsService.generateVoiceBase64(fullText, defaultApiKey, voiceId);
+            if (audioBase64) {
+              const audioUrl = `${server_url}/message/sendWhatsAppAudio/${instanceName}`;
+              await this.nodeSenderService.sendAudioNode(audioUrl, apikey, canonicalRemoteJid, audioBase64);
+              logger.log(`✅ Nota de voz enviada a ${canonicalRemoteJid}`, 'TtsService');
+            } else {
+              logger.warn(`TTS falló, enviando como texto`, 'TtsService');
+              for (const msgBlock of msgBlocks) {
+                await this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, canonicalRemoteJid, msgBlock);
+                await new Promise((res) => setTimeout(res, 300));
+              }
+            }
+          } else {
+            for (const [index, msgBlock] of msgBlocks.entries()) {
+              logger.log(
+                `📤 Enviando bloque ${index + 1}/${msgBlocks.length}`,
+                'NodeSenderService',
+              );
+              await this.nodeSenderService.sendTextNode(
+                apiMsgUrl,
+                apikey,
+                canonicalRemoteJid,
+                msgBlock,
+              );
+              await new Promise((res) => setTimeout(res, 300));
+            }
           }
         } catch (err: any) {
           logger.error(

@@ -415,6 +415,8 @@ model User {
   enabledSynthesizer                 Boolean               @default(false)
   enabledLeadStatusClassifier        Boolean               @default(false)
   enabledCrmFollowUps                Boolean               @default(false)
+  enableVoiceResponses               Boolean               @default(false)
+  voiceId                            String                @default("nova")
   status                             Boolean               @default(true)
   accounts                           Account[]
   agentPrompts                       AgentPrompt[]
@@ -894,15 +896,16 @@ model ExternalDataToolConfig {
 }
 
 model UserAiConfig {
-  id         String     @id @default(uuid())
-  userId     String
-  providerId String
-  apiKey     String
-  isActive   Boolean    @default(true)
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-  provider   AiProvider @relation(fields: [providerId], references: [id])
-  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String     @id @default(uuid())
+  userId      String
+  providerId  String
+  apiKey      String
+  isActive    Boolean    @default(true)
+  temperature Float      @default(0.2)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  provider    AiProvider @relation(fields: [providerId], references: [id])
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, providerId])
   @@map("user_ai_configs")
@@ -994,6 +997,21 @@ model ChatConversationPreference {
   @@index([userId, pinnedAt])
   @@index([userId, archivedAt])
   @@index([userId, deletedAt])
+}
+
+model IntentTrigger {
+  id         String   @id @default(cuid())
+  userId     String
+  name       String
+  mode       String   @default("keywords")
+  condition  String
+  workflowId String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, isActive])
 }
 
 enum LeadStatus {

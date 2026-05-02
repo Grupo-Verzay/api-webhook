@@ -1,10 +1,16 @@
 /**
  * Proveedores y modelos disponibles para langchain
- * proveedor:[modelo1,modelo2,modelo3]
+ *
+ * Recomendaciones de costo-beneficio:
+ *  - openai  → gpt-4o-mini   (rápido, económico, ideal para la mayoría de agentes)
+ *  - google  → gemini-2.5-flash (muy rápido, muy económico, excelente calidad)
+ *
+ * Opciones premium (mayor calidad, mayor costo):
+ *  - openai  → gpt-4o
+ *  - google  → gemini-2.5-pro
  */
 
 export const providersConfig = {
-  openai: ['gpt-3.5-turbo', 'gpt-4o-mini'],
-  anthropic: ['claude-3-opus', 'claude-3-sonnet', 'claude-3-haiku'],
-  google: ['gemini-pro', 'gemini-1.5-pro', 'gemini-2.5-flash'],
+  openai: ['gpt-4o-mini', 'gpt-5-mini'],
+  google: ['gemini-2.5-flash', 'gemini-2.5-pro'],
 } as const;

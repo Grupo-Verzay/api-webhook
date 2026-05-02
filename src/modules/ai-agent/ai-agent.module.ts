@@ -19,6 +19,7 @@ import { UserService } from '../user/user.service';
 import { AgentNotificationService } from './services/notificacionService/notificacion.service';
 import { NotificationContactsService } from './services/notificacionService/notification-contacts.service';
 import { ExternalClientDataModule } from '../external-client-data/external-client-data.module';
+import { TtsService } from './services/tts/tts.service';
 
 @Module({
   imports: [HttpModule, ConfigModule, forwardRef(() => WorkflowModule), ExternalClientDataModule],
@@ -37,6 +38,7 @@ import { ExternalClientDataModule } from '../external-client-data/external-clien
     AgentNotificationService,
     NotificationContactsService,
     UserService,
+    TtsService,
   ],
   exports: [
     NotificacionToolService,
@@ -45,6 +47,7 @@ import { ExternalClientDataModule } from '../external-client-data/external-clien
     LlmClientFactory,
     AgentNotificationService,
     AiAgentService,
+    TtsService,
   ],
 })
 export class AiAgentModule {}

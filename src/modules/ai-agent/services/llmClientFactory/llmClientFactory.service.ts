@@ -11,15 +11,15 @@ export type LlmProvider = 'openai' | 'google' | 'anthropic';
 export class LlmClientFactory {
   private readonly clients: Map<string, BaseChatModel> = new Map();
 
-  public getClient<P extends Provider>(config: ModelConfig<P>): BaseChatModel {
-    const { provider, model, apiKey } = config;
+  public getClient<P extends Provider>(config: ModelConfig<P> & { temperature?: number }): BaseChatModel {
+    const { provider, model, apiKey, temperature = 0 } = config;
 
     switch (provider) {
       case 'openai':
-        return new ChatOpenAI({ apiKey, model });
+        return new ChatOpenAI({ apiKey, model, temperature });
 
       case 'google':
-        return new ChatGoogleGenerativeAI({ apiKey, model });
+        return new ChatGoogleGenerativeAI({ apiKey, model, temperature });
 
       default:
         throw new Error(`Unsupported LLM provider: ${provider}`);

@@ -27,4 +27,4 @@ COPY --from=builder /app/src/database/prisma ./src/database/prisma
 
 EXPOSE 5001
 
-CMD ["node", "dist/main"]
+CMD ["sh", "-c", "npx prisma db push --schema=src/database/prisma/schema.prisma --skip-generate && node dist/main"]

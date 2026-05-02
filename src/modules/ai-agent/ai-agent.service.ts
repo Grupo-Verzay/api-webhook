@@ -1049,7 +1049,7 @@ export class AiAgentService {
           if (!pathMatch) return 'URL inválida. Usa la URL completa de Google Sheets.';
 
           const spreadsheetId = pathMatch[1];
-          const gid = parsed.searchParams.get('gid') ?? parsed.hash.replace('#gid=', '').trim() || '0';
+          const gid = (parsed.searchParams.get('gid') ?? parsed.hash.replace('#gid=', '').trim()) || '0';
           const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`;
 
           const response = await axios.get<string>(csvUrl, { responseType: 'text', timeout: 10000 });

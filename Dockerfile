@@ -12,6 +12,7 @@ RUN npm ci
 RUN npx prisma generate --schema=src/database/prisma/schema.prisma
 RUN npm run build
 RUN npm prune --omit=dev
+RUN npm install prisma --no-save
 
 FROM node:22-bookworm-slim AS runner
 
@@ -27,4 +28,4 @@ COPY --from=builder /app/src/database/prisma ./src/database/prisma
 
 EXPOSE 5001
 
-CMD ["sh", "-c", "npx prisma db push --schema=src/database/prisma/schema.prisma --skip-generate && node dist/main"]
+CMD ["sh", "-c", "npx prisma db push --schema=src/database/prisma/schema.prisma --skip-generate --accept-data-loss && node dist/main"]

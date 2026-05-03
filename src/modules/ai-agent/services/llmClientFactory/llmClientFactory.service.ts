@@ -21,8 +21,10 @@ export class LlmClientFactory {
         return new ChatOpenAI({ apiKey, model, ...(supportsTemperature ? { temperature } : {}) });
       }
 
-      case 'google':
-        return new ChatGoogleGenerativeAI({ apiKey, model, temperature });
+      case 'google': {
+        const resolvedModel = model === 'gemini-2.5-flash' ? 'gemini-2.0-flash' : model;
+        return new ChatGoogleGenerativeAI({ apiKey, model: resolvedModel, temperature });
+      }
 
       default:
         throw new Error(`Unsupported LLM provider: ${provider}`);

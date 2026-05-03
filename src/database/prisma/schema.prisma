@@ -258,6 +258,7 @@ model Reminders {
   updatedAt    DateTime    @updatedAt
   pushName     String?
   isSchedule   Boolean?    @default(false)
+  order        Int?        @default(0)
 }
 
 model Service {
@@ -266,6 +267,7 @@ model Service {
   name         String
   description  String?
   messageText  String
+  order        Int?          @default(0)
   createdAt    DateTime      @default(now())
   appointments Appointment[]
   user         User          @relation(fields: [userId], references: [id])
@@ -1112,6 +1114,7 @@ enum TipoRegistro {
   RECLAMO
   PAGO
   RESERVA
+  PRODUCTO
 }
 
 enum TypePromptAi {
@@ -1120,6 +1123,7 @@ enum TypePromptAi {
   ACTIONS
   DATA_CAPTURE
   DATA_QUERY
+  ANALYZER
 }
 
 enum BillingStatus {

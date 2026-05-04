@@ -716,11 +716,21 @@ export class WebhookService implements OnModuleInit {
 
           if (voiceEnabled) {
             const fullText = msgBlocks.join('\n\n');
+            const ttsProvider = (userWithRelations as any).ttsProvider || 'openai';
             const voiceId = (userWithRelations as any).voiceId || 'nova';
             const voiceModel = (userWithRelations as any).voiceModel || 'gpt-4o-mini-tts';
             const voiceInstructions = (userWithRelations as any).voiceInstructions || undefined;
-            logger.log(`🎙️ Generando nota de voz (voice=${voiceId}, model=${voiceModel})`, 'TtsService');
-            const audioBase64 = await this.ttsService.generateVoiceBase64(fullText, defaultApiKey, voiceId, voiceModel, voiceInstructions);
+            const elApiKey = (userWithRelations as any).elevenLabsApiKey;
+            const elVoiceId = (userWithRelations as any).elevenLabsVoiceId;
+
+            logger.log(`🎙️ Generando nota de voz (provider=${ttsProvider}, voice=${ttsProvider === 'elevenlabs' ? elVoiceId : voiceId})`, 'TtsService');
+
+            let audioBase64: string | null = null;
+            if (ttsProvider === 'elevenlabs' && elApiKey && elVoiceId) {
+              audioBase64 = await this.ttsService.generateVoiceElevenLabs(fullText, elApiKey, elVoiceId);
+            } else {
+              audioBase64 = await this.ttsService.generateVoiceBase64(fullText, defaultApiKey, voiceId, voiceModel, voiceInstructions);
+            }
             let audioSent = false;
             if (audioBase64) {
               const audioUrl = `${server_url}/message/sendWhatsAppAudio/${instanceName}`;

@@ -424,6 +424,9 @@ model User {
   voiceId                            String                @default("nova")
   voiceModel                         String?               @default("gpt-4o-mini-tts")
   voiceInstructions                  String?
+  ttsProvider                        String?               @default("openai")
+  elevenLabsApiKey                   String?
+  elevenLabsVoiceId                  String?
   status                             Boolean               @default(true)
   accounts                           Account[]
   agentPrompts                       AgentPrompt[]

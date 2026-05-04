@@ -717,8 +717,10 @@ export class WebhookService implements OnModuleInit {
           if (voiceEnabled) {
             const fullText = msgBlocks.join('\n\n');
             const voiceId = (userWithRelations as any).voiceId || 'nova';
-            logger.log(`🎙️ Generando nota de voz (voice=${voiceId})`, 'TtsService');
-            const audioBase64 = await this.ttsService.generateVoiceBase64(fullText, defaultApiKey, voiceId);
+            const voiceModel = (userWithRelations as any).voiceModel || 'gpt-4o-mini-tts';
+            const voiceInstructions = (userWithRelations as any).voiceInstructions || undefined;
+            logger.log(`🎙️ Generando nota de voz (voice=${voiceId}, model=${voiceModel})`, 'TtsService');
+            const audioBase64 = await this.ttsService.generateVoiceBase64(fullText, defaultApiKey, voiceId, voiceModel, voiceInstructions);
             let audioSent = false;
             if (audioBase64) {
               const audioUrl = `${server_url}/message/sendWhatsAppAudio/${instanceName}`;

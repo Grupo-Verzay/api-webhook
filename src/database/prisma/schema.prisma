@@ -422,6 +422,8 @@ model User {
   enabledCrmFollowUps                Boolean               @default(false)
   enableVoiceResponses               Boolean               @default(false)
   voiceId                            String                @default("nova")
+  voiceModel                         String?               @default("gpt-4o-mini-tts")
+  voiceInstructions                  String?
   status                             Boolean               @default(true)
   accounts                           Account[]
   agentPrompts                       AgentPrompt[]

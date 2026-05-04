@@ -1443,7 +1443,7 @@ export class AiAgentService {
       );
       const userForTz = await this.prisma.user.findUnique({
         where: { id: userId },
-        select: { timezone: true },
+        select: { timezone: true, mapsUrl: true },
       });
       const agentTz = userForTz?.timezone || 'America/Bogota';
       const nowLabel = new Intl.DateTimeFormat('es-CO', {
@@ -1464,7 +1464,12 @@ export class AiAgentService {
         ? `\n\n---\n## REGLA CRÍTICA: CONSULTA DE DATOS\nCuando el usuario pregunte por información específica del negocio (precios, modelos, medidas, disponibilidad, datos de clientes, etc.), SIEMPRE usa la herramienta de búsqueda correspondiente ANTES de responder. NUNCA uses tu conocimiento propio o de entrenamiento para dar información de productos, precios, existencias u otros datos del catálogo. Si la herramienta no devuelve resultados, informa al usuario que no tienes esa información — NO inventes respuestas.\n---`
         : '';
 
-      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${dataQueryRuleBlock}`.trim();
+      const defaultMapsUrl = 'https://maps.google.com/?q=0,0';
+      const mapsBlock = userForTz?.mapsUrl && userForTz.mapsUrl.trim() !== defaultMapsUrl
+        ? `\n\n---\nUBICACIÓN DEL NEGOCIO: Cuando el usuario pregunte por la dirección, ubicación o cómo llegar, comparte este enlace: ${userForTz.mapsUrl.trim()}\n---`
+        : '';
+
+      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${dataQueryRuleBlock}${mapsBlock}`.trim();
 
       // logger.log('PROMPT:', promptAI);
 

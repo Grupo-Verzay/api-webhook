@@ -774,9 +774,9 @@ export class AiAgentService {
   }
 
   private buildCrearCitaTool(cfg: any, params: {
-    userId: string; server_url: string; apikey: string; instanceName: string; remoteJid: string; pushName: string;
+    userId: string; instanceName: string; remoteJid: string; pushName: string;
   }): any {
-    const { userId, server_url, apikey, instanceName, remoteJid, pushName } = params;
+    const { userId, instanceName, remoteJid, pushName } = params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
     const nextjsUrl = (process.env.NEXTJS_URL ?? '').replace(/\/+$/, '');
@@ -787,18 +787,11 @@ export class AiAgentService {
       async ({ serviceId, startTime, endTime }: { serviceId: string; startTime: string; endTime: string }) => {
         logger.log(`Tool "${cfg.toolKey}" (crear_cita) serviceId="${serviceId}" startTime="${startTime}"`);
         try {
-          const [user, service] = await Promise.all([
-            this.prisma.user.findUnique({
-              where: { id: userId },
-              select: { timezone: true, meetingDuration: true },
-            }),
-            this.prisma.service.findFirst({
-              where: { id: serviceId },
-              select: { messageText: true },
-            }),
-          ]);
+          const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { timezone: true },
+          });
           const timezone = user?.timezone || 'UTC';
-          const slotDuration = user?.meetingDuration ?? 60;
 
           const res = await axios.post(
             `${nextjsUrl}/api/schedule/appointment`,
@@ -828,21 +821,6 @@ export class AiAgentService {
                 timeStyle: 'short',
               })
             : startTime;
-
-          // Enviar confirmación al cliente directamente desde api-webhook
-          const rawConfirmText = service?.messageText?.trim() ||
-            `✅ *¡Cita confirmada!*\n\nHola @client_name, tu cita ha sido registrada para el @appointment_datetime.\n\n¡Te esperamos!`;
-          const apptDate = new Date(startTime);
-          const dateLabel = apptDate.toLocaleDateString('es-CO', { timeZone: timezone, day: '2-digit', month: '2-digit', year: 'numeric' });
-          const hourLabel = apptDate.toLocaleTimeString('es-CO', { timeZone: timezone, hour: 'numeric', minute: '2-digit', hour12: true });
-          const confirmMessage = rawConfirmText
-            .replace(/@client_name\b/gi, pushName)
-            .replace(/@appointment_datetime\b/gi, `${dateLabel} ${hourLabel}.`)
-            .replace(/@appointment_duration\b/gi, `${slotDuration} min`);
-          const sendApiUrl = `${server_url.replace(/\/+$/, '')}/message/sendText/${instanceName}`;
-          this.nodeSenderService.sendTextNode(sendApiUrl, apikey, remoteJid, confirmMessage)
-            .catch(err => logger.error(`[crear_cita] Error enviando confirmación al cliente: ${err?.message}`));
-          logger.log(`[crear_cita] Confirmación enviada al cliente ${remoteJid}`);
 
           const successText = message
             ? `${message} — ${confirmDate}`

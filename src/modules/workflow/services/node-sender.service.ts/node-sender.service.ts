@@ -174,7 +174,7 @@ export class NodeSenderService {
       };
 
       this.logger.log(
-        `Enviando audio a ${remoteJid} (media: ${audioUrl})`,
+        `Enviando audio a ${remoteJid} (base64: ${audioUrl.substring(0, 20)}...)`,
         'NodeSenderService',
       );
 

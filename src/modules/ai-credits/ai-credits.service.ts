@@ -47,12 +47,12 @@ export class AiCreditsService {
       await this.prisma.iaCredit.upsert({
         where: { userId },
         create: {
-          id: randomUUID(), // requerido por tu schema
+          id: randomUUID(),
           userId,
           used: tokensInt,
           total: 1000,
-          renewalDate: new Date(),
-          updatedAt: new Date(), // requerido por tu schema
+          renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // +30 días
+          updatedAt: new Date(),
         },
         update: {
           used: { increment: tokensInt },

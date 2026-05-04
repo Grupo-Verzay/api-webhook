@@ -1615,8 +1615,16 @@ export class AiAgentService {
         throw err;
       }
 
-      // Por ahora no tenemos usage_metadata directo desde LangGraph
-      await this.aiCredits.trackTokens(userId, 0);
+      // Sumar tokens de todos los AIMessages del resultado LangGraph
+      const totalTokensUsed = (result?.messages ?? []).reduce(
+        (sum: number, msg: any) => {
+          const meta = msg?.usage_metadata;
+          if (!meta) return sum;
+          return sum + (meta.total_tokens ?? (meta.input_tokens ?? 0) + (meta.output_tokens ?? 0));
+        },
+        0,
+      );
+      await this.aiCredits.trackTokens(userId, totalTokensUsed);
 
       // const finalText = this.extractReactAgentReply(result);
 

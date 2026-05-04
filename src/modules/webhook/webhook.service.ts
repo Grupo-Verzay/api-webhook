@@ -722,8 +722,7 @@ export class WebhookService implements OnModuleInit {
             let audioSent = false;
             if (audioBase64) {
               const audioUrl = `${server_url}/message/sendWhatsAppAudio/${instanceName}`;
-              const audioData = `data:audio/mp3;base64,${audioBase64}`;
-              audioSent = await this.nodeSenderService.sendAudioNode(audioUrl, apikey, canonicalRemoteJid, audioData);
+              audioSent = await this.nodeSenderService.sendAudioNode(audioUrl, apikey, canonicalRemoteJid, audioBase64);
               if (audioSent) {
                 logger.log(`✅ Nota de voz enviada a ${canonicalRemoteJid}`, 'TtsService');
               } else {

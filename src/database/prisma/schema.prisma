@@ -294,6 +294,9 @@ model Session {
   leadStatusReason     String?                @map("lead_status_reason")
   leadStatusSourceHash String?                @map("lead_status_source_hash")
   leadStatusUpdatedAt  DateTime?              @map("lead_status_updated_at")
+  leadScore            Int?                   @map("lead_score")
+  leadScoreReason      String?                @map("lead_score_reason")
+  leadScoredAt         DateTime?              @map("lead_scored_at")
   appointments         Appointment[]
   registros            Registro[]
   user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -452,6 +455,7 @@ model User {
   externalDataToolConfigs            ExternalDataToolConfig[]
   chatConversationPreferences        ChatConversationPreference[]
   notificationContacts               UserNotificationContact[]
+  weeklyReports                      WeeklyReport[]
 }
 
 model UserNotificationContact {
@@ -815,6 +819,21 @@ model Reseller {
   user_reseller_userIdToUser     User?    @relation("reseller_userIdToUser", fields: [userId], references: [id])
 
   @@map("reseller")
+}
+
+model WeeklyReport {
+  id          String    @id @default(cuid())
+  userId      String
+  periodStart DateTime  @map("period_start")
+  periodEnd   DateTime  @map("period_end")
+  summary     String
+  metrics     Json
+  sentAt      DateTime? @map("sent_at")
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("weekly_reports")
 }
 
 model QuickReply {

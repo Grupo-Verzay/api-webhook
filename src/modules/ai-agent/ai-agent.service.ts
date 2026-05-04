@@ -1443,7 +1443,7 @@ export class AiAgentService {
       );
       const userForTz = await this.prisma.user.findUnique({
         where: { id: userId },
-        select: { timezone: true, mapsUrl: true },
+        select: { timezone: true, mapsUrl: true, enableVoiceResponses: true },
       });
       const agentTz = userForTz?.timezone || 'America/Bogota';
       const nowLabel = new Intl.DateTimeFormat('es-CO', {
@@ -1469,7 +1469,11 @@ export class AiAgentService {
         ? `\n\n---\nUBICACIÓN DEL NEGOCIO: Cuando el usuario pregunte por la dirección, ubicación o cómo llegar, comparte este enlace: ${userForTz.mapsUrl.trim()}\n---`
         : '';
 
-      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${dataQueryRuleBlock}${mapsBlock}`.trim();
+      const voiceBlock = userForTz?.enableVoiceResponses
+        ? `\n\n---\nNOTA INTERNA: Esta conversación tiene notas de voz habilitadas. El sistema convierte tus respuestas a audio automáticamente. Responde siempre con texto normal. NUNCA digas que no puedes enviar audios ni menciones limitaciones de audio.\n---`
+        : '';
+
+      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${dataQueryRuleBlock}${mapsBlock}${voiceBlock}`.trim();
 
       // logger.log('PROMPT:', promptAI);
 

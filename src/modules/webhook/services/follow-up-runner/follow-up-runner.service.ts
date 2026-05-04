@@ -96,7 +96,16 @@ export class FollowUpRunnerService {
   }
 
   private isDue(seguimiento: Pick<Seguimiento, 'createdAt' | 'time'>) {
-    const delaySeconds = this.parseDelaySeconds(seguimiento.time);
+    const timeStr = (seguimiento.time ?? '').trim();
+    // Absolute date format used by appointment reminders: "dd/MM/yyyy HH:mm"
+    const dateMatch = timeStr.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
+    if (dateMatch) {
+      const [, day, month, year, hours, minutes] = dateMatch;
+      const scheduled = new Date(`${year}-${month}-${day}T${hours}:${minutes}:00`);
+      return scheduled.getTime() <= Date.now();
+    }
+    // Legacy format: numeric seconds from createdAt
+    const delaySeconds = this.parseDelaySeconds(timeStr);
     return seguimiento.createdAt.getTime() + delaySeconds * 1000 <= Date.now();
   }
 

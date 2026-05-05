@@ -12,10 +12,6 @@ import { buildChatHistorySessionId } from '../../../chat-history/chat-history-se
 import type { AiAgentService } from '../../../ai-agent/ai-agent.service';
 import { NotificationContactsService } from 'src/modules/ai-agent/services/notificacionService/notification-contacts.service';
 
-function formatAbsoluteTime(date: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(date.getDate())}/${p(date.getMonth() + 1)}/${date.getFullYear()} ${p(date.getHours())}:${p(date.getMinutes())}`;
-}
 
 type NodeDB = WorkflowNode;
 type EdgeDB = {
@@ -1065,7 +1061,6 @@ export class WorkflowService implements OnModuleInit {
       return;
     }
 
-    const delaySeguimiento = convertDelayToSeconds(node.delay ?? '') ?? 0;
     const seguimiento = await this.prisma.seguimiento.create({
       data: {
         idNodo: node.id,
@@ -1075,7 +1070,7 @@ export class WorkflowService implements OnModuleInit {
         remoteJid,
         mensaje: node.message ?? '',
         tipo: node.tipo,
-        time: formatAbsoluteTime(new Date(Date.now() + delaySeguimiento * 1000)),
+        time: convertDelayToSeconds(node.delay ?? ''),
         media: node.url ?? null,
         followUpMode: 'static',
         followUpStatus: 'pending',

@@ -1,6 +1,5 @@
 ﻿import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-
 import { NodeSenderService } from '../node-sender.service.ts/node-sender.service';
 import { LoggerService } from 'src/core/logger/logger.service';
 import { convertDelayToSeconds } from 'src/modules/webhook/utils/convert-delay-to-seconds.helper';
@@ -12,6 +11,11 @@ import { ChatHistoryService } from '../../../chat-history/chat-history.service';
 import { buildChatHistorySessionId } from '../../../chat-history/chat-history-session.helper';
 import type { AiAgentService } from '../../../ai-agent/ai-agent.service';
 import { NotificationContactsService } from 'src/modules/ai-agent/services/notificacionService/notification-contacts.service';
+
+function formatAbsoluteTime(date: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(date.getDate())}/${p(date.getMonth() + 1)}/${date.getFullYear()} ${p(date.getHours())}:${p(date.getMinutes())}`;
+}
 
 type NodeDB = WorkflowNode;
 type EdgeDB = {
@@ -1071,7 +1075,7 @@ export class WorkflowService implements OnModuleInit {
         remoteJid,
         mensaje: node.message ?? '',
         tipo: node.tipo,
-        time: String(delaySeguimiento),
+        time: formatAbsoluteTime(new Date(Date.now() + delaySeguimiento * 1000)),
         media: node.url ?? null,
         followUpMode: 'static',
         followUpStatus: 'pending',

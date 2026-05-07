@@ -138,32 +138,33 @@ model Manual {
 }
 
 model Module {
-  id                     String       @id @default(uuid())
+  id                     String              @id @default(uuid())
   label                  String
   route                  String
   icon                   String
-  showInSidebar          Boolean?     @default(true)
-  hiddenModuleToSelector Boolean?     @default(false)
-  adminOnly              Boolean      @default(false)
-  requiresPremium        Boolean      @default(false)
+  showInSidebar          Boolean?            @default(true)
+  hiddenModuleToSelector Boolean?            @default(false)
+  adminOnly              Boolean             @default(false)
+  requiresPremium        Boolean             @default(false)
   allowedPlans           Plan[]
-  order                  Int          @default(0)
-  createdAt              DateTime     @default(now())
-  updatedAt              DateTime     @updatedAt
-  showOnlySelectedPlans  Boolean?     @default(false)
+  order                  Int                 @default(0)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  showOnlySelectedPlans  Boolean?            @default(false)
   customUrl              String?
   moduleItems            ModuleItem[]
-  User                   User[]       @relation("UserModules")
+  UserNavPreference      UserNavPreference[]
+  User                   User[]              @relation("UserModules")
 }
 
 model ModuleItem {
   id        String   @id @default(uuid())
   title     String
   url       String
-  customUrl String?
   moduleId  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  customUrl String?
   module    Module   @relation(fields: [moduleId], references: [id])
 }
 
@@ -258,7 +259,8 @@ model Reminders {
   updatedAt    DateTime    @updatedAt
   pushName     String?
   isSchedule   Boolean?    @default(false)
-  order        Int?        @default(0)
+  order        Int         @default(0)
+  isCampaign   Boolean?    @default(false)
 }
 
 model Service {
@@ -267,8 +269,8 @@ model Service {
   name         String
   description  String?
   messageText  String
-  order        Int?          @default(0)
   createdAt    DateTime      @default(now())
+  order        Int           @default(0)
   appointments Appointment[]
   user         User          @relation(fields: [userId], references: [id])
 
@@ -358,9 +360,9 @@ model Tag {
   name        String
   slug        String
   color       String?
-  order       Int          @default(0)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+  order       Int          @default(0)
   sessionTags SessionTag[]
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -382,56 +384,57 @@ model Tool {
 }
 
 model User {
-  id                                 String                @id @default(uuid())
+  id                                 String                       @id @default(uuid())
   name                               String?
-  email                              String                @unique
+  email                              String                       @unique
   password                           String?
   emailVerified                      DateTime?
   image                              String?
-  role                               Role                  @default(user)
-  createdAt                          DateTime              @default(now())
-  updatedAt                          DateTime              @updatedAt
-  apiUrl                             String                @default("https://api.openAI.co")
-  company                            String                @default("Empresa Demo")
-  lat                                String                @default("0.0000")
-  lng                                String                @default("0.0000")
-  mapsUrl                            String                @default("https://maps.google.com/?q=0,0")
-  notificationNumber                 String                @default("0000000000")
-  openingPhrase                      String?               @default("DEPRECATED")
+  role                               Role                         @default(user)
+  createdAt                          DateTime                     @default(now())
+  updatedAt                          DateTime                     @updatedAt
+  apiUrl                             String                       @default("https://api.openAI.co")
+  company                            String                       @default("Empresa Demo")
+  lat                                String                       @default("0.0000")
+  lng                                String                       @default("0.0000")
+  mapsUrl                            String                       @default("https://maps.google.com/?q=0,0")
+  notificationNumber                 String                       @default("0000000000")
+  openingPhrase                      String?                      @default("DEPRECATED")
   apiKeyId                           String?
-  delSeguimiento                     String?               @default("Estamos para servirle.") @map("del_seguimiento")
-  plan                               Plan                  @default(basico)
+  delSeguimiento                     String?                      @default("Estamos para servirle.") @map("del_seguimiento")
+  plan                               Plan                         @default(basico)
   autoReactivate                     String?
-  webhookUrl                         String?               @default("https://n8npro.verzay.co/webhook")
-  theme                              ThemeApp?             @default(Default)
-  muteAgentResponses                 Boolean               @default(false)
+  webhookUrl                         String?                      @default("https://n8npro.verzay.co/webhook")
+  theme                              ThemeApp?                    @default(Default)
+  muteAgentResponses                 Boolean                      @default(false)
   timezone                           String?
   meetingDuration                    Int?
-  onFacebook                         Boolean               @default(false)
-  onInstagram                        Boolean               @default(false)
+  onFacebook                         Boolean                      @default(false)
+  onInstagram                        Boolean                      @default(false)
   aiModelId                          String?
   defaultAiModelId                   String?
   defaultProviderId                  String?
-  delayTimeGpt                       String?               @map("delayTimeGPT")
+  delayTimeGpt                       String?                      @map("delayTimeGPT")
   meetingUrl                         String?
-  preferredCurrencyCode              String                @default("COP")
-  tokenVersion                       Int                   @default(0)
-  passPlainTxt                       String?               @default("IA@verzay.1234")
-  enabledSynthesizer                 Boolean               @default(false)
-  enabledLeadStatusClassifier        Boolean               @default(false)
-  enabledCrmFollowUps                Boolean               @default(false)
-  enableVoiceResponses               Boolean               @default(false)
-  voiceId                            String                @default("nova")
-  voiceModel                         String?               @default("gpt-4o-mini-tts")
+  preferredCurrencyCode              String                       @default("COP")
+  tokenVersion                       Int                          @default(0)
+  passPlainTxt                       String?                      @default("IA@verzay.1234")
+  enabledSynthesizer                 Boolean                      @default(false)
+  status                             Boolean                      @default(true)
+  enabledCrmFollowUps                Boolean                      @default(false)
+  enabledLeadStatusClassifier        Boolean                      @default(false)
+  enableVoiceResponses               Boolean                      @default(false)
+  voiceId                            String                       @default("nova")
   voiceInstructions                  String?
-  ttsProvider                        String?               @default("openai")
+  voiceModel                         String?                      @default("gpt-4o-mini-tts")
   elevenLabsApiKey                   String?
   elevenLabsVoiceId                  String?
-  status                             Boolean               @default(true)
+  ttsProvider                        String?                      @default("openai")
   accounts                           Account[]
   agentPrompts                       AgentPrompt[]
   publishedAgentPromptRevisions      AgentPromptRevision[]
   appointments                       Appointment[]
+  chatConversationPreferences        ChatConversationPreference[]
   instancias                         Instancia[]
   pausar                             Pausar[]
   products                           Product[]
@@ -441,26 +444,26 @@ model User {
   systemMessages                     SystemMessage[]
   tags                               Tag[]
   tools                              Tool[]
-  apiKey                             ApiKey?               @relation(fields: [apiKeyId], references: [id])
-  defaultAiModel                     AiModel?              @relation(fields: [defaultAiModelId], references: [id])
+  apiKey                             ApiKey?                      @relation(fields: [apiKeyId], references: [id])
+  defaultAiModel                     AiModel?                     @relation(fields: [defaultAiModelId], references: [id])
   userAvailability                   UserAvailability[]
   UserBilling                        UserBilling?
+  UserNavPreference                  UserNavPreference[]
+  notificationContacts               UserNotificationContact[]
   crmFollowUpRules                   CrmFollowUpRule[]
   crmFollowUps                       CrmFollowUp[]
+  externalClientData                 ExternalClientData[]
+  externalDataToolConfigs            ExternalDataToolConfig[]
   financeAccounts                    FinanceAccount[]
   financeAttachments                 FinanceAttachment[]
   financeCategories                  FinanceCategory[]
   financeTransactions                FinanceTransaction[]
   iaCredits                          IaCredit?
-  reseller_reseller_reselleridToUser Reseller[]            @relation("reseller_reselleridToUser")
-  reseller_reseller_userIdToUser     Reseller[]            @relation("reseller_userIdToUser")
+  reseller_reseller_reselleridToUser Reseller[]                   @relation("reseller_reselleridToUser")
+  reseller_reseller_userIdToUser     Reseller[]                   @relation("reseller_userIdToUser")
   aiConfigs                          UserAiConfig[]
-  Module                             Module[]              @relation("UserModules")
-  externalClientData                 ExternalClientData[]
-  externalDataToolConfigs            ExternalDataToolConfig[]
-  chatConversationPreferences        ChatConversationPreference[]
-  notificationContacts               UserNotificationContact[]
   weeklyReports                      WeeklyReport[]
+  Module                             Module[]                     @relation("UserModules")
 }
 
 model UserNotificationContact {
@@ -562,11 +565,11 @@ model Workflow {
   description   String?
   definition    String
   status        String
-  order         Int                    @default(0)
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt @map("updateAt")
   umbral        Float                  @default(0.5)
   isPro         Boolean                @default(false)
+  order         Int                    @default(0)
   sessionStates SessionWorkflowState[]
   workflowEdges WorkflowEdge[]
   nodes         WorkflowNode[]
@@ -644,12 +647,12 @@ model WorkflowNode {
   miniPrompt            String?
   noMatchMessage        String?
   threshold             Float?
-  aiEnabled             Boolean                @default(false)
   followUpCancelOnReply Boolean                @default(true)
   followUpGoal          String?
   followUpMaxAttempts   Int                    @default(3)
   followUpMode          String                 @default("static")
   followUpPrompt        String?
+  aiEnabled             Boolean                @default(false)
   sessionWorkflowStates SessionWorkflowState[]
   outgoingEdges         WorkflowEdge[]         @relation("EdgeSource")
   incomingEdges         WorkflowEdge[]         @relation("EdgeTarget")
@@ -773,8 +776,8 @@ model FinanceTransaction {
   discount          Decimal             @default(0)
   extra             Decimal             @default(0)
   sessionId         Int?
-  paymentSource     PaymentSource?
   externalReference String?             @unique
+  paymentSource     PaymentSource?
   attachments       FinanceAttachment[]
   account           FinanceAccount      @relation(fields: [accountId], references: [id])
   category          FinanceCategory?    @relation(fields: [categoryId], references: [id])
@@ -844,12 +847,12 @@ model WeeklyReport {
 model QuickReply {
   id         Int      @id @default(autoincrement())
   workflowId String?
-  name       String?
   mensaje    String?
-  order      Int      @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   userId     String
+  order      Int      @default(0)
+  name       String?
 
   @@map("rr")
 }
@@ -905,15 +908,15 @@ model ExternalDataToolConfig {
   toolKey         String
   displayName     String
   toolDescription String
-  toolCategory    String   @default("data_query")
   toolType        String   @default("search_by_field")
   searchField     String?
   promptTemplate  String?
   isEnabled       Boolean  @default(true)
-  isDefault       Boolean  @default(false)
   sortOrder       Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  isDefault       Boolean  @default(false)
+  toolCategory    String   @default("data_query")
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, toolKey])
@@ -928,9 +931,9 @@ model UserAiConfig {
   providerId  String
   apiKey      String
   isActive    Boolean    @default(true)
-  temperature Float      @default(0.2)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+  temperature Float      @default(0)
   provider    AiProvider @relation(fields: [providerId], references: [id])
   user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1039,6 +1042,20 @@ model IntentTrigger {
 
   @@index([userId])
   @@index([userId, isActive])
+}
+
+model UserNavPreference {
+  id           String  @id
+  userId       String
+  moduleId     String
+  displayLabel String?
+  isHidden     Boolean @default(false)
+  sortOrder    Int     @default(0)
+  Module       Module  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  User         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, moduleId])
+  @@index([userId])
 }
 
 enum LeadStatus {

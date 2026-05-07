@@ -1160,6 +1160,19 @@ export class WorkflowService implements OnModuleInit {
     }
   }
 
+  async findWorkflowByName(userId: string, name: string) {
+    try {
+      return await this.prisma.workflow.findFirst({
+        where: {
+          userId,
+          name: { equals: name, mode: 'insensitive' },
+        },
+      });
+    } catch {
+      return null;
+    }
+  }
+
   private async registerIdSeguimientoInSession(
     id: string,
     remoteJid: string,

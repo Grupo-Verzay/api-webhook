@@ -40,7 +40,7 @@ export class AiAgentService {
   private aiClient: any = null;
 
   // Nombre del flujo de bienvenida inicial
-  private readonly initWorkflowName: string = 'INICIO_BIENVENIDA';
+  readonly initWorkflowName: string = 'BIENVENIDA';
 
   constructor(
     private readonly logger: LoggerService,

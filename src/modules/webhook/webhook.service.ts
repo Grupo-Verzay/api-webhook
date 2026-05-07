@@ -578,6 +578,54 @@ export class WebhookService implements OnModuleInit {
             );
           }
 
+          // Auto-ejecutar flujo BIENVENIDA en primera conexión
+          const historyForBienvenida =
+            await this.chatHistoryService.getChatHistory(sessionHistoryId);
+          if (historyForBienvenida.length === 1) {
+            const bienvenidaWorkflow =
+              await this.workflowService.findWorkflowByName(
+                userId,
+                this.aiAgentService.initWorkflowName,
+              );
+            if (bienvenidaWorkflow) {
+              logger.log(
+                `[BIENVENIDA] Primera conexión → ejecutando flujo "${bienvenidaWorkflow.name}"`,
+                'WebhookService',
+              );
+              await this.chatHistoryService.registerExecutedIntention(
+                sessionHistoryId,
+                bienvenidaWorkflow.name,
+                'intention',
+              );
+              await this.sessionService.registerWorkflow(
+                { id: bienvenidaWorkflow.id, name: bienvenidaWorkflow.name },
+                canonicalRemoteJid,
+                instanceName,
+                userId,
+              );
+              await executeWorkflow({
+                workflowService: this.workflowService,
+                nodeSenderService: this.nodeSenderService,
+                chatHistoryService: this.chatHistoryService,
+                aiAgentService: this.aiAgentService,
+                logger,
+                workflowName: bienvenidaWorkflow.name,
+                server_url,
+                apikey,
+                instanceName,
+                remoteJid: canonicalRemoteJid,
+                userId,
+                sessionHistoryId,
+                apiMsgUrl,
+                apikeyOpenAi: defaultApiKey ?? '',
+                model,
+                provider,
+                muteAgentResponses: userWithRelations.muteAgentResponses,
+              });
+              // Sin return: la IA continúa y envía la pregunta del Paso 1
+            }
+          }
+
           const resumed = await this.workflowService.continuePausedWorkflow(
             server_url,
             apikey,

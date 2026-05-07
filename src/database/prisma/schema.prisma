@@ -879,6 +879,7 @@ model Seguimiento {
   followUpPrompt        String?
   followUpStatus        String   @default("pending")
   generatedMessage      String?  @map("generated_message")
+  workflowId            String?  @map("workflow_id")
 
   @@map("seguimientos")
 }

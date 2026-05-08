@@ -587,7 +587,7 @@ export class WebhookService implements OnModuleInit {
           );
           if (historyForBienvenida.length === 1) {
             const bienvenidaWorkflow =
-              await this.workflowService.findWorkflowByName(
+              await this.workflowService.findWelcomeWorkflow(
                 userId,
                 this.aiAgentService.initWorkflowName,
               );

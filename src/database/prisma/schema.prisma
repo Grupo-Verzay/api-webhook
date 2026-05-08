@@ -561,20 +561,21 @@ model VerificationToken {
 }
 
 model Workflow {
-  id            String                 @id @default(cuid())
-  userId        String
-  name          String
-  description   String?
-  definition    String
-  status        String
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt @map("updateAt")
-  umbral        Float                  @default(0.5)
-  isPro         Boolean                @default(false)
-  order         Int                    @default(0)
-  sessionStates SessionWorkflowState[]
-  workflowEdges WorkflowEdge[]
-  nodes         WorkflowNode[]
+  id                  String                 @id @default(cuid())
+  userId              String
+  name                String
+  description         String?
+  definition          String
+  status              String
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt @map("updateAt")
+  umbral              Float                  @default(0.5)
+  isPro               Boolean                @default(false)
+  order               Int                    @default(0)
+  triggerOnNewSession Boolean                @default(false)
+  sessionStates       SessionWorkflowState[]
+  workflowEdges       WorkflowEdge[]
+  nodes               WorkflowNode[]
 
   @@unique([name, userId])
 }

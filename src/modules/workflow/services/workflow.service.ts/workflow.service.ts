@@ -1173,6 +1173,21 @@ export class WorkflowService implements OnModuleInit {
     }
   }
 
+  async findWelcomeWorkflow(userId: string, fallbackName: string) {
+    try {
+      const byToggle = await this.prisma.workflow.findFirst({
+        where: { userId, triggerOnNewSession: true },
+      });
+      if (byToggle) return byToggle;
+
+      return await this.prisma.workflow.findFirst({
+        where: { userId, name: { equals: fallbackName, mode: 'insensitive' } },
+      });
+    } catch {
+      return null;
+    }
+  }
+
   private async registerIdSeguimientoInSession(
     id: string,
     remoteJid: string,

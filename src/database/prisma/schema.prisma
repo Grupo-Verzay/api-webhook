@@ -573,6 +573,7 @@ model Workflow {
   isPro               Boolean                @default(false)
   order               Int                    @default(0)
   triggerOnNewSession Boolean                @default(false)
+  isFunnelStep        Boolean                @default(false)
   sessionStates       SessionWorkflowState[]
   workflowEdges       WorkflowEdge[]
   nodes               WorkflowNode[]

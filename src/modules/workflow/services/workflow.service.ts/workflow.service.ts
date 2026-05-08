@@ -1173,6 +1173,17 @@ export class WorkflowService implements OnModuleInit {
     }
   }
 
+  async getFunnelFlows(userId: string) {
+    try {
+      return await this.prisma.workflow.findMany({
+        where: { userId, isFunnelStep: true },
+        orderBy: { order: 'asc' },
+      });
+    } catch {
+      return [];
+    }
+  }
+
   async findWelcomeWorkflow(userId: string, fallbackName: string) {
     try {
       const byToggle = await this.prisma.workflow.findFirst({

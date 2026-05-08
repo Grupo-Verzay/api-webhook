@@ -634,6 +634,51 @@ export class WebhookService implements OnModuleInit {
             }
           }
 
+          // Auto-ejecutar pasos de embudo en secuencia
+          const funnelFlows = await this.workflowService.getFunnelFlows(userId);
+          if (funnelFlows.length > 0) {
+            const welcomeFlow = await this.workflowService.findWelcomeWorkflow(userId, this.aiAgentService.initWorkflowName);
+            const welcomeDone = welcomeFlow
+              ? await this.chatHistoryService.hasIntentionBeenExecuted(sessionHistoryId, welcomeFlow.name)
+              : true;
+
+            if (welcomeDone) {
+              for (let i = 0; i < funnelFlows.length; i++) {
+                const funnelFlow = funnelFlows[i];
+                const alreadyDone = await this.chatHistoryService.hasIntentionBeenExecuted(sessionHistoryId, funnelFlow.name);
+                if (alreadyDone) continue;
+
+                const prevDone = i === 0
+                  ? true
+                  : await this.chatHistoryService.hasIntentionBeenExecuted(sessionHistoryId, funnelFlows[i - 1].name);
+
+                if (prevDone) {
+                  logger.log(`[EMBUDO] Ejecutando paso ${i + 1}: "${funnelFlow.name}"`, 'WebhookService');
+                  await this.chatHistoryService.registerExecutedIntention(sessionHistoryId, funnelFlow.name, 'intention');
+                  await this.sessionService.registerWorkflow(
+                    { id: funnelFlow.id, name: funnelFlow.name },
+                    canonicalRemoteJid, instanceName, userId,
+                  );
+                  await executeWorkflow({
+                    workflowService: this.workflowService,
+                    nodeSenderService: this.nodeSenderService,
+                    chatHistoryService: this.chatHistoryService,
+                    aiAgentService: this.aiAgentService,
+                    logger,
+                    workflowName: funnelFlow.name,
+                    server_url, apikey, instanceName,
+                    remoteJid: canonicalRemoteJid,
+                    userId, sessionHistoryId, apiMsgUrl,
+                    apikeyOpenAi: defaultApiKey ?? '',
+                    model, provider,
+                    muteAgentResponses: userWithRelations.muteAgentResponses,
+                  });
+                }
+                break; // solo un paso por turno
+              }
+            }
+          }
+
           const resumed = await this.workflowService.continuePausedWorkflow(
             server_url,
             apikey,

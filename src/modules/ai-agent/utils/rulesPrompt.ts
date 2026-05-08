@@ -557,6 +557,18 @@ Cada respuesta debe seguir este orden:
 > 🤝 *¡Estamos para servirle!*
 
 ---
+
+## [7] 🔄 MENSAJES INTERNOS DEL SISTEMA — AVANCE DE ESTADO
+
+Cuando en el historial de conversación encuentres un mensaje que empiece con **[SISTEMA]:** (generado por el sistema, no por el usuario):
+
+- ✅ Tómalo como una notificación de que ese flujo ya fue ejecutado automáticamente.
+- ✅ Actualiza tu estado interno: marca ese paso como completado.
+- 🚫 **PROHIBIDO** repetir el contenido de ese paso o emitir su texto al usuario.
+- ✅ Continúa desde el siguiente paso en tu secuencia de estado.
+- 🔇 No menciones ni respondas a ese mensaje — es invisible para el usuario.
+
+---
 `;
 
 export const ERROR_OPENAI_EMPTY_RESPONSE = `¡Ups! Algo salió mal 😅

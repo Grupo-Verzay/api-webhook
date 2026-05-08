@@ -675,6 +675,12 @@ export class WebhookService implements OnModuleInit {
                     model, provider,
                     muteAgentResponses: userWithRelations.muteAgentResponses,
                   });
+                  // Notificar a la IA que este paso ya fue ejecutado para que avance su estado interno
+                  await this.chatHistoryService.saveMessage(
+                    sessionHistoryId,
+                    `[SISTEMA]: El flujo "${funnelFlow.name}" fue ejecutado automáticamente. Ya completaste este paso. NO lo repitas ni emitas su contenido. Avanza al siguiente paso en tu estado interno.`,
+                    'ai',
+                  );
                 }
                 break; // solo un paso por turno
               }

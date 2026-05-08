@@ -581,12 +581,20 @@ export class WebhookService implements OnModuleInit {
           // Auto-ejecutar flujo BIENVENIDA en primera conexión
           const historyForBienvenida =
             await this.chatHistoryService.getChatHistory(sessionHistoryId);
+          logger.log(
+            `[BIENVENIDA] historyLength=${historyForBienvenida.length} sessionHistoryId=${sessionHistoryId} userId=${userId}`,
+            'WebhookService',
+          );
           if (historyForBienvenida.length === 1) {
             const bienvenidaWorkflow =
               await this.workflowService.findWorkflowByName(
                 userId,
                 this.aiAgentService.initWorkflowName,
               );
+            logger.log(
+              `[BIENVENIDA] workflow encontrado: ${bienvenidaWorkflow ? bienvenidaWorkflow.name : 'null'}`,
+              'WebhookService',
+            );
             if (bienvenidaWorkflow) {
               logger.log(
                 `[BIENVENIDA] Primera conexión → ejecutando flujo "${bienvenidaWorkflow.name}"`,

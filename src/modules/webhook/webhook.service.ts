@@ -634,8 +634,10 @@ export class WebhookService implements OnModuleInit {
             }
           }
 
-          // Auto-ejecutar pasos de embudo en secuencia
-          const funnelFlows = await this.workflowService.getFunnelFlows(userId);
+          // Auto-ejecutar pasos de embudo en secuencia (nunca en el primer mensaje)
+          const funnelFlows = historyForBienvenida.length > 1
+            ? await this.workflowService.getFunnelFlows(userId)
+            : [];
           if (funnelFlows.length > 0) {
             const welcomeFlow = await this.workflowService.findWelcomeWorkflow(userId, this.aiAgentService.initWorkflowName);
             const welcomeDone = welcomeFlow

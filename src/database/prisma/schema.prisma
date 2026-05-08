@@ -292,6 +292,7 @@ model Session {
   flujos               String?                @default("")
   remoteJidAlt         String?
   agentDisabled        Boolean                @default(false)
+  signatureEnabled     Boolean                @default(false) @map("signature_enabled")
   leadStatus           LeadStatus?
   leadStatusReason     String?                @map("lead_status_reason")
   leadStatusSourceHash String?                @map("lead_status_source_hash")
@@ -402,6 +403,7 @@ model User {
   openingPhrase                      String?                      @default("DEPRECATED")
   apiKeyId                           String?
   delSeguimiento                     String?                      @default("Estamos para servirle.") @map("del_seguimiento")
+  advisorSignature                   String?                      @map("advisor_signature")
   plan                               Plan                         @default(basico)
   autoReactivate                     String?
   webhookUrl                         String?                      @default("https://n8npro.verzay.co/webhook")

@@ -237,7 +237,7 @@ export class SessionService {
           { remoteJidAlt: { in: candidates } },
         ],
       },
-      data: { agentDisabled },
+      data: { agentDisabled, ...(agentDisabled ? { signatureEnabled: false } : {}) },
     });
   }
 
@@ -263,7 +263,7 @@ export class SessionService {
 
     await this.prisma.session.updateMany({
       where,
-      data: { status: false, agentDisabled: true },
+      data: { status: false, agentDisabled: true, signatureEnabled: false },
     });
   }
 

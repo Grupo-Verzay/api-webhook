@@ -300,6 +300,7 @@ model Session {
   leadScore            Int?                   @map("lead_score")
   leadScoreReason      String?                @map("lead_score_reason")
   leadScoredAt         DateTime?              @map("lead_scored_at")
+  assignedAdvisorId    String?                @map("assigned_advisor_id")
   appointments         Appointment[]
   registros            Registro[]
   user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -432,6 +433,10 @@ model User {
   elevenLabsApiKey                   String?
   elevenLabsVoiceId                  String?
   ttsProvider                        String?                      @default("openai")
+  ownerId                            String?                      @map("owner_id")
+  advisorRole                        String?                      @map("advisor_role")
+  autoAssignEnabled                  Boolean                      @default(false) @map("auto_assign_enabled")
+  autoAssignMaxChats                 Int                          @default(5) @map("auto_assign_max_chats")
   accounts                           Account[]
   agentPrompts                       AgentPrompt[]
   publishedAgentPromptRevisions      AgentPromptRevision[]

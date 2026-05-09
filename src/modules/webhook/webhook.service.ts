@@ -40,6 +40,7 @@ import { buildChatHistorySessionId } from '../chat-history/chat-history-session.
 import { FollowUpRunnerService } from './services/follow-up-runner/follow-up-runner.service';
 import { PaymentReceiptProcessorService } from 'src/modules/payment-receipt/services/payment-receipt-processor.service';
 import { TtsService } from '../ai-agent/services/tts/tts.service';
+import { AutoAssignService } from './services/auto-assign/auto-assign.service';
 
 @Injectable()
 export class WebhookService implements OnModuleInit {
@@ -82,6 +83,7 @@ export class WebhookService implements OnModuleInit {
     private readonly crmFollowUpRunnerService: CrmFollowUpRunnerService,
     private readonly paymentReceiptProcessor: PaymentReceiptProcessorService,
     private readonly ttsService: TtsService,
+    private readonly autoAssignService: AutoAssignService,
   ) { }
 
   onModuleInit(): void {
@@ -1065,7 +1067,7 @@ export class WebhookService implements OnModuleInit {
     }
 
     // 3) Registrar usando el canon
-    await this.sessionService.registerSession(
+    const newSession = await this.sessionService.registerSession(
       userId,
       remoteJid,
       pushName,
@@ -1074,6 +1076,10 @@ export class WebhookService implements OnModuleInit {
       senderPn,
     );
     logger.log(`✅ Registro exitoso para ${remoteJid}`);
+
+    // Auto-assign advisor if owner has it enabled (fire-and-forget, non-blocking)
+    void this.autoAssignService.tryAssign(newSession.id, userId);
+
     return { status: true, canonicalRemoteJid: remoteJid };
   }
 

@@ -26,6 +26,7 @@ import { FollowUpRunnerSchedulerService } from './services/follow-up-runner/foll
 import { BillingCronService } from './services/billing-cron/billing-cron.service';
 import { BillingCronSchedulerService } from './services/billing-cron/billing-cron.scheduler.service';
 import { PaymentReceiptModule } from 'src/modules/payment-receipt/payment-receipt.module';
+import { AutoAssignService } from './services/auto-assign/auto-assign.service';
 
 @Module({
   imports: [HttpModule, WorkflowModule, AiAgentModule, LeadFunnelModule, PaymentReceiptModule],
@@ -55,6 +56,7 @@ import { PaymentReceiptModule } from 'src/modules/payment-receipt/payment-receip
     AntifloodService,
     MessageBufferService,
     MessageTypeHandlerService,
+    AutoAssignService,
   ],
 })
 export class WebhookModule {}

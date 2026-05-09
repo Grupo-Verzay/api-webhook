@@ -36,6 +36,7 @@ export class AutoAssignService {
           ON s.assigned_advisor_id = u.id AND s.status = true
         WHERE u.owner_id = ${ownerId}
           AND u.advisor_role IS NOT NULL
+          AND u.advisor_available = true
         GROUP BY u.id
         HAVING COUNT(s.id)::int < ${maxChats}
         ORDER BY COUNT(s.id) ASC

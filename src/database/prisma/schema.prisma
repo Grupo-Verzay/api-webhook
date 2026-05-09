@@ -435,6 +435,7 @@ model User {
   ttsProvider                        String?                      @default("openai")
   ownerId                            String?                      @map("owner_id")
   advisorRole                        String?                      @map("advisor_role")
+  advisorAvailable                   Boolean                      @default(true) @map("advisor_available")
   autoAssignEnabled                  Boolean                      @default(false) @map("auto_assign_enabled")
   autoAssignMaxChats                 Int                          @default(5) @map("auto_assign_max_chats")
   accounts                           Account[]

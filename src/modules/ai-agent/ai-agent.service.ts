@@ -1084,8 +1084,13 @@ export class AiAgentService {
     return tool(
       async ({ url, columna, valor }: { url?: string; columna?: string; valor?: string }) => {
         const resolvedUrl = url ?? cfg.promptTemplate ?? '';
-        logger.log(`Tool "${cfg.toolKey}" (leer_google_sheets) llamada. url="${resolvedUrl}"`);
+        logger.log(`Tool "${cfg.toolKey}" (leer_google_sheets) llamada. url="${resolvedUrl}" columna="${columna ?? ''}" valor="${valor ?? ''}"`);
         if (!resolvedUrl) return 'No se proporcionó una URL de Google Sheets. Por favor indica la URL de la hoja.';
+
+        // Normaliza tildes/diacríticos para comparaciones flexibles
+        const normalize = (s: string) =>
+          s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+
         try {
           const parsed = new URL(resolvedUrl);
           const pathname = parsed.pathname;
@@ -1102,8 +1107,16 @@ export class AiAgentService {
             ? `https://docs.google.com/spreadsheets/d/e/${pubMatch[1]}/pub?output=csv&gid=${gid}`
             : `https://docs.google.com/spreadsheets/d/${regularMatch![1]}/export?format=csv&gid=${gid}`;
 
+          logger.log(`[leer_google_sheets] Fetching CSV: ${csvUrl}`);
           const response = await axios.get<string>(csvUrl, { responseType: 'text', timeout: 10000 });
-          const csvText = (response.data as string).replace(/^﻿/, '');
+          const rawText = (response.data as string).replace(/^﻿/, '');
+
+          // Si Google devuelve HTML en vez de CSV (hoja no publicada o URL incorrecta)
+          if (rawText.trimStart().startsWith('<')) {
+            logger.error(`[leer_google_sheets] Respuesta HTML recibida en lugar de CSV. URL: ${csvUrl}`);
+            return 'Error: La hoja no está publicada como CSV. En Google Sheets ve a Archivo → Compartir → Publicar en la web, selecciona la hoja y elige formato CSV.';
+          }
+          const csvText = rawText;
 
           const lines = csvText.split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l.trim());
           if (lines.length < 2) return 'La hoja no contiene datos o está vacía.';
@@ -1136,18 +1149,24 @@ export class AiAgentService {
             })
             .filter((row) => Object.values(row).some((v) => v !== ''));
 
+          logger.log(`[leer_google_sheets] ${rows.length} filas leídas. Columnas: ${headers.join(', ')}`);
+
           let results = rows;
           if (columna && valor) {
-            results = rows.filter((row) => {
-              const key = Object.keys(row).find((k) => k.toLowerCase() === columna.toLowerCase());
-              return key && row[key].toLowerCase().includes(valor.toLowerCase());
-            });
-          }
+            // Busca la columna con normalización de tildes
+            const matchedKey = headers.find((h) => normalize(h) === normalize(columna));
+            if (!matchedKey) {
+              return `No existe la columna "${columna}" en la hoja. Columnas disponibles: ${headers.join(', ')}.`;
+            }
+            results = rows.filter((row) => normalize(row[matchedKey] ?? '').includes(normalize(valor)));
 
-          if (!results.length) {
-            return columna
-              ? `No se encontraron filas donde "${columna}" contenga "${valor}".`
-              : 'La hoja no contiene datos.';
+            if (!results.length) {
+              // Devuelve los valores únicos de esa columna para que el AI sepa qué hay disponible
+              const uniqueVals = [...new Set(rows.map((r) => r[matchedKey]).filter(Boolean))].slice(0, 20);
+              return `No se encontraron filas donde "${matchedKey}" contenga "${valor}". Valores disponibles en esa columna: ${uniqueVals.join(', ')}.`;
+            }
+          } else if (!rows.length) {
+            return 'La hoja no contiene datos.';
           }
 
           const preview = results.slice(0, 10);
@@ -1161,6 +1180,8 @@ export class AiAgentService {
           logger.error(`[leer_google_sheets] Error: ${err?.message}`);
           if (err?.response?.status === 403 || err?.response?.status === 401)
             return 'Error: La hoja no es pública. Comparte como "Cualquiera con el enlace puede ver".';
+          if (err?.response?.status === 404)
+            return 'Error 404: No se encontró la hoja. Verifica que la URL sea correcta y que esté publicada.';
           return `No se pudo leer la hoja. Verifica que sea pública. Error: ${err?.message ?? 'desconocido'}`;
         }
       },
@@ -1169,7 +1190,7 @@ export class AiAgentService {
         description: cfg.toolDescription,
         schema: z.object({
           url: z.string().optional().describe('URL completa de la hoja de Google Sheets (debe ser pública). Opcional si ya hay una URL configurada por defecto.'),
-          columna: z.string().optional().describe('Nombre de columna para filtrar resultados (opcional)'),
+          columna: z.string().optional().describe('Nombre exacto (o aproximado) de la columna para filtrar. Si no sabes el nombre exacto, omite este campo para obtener todos los datos.'),
           valor: z.string().optional().describe('Valor a buscar en la columna indicada (opcional)'),
         }),
       },

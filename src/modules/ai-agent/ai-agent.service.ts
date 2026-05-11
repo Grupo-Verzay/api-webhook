@@ -1,4 +1,5 @@
 import axios from 'axios';
+import * as cheerio from 'cheerio';
 
 import { Readable } from 'stream';
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
@@ -351,6 +352,8 @@ export class AiAgentService {
         return this.buildBuscarPlantillaTool(cfg, params);
       case 'leer_google_sheets':
         return this.buildLeerGoogleSheetsTool(cfg, params);
+      case 'scrape_web':
+        return this.buildScrapeWebTool(cfg, params);
       default:
         return null;
     }
@@ -1121,6 +1124,108 @@ export class AiAgentService {
           url: z.string().describe('URL completa de la hoja de Google Sheets (debe ser pública)'),
           columna: z.string().optional().describe('Nombre de columna para filtrar resultados (opcional)'),
           valor: z.string().optional().describe('Valor a buscar en la columna indicada (opcional)'),
+        }),
+      },
+    );
+  }
+
+  private buildScrapeWebTool(
+    cfg: { toolKey: string; toolDescription: string },
+    params: { userId: string; instanceName: string; remoteJid: string },
+  ): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    const BLOCKED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '169.254'];
+    const MAX_BYTES = 500_000; // 500 KB
+    const MAX_CHARS = 4_000;   // ~1 000 tokens
+
+    // @ts-ignore
+    return tool(
+      async ({ url, selector }: { url: string; selector?: string }) => {
+        logger.log(`Tool "${cfg.toolKey}" (scrape_web) llamada. url="${url}"`);
+        try {
+          const parsed = new URL(url);
+
+          // Bloquear IPs internas
+          if (BLOCKED_HOSTS.some(h => parsed.hostname.includes(h))) {
+            return 'Error: URL no permitida (host interno).';
+          }
+          if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return 'Error: Solo se permiten URLs http o https.';
+          }
+
+          const response = await axios.get(url, {
+            timeout: 10_000,
+            maxContentLength: MAX_BYTES,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (compatible; AgenteIA/1.0)',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'es,en;q=0.5',
+            },
+            responseType: 'text',
+          });
+
+          const contentType: string = response.headers['content-type'] ?? '';
+
+          // Si es JSON, devolver directamente (APIs públicas)
+          if (contentType.includes('application/json')) {
+            const json = typeof response.data === 'string'
+              ? response.data.slice(0, MAX_CHARS)
+              : JSON.stringify(response.data).slice(0, MAX_CHARS);
+            return `📄 Respuesta JSON de ${parsed.hostname}:\n\n${json}`;
+          }
+
+          const $ = cheerio.load(response.data as string);
+
+          // Eliminar elementos que no son contenido
+          $('script, style, noscript, svg, nav, header, footer, aside, iframe, form').remove();
+          $('[aria-hidden="true"]').remove();
+
+          let text: string;
+          if (selector) {
+            // Si el usuario pidió un selector CSS específico
+            text = $(selector).text();
+            if (!text.trim()) {
+              return `No se encontró contenido con el selector "${selector}" en ${url}.`;
+            }
+          } else {
+            // Extraer el body principal
+            text = $('main, article, [role="main"], .content, #content, body').first().text();
+            if (!text.trim()) text = $('body').text();
+          }
+
+          // Normalizar espacios y saltos de línea
+          const cleaned = text
+            .replace(/\t/g, ' ')
+            .replace(/ {2,}/g, ' ')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim()
+            .slice(0, MAX_CHARS);
+
+          const truncated = cleaned.length >= MAX_CHARS;
+          const header = `🌐 Contenido de ${parsed.hostname}${selector ? ` (selector: ${selector})` : ''}:\n\n`;
+          const footer = truncated ? `\n\n[Contenido truncado. Se muestran los primeros ${MAX_CHARS} caracteres.]` : '';
+
+          return header + cleaned + footer;
+
+        } catch (err: any) {
+          logger.error(`[scrape_web] Error: ${err?.message}`);
+          if (err?.response?.status === 403 || err?.response?.status === 401)
+            return 'Error 403: La página está protegida y no permite acceso público.';
+          if (err?.response?.status === 404)
+            return 'Error 404: La página no existe.';
+          if (err?.code === 'ECONNABORTED' || err?.code === 'ETIMEDOUT')
+            return 'Error: La página tardó demasiado en responder (timeout 10s).';
+          return `No se pudo obtener el contenido de la URL. Error: ${err?.message ?? 'desconocido'}`;
+        }
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({
+          url: z.string().describe('URL completa de la página web pública a consultar (http o https)'),
+          selector: z.string().optional().describe('Selector CSS opcional para extraer solo una sección específica de la página (ej: ".precio", "#descripcion", "table")'),
         }),
       },
     );

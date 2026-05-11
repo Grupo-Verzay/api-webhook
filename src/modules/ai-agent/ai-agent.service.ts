@@ -35,6 +35,30 @@ import OpenAI from 'openai';
 import { toFile } from 'openai/uploads';
 import { CRM_AGENT_PROMPT_IDS } from '../../types/CRM_AGENT_PROMPT_IDS';
 
+// Mapa código de país → timezone (prefijos más largos primero para evitar coincidencias parciales)
+const COUNTRY_TZ_MAP: [string, string][] = [
+  ['593', 'America/Guayaquil'],
+  ['598', 'America/Montevideo'],
+  ['595', 'America/Asuncion'],
+  ['591', 'America/La_Paz'],
+  ['507', 'America/Panama'],
+  ['506', 'America/Costa_Rica'],
+  ['505', 'America/Managua'],
+  ['504', 'America/Tegucigalpa'],
+  ['503', 'America/El_Salvador'],
+  ['502', 'America/Guatemala'],
+  ['58',  'America/Caracas'],
+  ['57',  'America/Bogota'],
+  ['56',  'America/Santiago'],
+  ['55',  'America/Sao_Paulo'],
+  ['54',  'America/Argentina/Buenos_Aires'],
+  ['53',  'America/Havana'],
+  ['52',  'America/Mexico_City'],
+  ['51',  'America/Lima'],
+  ['34',  'Europe/Madrid'],
+  ['1',   'America/New_York'],
+];
+
 @Injectable()
 export class AiAgentService {
   // Cliente LLM (LangChain / OpenAI envuelto)
@@ -663,6 +687,14 @@ export class AiAgentService {
 
   // ─── Agenda / citas ──────────────────────────────────────────────────────
 
+  private getClientTimezone(remoteJid: string, fallback: string): string {
+    const digits = (remoteJid ?? '').split('@')[0].replace(/\D/g, '');
+    for (const [prefix, tz] of COUNTRY_TZ_MAP) {
+      if (digits.startsWith(prefix)) return tz;
+    }
+    return fallback;
+  }
+
   private buildListarServiciosAgendaTool(cfg: any, params: {
     userId: string; instanceName: string; remoteJid: string;
   }): any {
@@ -737,16 +769,18 @@ export class AiAgentService {
             return `No hay horarios disponibles para el ${date}.`;
           }
 
-          const tzCity = timezone.split('/').pop()?.replace(/_/g, ' ') ?? timezone;
+          // Mostrar horarios en la zona horaria del CLIENTE (detectada por código de país)
+          const clientTz = this.getClientTimezone(remoteJid, timezone);
+          const tzCity = clientTz.split('/').pop()?.replace(/_/g, ' ') ?? clientTz;
           const localSlots = slots.map((s: any) => {
             const start = new Date(s.startTime).toLocaleTimeString('es-CO', {
-              timeZone: timezone,
+              timeZone: clientTz,
               hour: '2-digit',
               minute: '2-digit',
               hour12: true,
             });
             const end = new Date(s.endTime).toLocaleTimeString('es-CO', {
-              timeZone: timezone,
+              timeZone: clientTz,
               hour: '2-digit',
               minute: '2-digit',
               hour12: true,
@@ -818,10 +852,12 @@ export class AiAgentService {
           );
 
           const { message, appointment } = res.data ?? {};
-          const tzCity = timezone.split('/').pop()?.replace(/_/g, ' ') ?? timezone;
+          // Confirmación en timezone del CLIENTE (detectada por código de país)
+          const clientTz = this.getClientTimezone(remoteJid, timezone);
+          const tzCity = clientTz.split('/').pop()?.replace(/_/g, ' ') ?? clientTz;
           const confirmDate = appointment?.startTime
             ? `${new Date(appointment.startTime).toLocaleString('es-CO', {
-                timeZone: timezone,
+                timeZone: clientTz,
                 dateStyle: 'full',
                 timeStyle: 'short',
               })} (hora ${tzCity})`

@@ -1082,16 +1082,25 @@ export class AiAgentService {
 
     // @ts-ignore
     return tool(
-      async ({ url, columna, valor }: { url: string; columna?: string; valor?: string }) => {
-        logger.log(`Tool "${cfg.toolKey}" (leer_google_sheets) llamada. url="${url}"`);
+      async ({ url, columna, valor }: { url?: string; columna?: string; valor?: string }) => {
+        const resolvedUrl = url ?? cfg.promptTemplate ?? '';
+        logger.log(`Tool "${cfg.toolKey}" (leer_google_sheets) llamada. url="${resolvedUrl}"`);
+        if (!resolvedUrl) return 'No se proporcionó una URL de Google Sheets. Por favor indica la URL de la hoja.';
         try {
-          const parsed = new URL(url);
-          const pathMatch = parsed.pathname.match(/\/spreadsheets\/d\/([^/]+)/);
-          if (!pathMatch) return 'URL inválida. Usa la URL completa de Google Sheets.';
-
-          const spreadsheetId = pathMatch[1];
+          const parsed = new URL(resolvedUrl);
+          const pathname = parsed.pathname;
           const gid = (parsed.searchParams.get('gid') ?? parsed.hash.replace('#gid=', '').trim()) || '0';
-          const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`;
+
+          // Formato publicado: /spreadsheets/d/e/{pubKey}/pubhtml  o  /pub?output=csv
+          const pubMatch = pathname.match(/\/spreadsheets\/d\/e\/([^/]+)/);
+          // Formato regular: /spreadsheets/d/{spreadsheetId}/edit  o  /view
+          const regularMatch = !pubMatch ? pathname.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]{20,})/) : null;
+
+          if (!pubMatch && !regularMatch) return 'URL inválida. Usa la URL completa de Google Sheets (formato regular o publicado).';
+
+          const csvUrl = pubMatch
+            ? `https://docs.google.com/spreadsheets/d/e/${pubMatch[1]}/pub?output=csv&gid=${gid}`
+            : `https://docs.google.com/spreadsheets/d/${regularMatch![1]}/export?format=csv&gid=${gid}`;
 
           const response = await axios.get<string>(csvUrl, { responseType: 'text', timeout: 10000 });
           const csvText = (response.data as string).replace(/^﻿/, '');
@@ -1159,7 +1168,7 @@ export class AiAgentService {
         name: cfg.toolKey,
         description: cfg.toolDescription,
         schema: z.object({
-          url: z.string().describe('URL completa de la hoja de Google Sheets (debe ser pública)'),
+          url: z.string().optional().describe('URL completa de la hoja de Google Sheets (debe ser pública). Opcional si ya hay una URL configurada por defecto.'),
           columna: z.string().optional().describe('Nombre de columna para filtrar resultados (opcional)'),
           valor: z.string().optional().describe('Valor a buscar en la columna indicada (opcional)'),
         }),
@@ -1168,7 +1177,7 @@ export class AiAgentService {
   }
 
   private buildScrapeWebTool(
-    cfg: { toolKey: string; toolDescription: string },
+    cfg: { toolKey: string; toolDescription: string; promptTemplate?: string | null },
     params: { userId: string; instanceName: string; remoteJid: string },
   ): any {
     const { userId, instanceName, remoteJid } = params;
@@ -1180,10 +1189,12 @@ export class AiAgentService {
 
     // @ts-ignore
     return tool(
-      async ({ url, selector }: { url: string; selector?: string }) => {
-        logger.log(`Tool "${cfg.toolKey}" (scrape_web) llamada. url="${url}"`);
+      async ({ url, selector }: { url?: string; selector?: string }) => {
+        const resolvedUrl = url ?? cfg.promptTemplate ?? '';
+        logger.log(`Tool "${cfg.toolKey}" (scrape_web) llamada. url="${resolvedUrl}"`);
+        if (!resolvedUrl) return 'No se proporcionó una URL. Por favor indica la URL de la página a consultar.';
         try {
-          const parsed = new URL(url);
+          const parsed = new URL(resolvedUrl);
 
           // Bloquear IPs internas
           if (BLOCKED_HOSTS.some(h => parsed.hostname.includes(h))) {
@@ -1193,7 +1204,7 @@ export class AiAgentService {
             return 'Error: Solo se permiten URLs http o https.';
           }
 
-          const response = await axios.get(url, {
+          const response = await axios.get(resolvedUrl, {
             timeout: 10_000,
             maxContentLength: MAX_BYTES,
             headers: {
@@ -1225,7 +1236,7 @@ export class AiAgentService {
             // Si el usuario pidió un selector CSS específico
             text = $(selector).text();
             if (!text.trim()) {
-              return `No se encontró contenido con el selector "${selector}" en ${url}.`;
+              return `No se encontró contenido con el selector "${selector}" en ${resolvedUrl}.`;
             }
           } else {
             // Extraer el body principal
@@ -1262,7 +1273,7 @@ export class AiAgentService {
         name: cfg.toolKey,
         description: cfg.toolDescription,
         schema: z.object({
-          url: z.string().describe('URL completa de la página web pública a consultar (http o https)'),
+          url: z.string().optional().describe('URL completa de la página web pública a consultar (http o https). Opcional si ya hay una URL configurada por defecto.'),
           selector: z.string().optional().describe('Selector CSS opcional para extraer solo una sección específica de la página (ej: ".precio", "#descripcion", "table")'),
         }),
       },

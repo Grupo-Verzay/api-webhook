@@ -101,7 +101,7 @@ export class FollowUpRunnerService {
     const dateMatch = timeStr.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
     if (dateMatch) {
       const [, day, month, year, hours, minutes] = dateMatch;
-      const scheduled = new Date(`${year}-${month}-${day}T${hours}:${minutes}:00`);
+      const scheduled = new Date(`${year}-${month}-${day}T${hours}:${minutes}:00Z`);
       return scheduled.getTime() <= Date.now();
     }
     // Legacy format: numeric seconds from createdAt

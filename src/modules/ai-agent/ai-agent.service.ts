@@ -737,6 +737,7 @@ export class AiAgentService {
             return `No hay horarios disponibles para el ${date}.`;
           }
 
+          const tzCity = timezone.split('/').pop()?.replace(/_/g, ' ') ?? timezone;
           const localSlots = slots.map((s: any) => {
             const start = new Date(s.startTime).toLocaleTimeString('es-CO', {
               timeZone: timezone,
@@ -750,7 +751,7 @@ export class AiAgentService {
               minute: '2-digit',
               hour12: true,
             });
-            return `• ${start} – ${end}  (startTime: ${s.startTime} | endTime: ${s.endTime})`;
+            return `• ${start} – ${end} (hora ${tzCity})  (startTime: ${s.startTime} | endTime: ${s.endTime})`;
           });
 
           const reminder =
@@ -817,12 +818,13 @@ export class AiAgentService {
           );
 
           const { message, appointment } = res.data ?? {};
+          const tzCity = timezone.split('/').pop()?.replace(/_/g, ' ') ?? timezone;
           const confirmDate = appointment?.startTime
-            ? new Date(appointment.startTime).toLocaleString('es-CO', {
+            ? `${new Date(appointment.startTime).toLocaleString('es-CO', {
                 timeZone: timezone,
                 dateStyle: 'full',
                 timeStyle: 'short',
-              })
+              })} (hora ${tzCity})`
             : startTime;
 
           const successText = message

@@ -376,6 +376,8 @@ export class AiAgentService {
         return this.buildBuscarPlantillaTool(cfg, params);
       case 'leer_google_sheets':
         return this.buildLeerGoogleSheetsTool(cfg, params);
+      case 'escribir_google_sheets':
+        return this.buildEscribirGoogleSheetsTool(cfg, params);
       case 'scrape_web':
         return this.buildScrapeWebTool(cfg, params);
       default:
@@ -1192,6 +1194,56 @@ export class AiAgentService {
           url: z.string().optional().describe('URL completa de la hoja de Google Sheets (debe ser pública). Opcional si ya hay una URL configurada por defecto.'),
           columna: z.string().optional().describe('Nombre exacto (o aproximado) de la columna para filtrar. Si no sabes el nombre exacto, omite este campo para obtener todos los datos.'),
           valor: z.string().optional().describe('Valor a buscar en la columna indicada (opcional)'),
+        }),
+      },
+    );
+  }
+
+  private buildEscribirGoogleSheetsTool(
+    cfg: { toolKey: string; toolDescription: string; promptTemplate?: string | null },
+    params: { userId: string; instanceName: string; remoteJid: string },
+  ): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    // @ts-ignore
+    return tool(
+      async ({ datos, url }: { datos: Record<string, string>; url?: string }) => {
+        const resolvedUrl = url ?? cfg.promptTemplate ?? '';
+        logger.log(`Tool "${cfg.toolKey}" (escribir_google_sheets) llamada. url="${resolvedUrl}" datos=${JSON.stringify(datos)}`);
+        if (!resolvedUrl) return 'No se proporcionó la URL del webhook de Google Apps Script. Configura la URL en la herramienta.';
+
+        try {
+          const parsed = new URL(resolvedUrl);
+          if (!['http:', 'https:'].includes(parsed.protocol)) return 'Error: Solo se permiten URLs http o https.';
+
+          // Apps Script redirige POST → usar text/plain para que el redirect preserve el método
+          const response = await axios.post(resolvedUrl, JSON.stringify(datos), {
+            headers: { 'Content-Type': 'text/plain' },
+            timeout: 15_000,
+            maxRedirects: 5,
+          });
+
+          const body = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+          if (body?.success) {
+            return `✅ Datos guardados correctamente en Google Sheets.${body.message ? ' ' + body.message : ''}`;
+          }
+          return `Error al guardar: ${body?.error ?? body?.message ?? 'Respuesta inesperada del servidor'}`;
+        } catch (err: any) {
+          logger.error(`[escribir_google_sheets] Error: ${err?.message}`);
+          if (err?.response?.status === 403 || err?.response?.status === 401)
+            return 'Error: Sin permiso para escribir. Verifica que el Apps Script esté publicado como "Cualquiera puede acceder".';
+          if (err?.response?.status === 404)
+            return 'Error 404: URL del webhook no encontrada. Verifica la URL del Apps Script.';
+          return `No se pudo guardar en la hoja. Error: ${err?.message ?? 'desconocido'}`;
+        }
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({
+          datos: z.record(z.string()).describe('Objeto con los datos a guardar. Las claves deben coincidir exactamente con los encabezados de la hoja. Ejemplo: {"NOMBRE": "Juan", "TELEFONO": "3001234567", "PAIS": "Colombia"}'),
+          url: z.string().optional().describe('URL del webhook de Google Apps Script (opcional si ya hay una configurada por defecto).'),
         }),
       },
     );

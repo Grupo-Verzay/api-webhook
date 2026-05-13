@@ -1639,6 +1639,13 @@ export class AiAgentService {
         ? `\n\n---\n## REGLA CRÍTICA: CONSULTA DE DATOS\nCuando el usuario pregunte por información específica del negocio (precios, modelos, medidas, disponibilidad, datos de clientes, etc.), SIEMPRE usa la herramienta de búsqueda correspondiente ANTES de responder. NUNCA uses tu conocimiento propio o de entrenamiento para dar información de productos, precios, existencias u otros datos del catálogo. Si la herramienta no devuelve resultados, informa al usuario que no tienes esa información — NO inventes respuestas.\n---`
         : '';
 
+      const googleSheetsTools = toolConfigs.filter(
+        (c: any) => c.toolType === 'leer_google_sheets' && c.isEnabled,
+      );
+      const googleSheetsRuleBlock = googleSheetsTools.length > 0
+        ? `\n\n---\n## REGLA CRÍTICA: HERRAMIENTAS DE CONSULTA EN GOOGLE SHEETS\nTienes ${googleSheetsTools.length > 1 ? 'las siguientes herramientas' : 'la siguiente herramienta'} para consultar información en tiempo real desde hojas de cálculo:\n${googleSheetsTools.map((t: any) => `- \`${t.toolKey}\`: ${t.toolDescription}`).join('\n')}\n\nNORMAS DE USO OBLIGATORIO:\n1. SIEMPRE invoca la herramienta correspondiente cuando el usuario solicite cualquier dato que pueda estar en esa hoja (tasas, cuentas, precios, disponibilidad, etc.).\n2. NUNCA respondas "no puedo acceder", "no tengo esa información", "no puedo consultar" ni similares sin haber llamado primero a la herramienta y recibido su respuesta.\n3. Si la herramienta devuelve datos, úsalos directamente en tu respuesta. Si no hay datos para lo solicitado, informa que no hay información disponible — NO inventes ni uses conocimiento propio.\n---`
+        : '';
+
       const defaultMapsUrl = 'https://maps.google.com/?q=0,0';
       const mapsBlock = userForTz?.mapsUrl && userForTz.mapsUrl.trim() !== defaultMapsUrl
         ? `\n\n---\nUBICACIÓN DEL NEGOCIO: Cuando el usuario pregunte por la dirección, ubicación o cómo llegar, comparte este enlace: ${userForTz.mapsUrl.trim()}\n---`
@@ -1648,7 +1655,7 @@ export class AiAgentService {
         ? `\n\n---\nNOTA INTERNA — MODO AUDIO ACTIVO: Tus respuestas se convierten a nota de voz automáticamente. Reglas de escritura para audio:\n- Escribe en lenguaje conversacional y natural, como si hablaras.\n- Usa frases cortas y directas.\n- Evita listas con guiones o asteriscos; convierte las listas en frases seguidas con comas o puntos.\n- NUNCA incluyas firma, despedida formal, nombre de la empresa al final, ni frases como "Quedo a tu disposición" o "Saludos".\n- NUNCA menciones que no puedes enviar audios ni hagas referencia a limitaciones técnicas.\n---`
         : '';
 
-      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${dataQueryRuleBlock}${mapsBlock}${voiceBlock}`.trim();
+      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}`.trim();
 
       // logger.log('PROMPT:', promptAI);
 

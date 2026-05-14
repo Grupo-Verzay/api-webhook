@@ -540,10 +540,15 @@ export class WebhookService implements OnModuleInit {
             return;
           }
 
-          // Guardamos el mensaje completo que se acumuló en el buffer
+          // Guardamos el mensaje completo que se acumuló en el buffer.
+          // Para imágenes añadimos el marcador [IMAGEN] para que la IA
+          // tenga contexto claro en turnos futuros.
+          const msgToSave = messageType === 'imageMessage'
+            ? `[IMAGEN]: ${mergedTextStr}`
+            : mergedTextStr;
           await this.chatHistoryService.saveMessage(
             sessionHistoryId,
-            mergedTextStr,
+            msgToSave,
             'human',
           );
 
@@ -704,6 +709,10 @@ export class WebhookService implements OnModuleInit {
 
           // Las imágenes también pueden reanudar flujos pausados (ej: paso que pide comprobante).
           // continuePausedWorkflow solo actúa si hay un estado 'waiting' activo → seguro para imágenes.
+          logger.log(
+            `[WORKFLOW_RESUME] Verificando flujo pausado. messageType=${messageType} remoteJid=${canonicalRemoteJid}`,
+            'WebhookService',
+          );
           const resumed = await this.workflowService.continuePausedWorkflow(
               server_url,
               apikey,
@@ -712,6 +721,10 @@ export class WebhookService implements OnModuleInit {
               userId,
               mergedTextStr,
             );
+          logger.log(
+            `[WORKFLOW_RESUME] continuePausedWorkflow resultado: resumed=${resumed}`,
+            'WebhookService',
+          );
 
           if (resumed) {
             logger.log(
@@ -790,8 +803,14 @@ export class WebhookService implements OnModuleInit {
           }
 
           // 3) Si no hay flujo y no está muteado → ahora sí usamos IA
+          // Para imágenes: usamos el marcador [IMAGEN] en el input para que la IA
+          // entienda que viene de una imagen (ya guardado así en el historial).
+          const aiInput = messageType === 'imageMessage'
+            ? `[IMAGEN]: ${mergedTextStr}`
+            : mergedTextStr;
+
           const dataProccessInput = {
-            input: mergedTextStr,
+            input: aiInput,
             userId,
             apikeyOpenAi: defaultApiKey ?? '',
             defaultModel: model,
@@ -804,8 +823,17 @@ export class WebhookService implements OnModuleInit {
             pushName,
           };
 
-          const aiResponse =
+          const aiResponseRaw =
             await this.aiAgentService.processInput(dataProccessInput);
+
+          // Cuando el agente no produce respuesta para una imagen (finalTextRaw vacío),
+          // el agente retorna el fallback genérico. Sustituimos ese fallback por un
+          // mensaje más apropiado para el contexto de imagen.
+          const AI_GENERIC_FALLBACK = 'No pude procesar tu solicitud correctamente. ¿Puedes reformular tu mensaje?';
+          const aiResponse = (messageType === 'imageMessage' && aiResponseRaw === AI_GENERIC_FALLBACK)
+            ? 'Gracias por enviar la imagen. La hemos recibido y la revisaremos. ¿Hay algo más en lo que pueda ayudarte?'
+            : aiResponseRaw;
+
           if (!aiResponse || aiResponse === '') return;
 
           // Deduplicación de respuesta saliente: evita reenviar el mismo

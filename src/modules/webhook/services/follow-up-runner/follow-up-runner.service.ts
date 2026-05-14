@@ -253,16 +253,8 @@ export class FollowUpRunnerService {
     sessionData: { userId: string; remoteJid: string; instanceId: string },
     finalMessage: string,
   ) {
-    await this.prisma.seguimiento.update({
+    await this.prisma.seguimiento.delete({
       where: { id: seguimientoId },
-      data: {
-        followUpStatus: 'sent',
-        followUpAttempt: { increment: 1 },
-        generatedMessage: finalMessage || null,
-        errorReason: null,
-        remoteJid: sessionData.remoteJid,
-        instancia: sessionData.instanceId,
-      },
     });
 
     await this.sessionService.removeSeguimientosFromSession(
@@ -284,31 +276,35 @@ export class FollowUpRunnerService {
   ) {
     const nextAttempt = (seguimiento.followUpAttempt ?? 0) + 1;
     const maxAttempts = Math.max(seguimiento.followUpMaxAttempts ?? 1, 1);
-    const nextStatus = nextAttempt >= maxAttempts ? 'failed' : 'pending';
+    const exhausted = nextAttempt >= maxAttempts;
     const normalizedErrorReason = (errorReason ?? '').trim().slice(0, 500);
 
-    await this.prisma.seguimiento.update({
-      where: { id: seguimiento.id },
-      data: {
-        followUpAttempt: nextAttempt,
-        followUpStatus: nextStatus,
-        errorReason: normalizedErrorReason || null,
-        ...(sessionData
-          ? {
-              remoteJid: sessionData.remoteJid,
-              instancia: sessionData.instanceId,
-            }
-          : {}),
-      },
-    });
+    if (exhausted) {
+      await this.prisma.seguimiento.delete({ where: { id: seguimiento.id } });
 
-    if (nextStatus === 'failed' && sessionData) {
-      await this.sessionService.removeSeguimientosFromSession(
-        [seguimiento.id],
-        sessionData.remoteJid,
-        sessionData.instanceId,
-        sessionData.userId,
-      );
+      if (sessionData) {
+        await this.sessionService.removeSeguimientosFromSession(
+          [seguimiento.id],
+          sessionData.remoteJid,
+          sessionData.instanceId,
+          sessionData.userId,
+        );
+      }
+    } else {
+      await this.prisma.seguimiento.update({
+        where: { id: seguimiento.id },
+        data: {
+          followUpAttempt: nextAttempt,
+          followUpStatus: 'pending',
+          errorReason: normalizedErrorReason || null,
+          ...(sessionData
+            ? {
+                remoteJid: sessionData.remoteJid,
+                instancia: sessionData.instanceId,
+              }
+            : {}),
+        },
+      });
     }
   }
 

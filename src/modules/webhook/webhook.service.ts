@@ -417,6 +417,7 @@ export class WebhookService implements OnModuleInit {
     /* Lista blanca: números de prueba omiten todos los checks de spam */
     const isWhitelisted = this.antifloodService.isWhitelisted(canonicalRemoteJid);
 
+    logger.log(`[WEBHOOK_DIAG] isWhitelisted=${isWhitelisted} para ${canonicalRemoteJid}`);
     if (!isWhitelisted) {
       /* Anti-flood temporal (loops AI-to-AI) */
       logger.debug(`[ANTIFLOOD] Evaluando isSynchronizedPattern...`);
@@ -463,23 +464,29 @@ export class WebhookService implements OnModuleInit {
       }
 
       /* Anti-spam de contenido (soft-skip: no bloquea sesión) */
-      if (this.antifloodService.isRepeatedContentSpam(incomingMessage, canonicalRemoteJid, instanceName)) {
+      const isRepeated = this.antifloodService.isRepeatedContentSpam(incomingMessage, canonicalRemoteJid, instanceName);
+      logger.log(`[WEBHOOK_DIAG] isRepeatedContentSpam=${isRepeated}`);
+      if (isRepeated) {
         logger.warn(`[CONTENT] Mensaje repetido consecutivamente → ignorado.`);
         return;
       }
 
-      if (this.antifloodService.hasInternalRepetition(incomingMessage)) {
+      const isInternalRep = this.antifloodService.hasInternalRepetition(incomingMessage);
+      logger.log(`[WEBHOOK_DIAG] hasInternalRepetition=${isInternalRep}`);
+      if (isInternalRep) {
         logger.warn(`[CONTENT] Mensaje con palabras repetidas internamente → ignorado.`);
         return;
       }
 
-      if (this.antifloodService.isBadWordMessage(incomingMessage)) {
+      const isBadWord = this.antifloodService.isBadWordMessage(incomingMessage);
+      logger.log(`[WEBHOOK_DIAG] isBadWordMessage=${isBadWord}`);
+      if (isBadWord) {
         logger.warn(`[CONTENT] Mensaje con palabras ofensivas → ignorado.`);
         return;
       }
     }
 
-    logger.debug(`[ANTIFLOOD] Sin detección. Continuando flujo normal.`);
+    logger.log(`[WEBHOOK_DIAG] Todos los checks antiflood pasados. Continuando flujo normal.`);
 
     // Cancelar seguimientos de inactividad INMEDIATAMENTE al recibir respuesta del cliente,
     // antes del buffer, para evitar race condition con el scheduler de follow-ups.
@@ -498,11 +505,17 @@ export class WebhookService implements OnModuleInit {
       );
 
     /* Buffer + IA + CHATBOT */
+    logger.log(
+      `[WEBHOOK_DIAG] Antiflood OK → llamando handleIncomingMessage para ${canonicalRemoteJid} | msgLen=${incomingMessage.length} | msgType=${messageType}`,
+    );
     this.messageBufferService.handleIncomingMessage(
       canonicalRemoteJid,
       incomingMessage,
       delayConversation,
       async (mergedText) => {
+        logger.log(
+          `[WEBHOOK_DIAG] Buffer callback disparado para ${canonicalRemoteJid} | mergedLen=${mergedText.toString().length} | concurrentBlock=${this.processingContacts.has(canonicalRemoteJid)}`,
+        );
         if (this.processingContacts.has(canonicalRemoteJid)) {
           logger.warn(
             `[WEBHOOK] Callback concurrente ignorado para ${canonicalRemoteJid}`,

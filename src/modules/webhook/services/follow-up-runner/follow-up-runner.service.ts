@@ -506,11 +506,31 @@ export class FollowUpRunnerService {
       take,
     });
 
-    const due = pending
+    // Recordatorios de cita (creados recientemente pero con tiempo ya vencido)
+    // pueden quedar bloqueados detrás de registros más antiguos en la cola.
+    // Esta consulta secundaria los rescata explícitamente.
+    const recentPending = await this.prisma.seguimiento.findMany({
+      where: {
+        followUpStatus: 'pending',
+        ...(scopedWhere ?? {}),
+        createdAt: { gte: new Date(Date.now() - 12 * 60 * 60 * 1000) },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 50,
+    });
+
+    const seenIds = new Set<number>();
+    const merged = [...pending, ...recentPending].filter((seg) => {
+      if (seenIds.has(seg.id)) return false;
+      seenIds.add(seg.id);
+      return true;
+    });
+
+    const due = merged
       .filter((seguimiento) => this.isDue(seguimiento))
       .slice(0, limit);
     const summary = {
-      scanned: pending.length,
+      scanned: merged.length,
       due: due.length,
       sent: 0,
       failed: 0,

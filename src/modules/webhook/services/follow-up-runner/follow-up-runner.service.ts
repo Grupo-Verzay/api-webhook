@@ -109,6 +109,16 @@ export class FollowUpRunnerService {
     return seguimiento.createdAt.getTime() + delaySeconds * 1000 <= Date.now();
   }
 
+  // Recordatorio creado después de su hora programada — nunca tuvo sentido enviarlo.
+  private isBornDead(seguimiento: Pick<Seguimiento, 'createdAt' | 'time'>): boolean {
+    const timeStr = (seguimiento.time ?? '').trim();
+    const dateMatch = timeStr.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
+    if (!dateMatch) return false;
+    const [, day, month, year, hours, minutes] = dateMatch;
+    const scheduled = new Date(`${year}-${month}-${day}T${hours}:${minutes}:00Z`);
+    return seguimiento.createdAt.getTime() >= scheduled.getTime();
+  }
+
   private getTipoBase(tipo?: string | null) {
     const raw = (tipo ?? '').trim().toLowerCase();
     return raw.startsWith('seguimiento-')
@@ -534,6 +544,16 @@ export class FollowUpRunnerService {
     };
 
     for (const current of due) {
+      if (this.isBornDead(current)) {
+        await this.prisma.seguimiento.delete({ where: { id: current.id } });
+        summary.skipped++;
+        this.logger.log(
+          `[FOLLOW_UP][id=${current.id}] Recordatorio vencido al crearse, eliminando sin enviar.`,
+          'FollowUpRunnerService',
+        );
+        continue;
+      }
+
       const lock = await this.prisma.seguimiento.updateMany({
         where: { id: current.id, followUpStatus: 'pending' },
         data: { followUpStatus: 'processing' },

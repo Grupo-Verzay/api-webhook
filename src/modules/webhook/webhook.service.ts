@@ -702,18 +702,16 @@ export class WebhookService implements OnModuleInit {
             }
           }
 
-          // Las imágenes siempre van al LLM aunque haya un workflow pausado esperando input:
-          // el workflow pausado esperaba texto del usuario, no una descripción de Vision API.
-          const resumed = messageType === 'imageMessage'
-            ? false
-            : await this.workflowService.continuePausedWorkflow(
-                server_url,
-                apikey,
-                instanceName,
-                canonicalRemoteJid,
-                userId,
-                mergedTextStr,
-              );
+          // Las imágenes también pueden reanudar flujos pausados (ej: paso que pide comprobante).
+          // continuePausedWorkflow solo actúa si hay un estado 'waiting' activo → seguro para imágenes.
+          const resumed = await this.workflowService.continuePausedWorkflow(
+              server_url,
+              apikey,
+              instanceName,
+              canonicalRemoteJid,
+              userId,
+              mergedTextStr,
+            );
 
           if (resumed) {
             logger.log(

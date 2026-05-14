@@ -720,11 +720,15 @@ export class WebhookService implements OnModuleInit {
           }
 
           // 2) luego sí: intentar disparar workflow por descripción
-          const matchedWorkflow =
-            await this.workflowService.findWorkflowByDescriptionMatch(
-              userId,
-              mergedTextStr,
-            );
+          // Las imágenes (imageMessage) siempre van al LLM — Vision API describe el contenido
+          // con texto que puede contener keywords de workflows (ej: "pago", "comprobante"),
+          // provocando un match falso que dispara el script en lugar de llamar a la IA.
+          const matchedWorkflow = messageType === 'imageMessage'
+            ? null
+            : await this.workflowService.findWorkflowByDescriptionMatch(
+                userId,
+                mergedTextStr,
+              );
 
           if (matchedWorkflow) {
             logger.log(

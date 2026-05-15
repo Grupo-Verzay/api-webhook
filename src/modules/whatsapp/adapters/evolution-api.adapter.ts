@@ -6,7 +6,14 @@ import { IWhatsAppSender } from '../interfaces/whatsapp-sender.interface';
 export class EvolutionApiSenderAdapter implements IWhatsAppSender {
   constructor(private readonly nodeSender: NodeSenderService) {}
 
+  private requireCredentials(serverUrl?: string, apikey?: string): void {
+    if (!serverUrl || !apikey) {
+      throw new Error('Evolution API requiere serverUrl y apikey.');
+    }
+  }
+
   async sendText(instanceName: string, remoteJid: string, text: string, serverUrl?: string, apikey?: string): Promise<boolean> {
+    this.requireCredentials(serverUrl, apikey);
     return this.nodeSender.sendTextNode(
       `${serverUrl}/message/sendText/${instanceName}`,
       apikey,
@@ -16,6 +23,7 @@ export class EvolutionApiSenderAdapter implements IWhatsAppSender {
   }
 
   async sendMedia(instanceName: string, remoteJid: string, type: string, caption: string, mediaUrl: string, serverUrl?: string, apikey?: string): Promise<boolean> {
+    this.requireCredentials(serverUrl, apikey);
     return this.nodeSender.sendMediaNode(
       `${serverUrl}/message/sendMedia/${instanceName}`,
       apikey,
@@ -27,6 +35,7 @@ export class EvolutionApiSenderAdapter implements IWhatsAppSender {
   }
 
   async sendAudio(instanceName: string, remoteJid: string, audioUrl: string, serverUrl?: string, apikey?: string): Promise<boolean> {
+    this.requireCredentials(serverUrl, apikey);
     return this.nodeSender.sendAudioNode(
       `${serverUrl}/message/sendWhatsAppAudio/${instanceName}`,
       apikey,

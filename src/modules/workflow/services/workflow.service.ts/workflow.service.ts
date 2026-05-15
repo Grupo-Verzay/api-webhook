@@ -1107,7 +1107,7 @@ export class WorkflowService implements OnModuleInit {
     }
 
     this.logger.log(
-      `Seguimiento workflow programado (${seguimiento.id}) para ${remoteJid} con delay ${delaySeguimiento}.`,
+      `Seguimiento workflow programado (${seguimiento.id}) para ${remoteJid} con delay ${node.delay ?? ''}.`,
       'WorkflowService',
     );
   }

@@ -74,6 +74,9 @@ services:
       WOMPI_INTEGRITY_SECRET: prod_integrity_lnTfTrNQH5Q0WyGHB7erFzH1iFuDZXWx
       ADMIN_USER_ID: cm842kthc0000qd2l66nbnytv
       VERZAY_ACCOUNTS_WHITELIST: 752-000-164-59,oscarmanrique_contreras@hotmail.com,rondongenesis606@gmail.com,lennis
+      BAILEYS_SESSIONS_DIR: /app/baileys-sessions
+    volumes:
+      - baileys-sessions:/app/baileys-sessions
     deploy:
       mode: replicated
       replicas: 1
@@ -99,3 +102,7 @@ networks:
   minha_rede:
     name: minha_rede
     external: true
+
+volumes:
+  baileys-sessions:
+    driver: local

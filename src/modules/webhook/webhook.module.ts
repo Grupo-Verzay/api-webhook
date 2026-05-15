@@ -35,9 +35,10 @@ import { RemindersRunnerService } from './services/reminders-runner/reminders-ru
 import { RemindersRunnerSchedulerService } from './services/reminders-runner/reminders-runner.scheduler.service';
 import { WeeklyReportCronService } from './services/weekly-report-cron/weekly-report-cron.service';
 import { WeeklyReportCronSchedulerService } from './services/weekly-report-cron/weekly-report-cron.scheduler.service';
+import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 
 @Module({
-  imports: [HttpModule, WorkflowModule, AiAgentModule, LeadFunnelModule, PaymentReceiptModule],
+  imports: [HttpModule, WorkflowModule, AiAgentModule, LeadFunnelModule, PaymentReceiptModule, WhatsAppModule],
 
   controllers: [WebhookController],
 

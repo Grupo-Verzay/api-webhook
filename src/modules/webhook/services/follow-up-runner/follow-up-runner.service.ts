@@ -103,15 +103,20 @@ export class FollowUpRunnerService {
   }
 
   private parseScheduledTime(timeStr: string): Date | null {
-    const dateMatch = timeStr
-      .trim()
-      .match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
+    const trimmed = timeStr.trim();
+    if (!trimmed) return null;
+
+    // Formato nuevo: ISO 8601 UTC — "2026-05-15T17:30:00.000Z"
+    if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
+      const d = new Date(trimmed);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    // Formato legado: "dd/MM/yyyy HH:mm" guardado en timezone configurado
+    const dateMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
     if (!dateMatch) return null;
     const [, day, month, year, hours, minutes] = dateMatch;
-    // Times are stored in local timezone (configured via FOLLOW_UP_TIMEZONE_OFFSET)
-    return new Date(
-      `${year}-${month}-${day}T${hours}:${minutes}:00${this.timezoneOffset}`,
-    );
+    return new Date(`${year}-${month}-${day}T${hours}:${minutes}:00${this.timezoneOffset}`);
   }
 
   private isDue(seguimiento: Pick<Seguimiento, 'createdAt' | 'time'>) {

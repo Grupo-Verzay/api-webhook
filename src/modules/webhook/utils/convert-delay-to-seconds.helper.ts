@@ -7,15 +7,17 @@ export const unitToSeconds = {
 };
 
 /**
- * Convierte un delay con formato "unidad-valor" (ej. "minutes-5") a una fecha
- * formateada en la zona horaria indicada (por defecto Colombia UTC-5).
+ * Convierte un delay con formato "unidad-valor" (ej. "minutes-5") a una
+ * fecha futura expresada en ISO 8601 UTC (ej. "2026-05-15T17:30:00.000Z").
+ *
+ * Guardar en UTC garantiza que el sistema funcione correctamente para
+ * usuarios en cualquier país, sin depender del timezone del servidor.
  *
  * @param delay Formato como "minutes-5", "hours-2", "days-1"
- * @param timezoneOffset Offset IANA-style, ej. "-05:00" (default Colombia)
- * @returns Fecha futura en formato "dd/MM/yyyy HH:mm" en la zona horaria indicada
+ * @returns ISO 8601 UTC string de la fecha futura
  * @throws Error si el formato es inválido
  */
-export function convertDelayToSeconds(delay: string, timezoneOffset = '-05:00'): string {
+export function convertDelayToSeconds(delay: string): string {
   if (!delay) {
     throw new Error('El parámetro delay es requerido.');
   }
@@ -28,21 +30,5 @@ export function convertDelayToSeconds(delay: string, timezoneOffset = '-05:00'):
   }
 
   const seconds = value * unitToSeconds[unit];
-  const futureDate = new Date(Date.now() + seconds * 1000);
-
-  // Convertir UTC a la zona horaria configurada usando el offset
-  const offsetMatch = timezoneOffset.match(/^([+-])(\d{2}):(\d{2})$/);
-  const offsetMinutes = offsetMatch
-    ? (offsetMatch[1] === '+' ? 1 : -1) * (parseInt(offsetMatch[2], 10) * 60 + parseInt(offsetMatch[3], 10))
-    : -300; // fallback UTC-5
-
-  const localDate = new Date(futureDate.getTime() + offsetMinutes * 60 * 1000);
-
-  const day = String(localDate.getUTCDate()).padStart(2, '0');
-  const month = String(localDate.getUTCMonth() + 1).padStart(2, '0');
-  const year = localDate.getUTCFullYear();
-  const hours = String(localDate.getUTCHours()).padStart(2, '0');
-  const minutes = String(localDate.getUTCMinutes()).padStart(2, '0');
-
-  return `${day}/${month}/${year} ${hours}:${minutes}`;
+  return new Date(Date.now() + seconds * 1000).toISOString();
 }

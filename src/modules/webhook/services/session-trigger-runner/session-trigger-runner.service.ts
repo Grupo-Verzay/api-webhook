@@ -17,34 +17,37 @@ export class SessionTriggerRunnerService {
       this.configService.get<string>('FOLLOW_UP_TIMEZONE_OFFSET') ?? '-05:00';
   }
 
-  private getCurrentFormattedTime(): string {
-    const now = new Date();
-    // Adjust to configured timezone offset
-    const offsetMinutes = this.parseOffsetToMinutes(this.timezoneOffset);
-    const local = new Date(now.getTime() + offsetMinutes * 60 * 1000);
+  private parseScheduledTime(timeStr: string): Date | null {
+    const trimmed = timeStr.trim();
+    if (!trimmed) return null;
 
-    const dd = String(local.getUTCDate()).padStart(2, '0');
-    const mm = String(local.getUTCMonth() + 1).padStart(2, '0');
-    const yyyy = local.getUTCFullYear();
-    const hh = String(local.getUTCHours()).padStart(2, '0');
-    const min = String(local.getUTCMinutes()).padStart(2, '0');
+    // Formato nuevo: ISO 8601 UTC — "2026-05-15T17:30:00.000Z"
+    if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
+      const d = new Date(trimmed);
+      return isNaN(d.getTime()) ? null : d;
+    }
 
-    return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
-  }
-
-  private parseOffsetToMinutes(offset: string): number {
-    const match = offset.match(/^([+-])(\d{2}):(\d{2})$/);
-    if (!match) return -300; // default UTC-5
-    const sign = match[1] === '+' ? 1 : -1;
-    return sign * (parseInt(match[2], 10) * 60 + parseInt(match[3], 10));
+    // Formato legado: "dd/MM/yyyy HH:mm" guardado en timezone configurado
+    const m = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
+    if (!m) return null;
+    const [, dd, mm, yyyy, hh, min] = m;
+    return new Date(`${yyyy}-${mm}-${dd}T${hh}:${min}:00${this.timezoneOffset}`);
   }
 
   async processDueTriggers(): Promise<{ processed: number; failed: number }> {
-    const currentTime = this.getCurrentFormattedTime();
+    const allTriggers = await this.prisma.sessionTrigger.findMany({
+      include: {
+        session: {
+          select: { id: true, userId: true, remoteJid: true, instanceId: true },
+        },
+      },
+    });
 
-    const dueTriggers = await this.prisma.sessionTrigger.findMany({
-      where: { time: currentTime },
-      include: { session: { select: { id: true, userId: true, remoteJid: true, instanceId: true } } },
+    const now = Date.now();
+
+    const dueTriggers = allTriggers.filter((t) => {
+      const scheduled = this.parseScheduledTime(t.time);
+      return scheduled !== null && scheduled.getTime() <= now;
     });
 
     const summary = { processed: 0, failed: 0 };

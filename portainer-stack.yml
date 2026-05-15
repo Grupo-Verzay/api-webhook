@@ -35,13 +35,20 @@ services:
       CRON_SECRET: 8f5b7a9d2c1e4f6a9b3d7e1c5a8f2b4d
 
       FOLLOW_UP_RUNNER_ENABLED: "true"
+      FOLLOW_UP_TIMEZONE_OFFSET: "-05:00"
 
       CRM_FOLLOW_UP_RUNNER_ENABLED: "true"
       CRM_FOLLOW_UP_RUNNER_INTERVAL_MS: "60000"
       CRM_FOLLOW_UP_RUNNER_LIMIT: "25"
       CRM_FOLLOW_UP_RUNNER_KEY: verzay_crm_runner_safe_key
 
-      BILLING_CRON_ENABLED: "false"
+      SESSION_TRIGGER_RUNNER_ENABLED: "true"
+      SESSION_TRIGGER_RUNNER_INTERVAL_MS: "60000"
+
+      REMINDERS_RUNNER_ENABLED: "true"
+      REMINDERS_RUNNER_INTERVAL_MS: "60000"
+
+      BILLING_CRON_ENABLED: "true"
       BILLING_CRON_INTERVAL_MS: "60000"
       BILLING_CRON_HOUR: "10"
       BILLING_CRON_MINUTE: "0"
@@ -50,6 +57,20 @@ services:
       BILLING_CRON_SECRET: verzay_crm_runner_safe_key
       BILLING_CRON_RUNNER_KEY: verzay_crm_runner_safe_key
       BILLING_CRON_TIMEOUT_MS: "20000"
+      NEXTJS_URL: https://agente.ia-app.com
+
+      WEEKLY_REPORT_CRON_ENABLED: "true"
+      WEEKLY_REPORT_CRON_INTERVAL_MS: "60000"
+      WEEKLY_REPORT_CRON_DAY_OF_WEEK: "6"
+      WEEKLY_REPORT_CRON_HOUR: "18"
+      WEEKLY_REPORT_CRON_MINUTE: "0"
+      WEEKLY_REPORT_CRON_TIME_ZONE: America/Bogota
+      WEEKLY_REPORT_CRON_ENDPOINT_URL: https://agente.ia-app.com/api/cron/weekly-report
+      WEEKLY_REPORT_CRON_TIMEOUT_MS: "120000"
+
+      LOG_CLEANUP_ENABLED: "true"
+      LOG_CLEANUP_INTERVAL_MS: "86400000"
+      LOG_CLEANUP_RETENTION_DAYS: "30"
     deploy:
       mode: replicated
       replicas: 1

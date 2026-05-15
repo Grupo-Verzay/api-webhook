@@ -7,14 +7,15 @@ export const unitToSeconds = {
 };
 
 /**
- * Convierte un delay con formato "unidad-valor" (ej. "minutes-5") a segundos.
+ * Convierte un delay con formato "unidad-valor" (ej. "minutes-5") a una fecha
+ * formateada en la zona horaria indicada (por defecto Colombia UTC-5).
  *
  * @param delay Formato como "minutes-5", "hours-2", "days-1"
- * @returns Fecha con la suma del tiempo
+ * @param timezoneOffset Offset IANA-style, ej. "-05:00" (default Colombia)
+ * @returns Fecha futura en formato "dd/MM/yyyy HH:mm" en la zona horaria indicada
  * @throws Error si el formato es inválido
  */
-
-export function convertDelayToSeconds(delay: string): string {
+export function convertDelayToSeconds(delay: string, timezoneOffset = '-05:00'): string {
   if (!delay) {
     throw new Error('El parámetro delay es requerido.');
   }
@@ -27,27 +28,21 @@ export function convertDelayToSeconds(delay: string): string {
   }
 
   const seconds = value * unitToSeconds[unit];
+  const futureDate = new Date(Date.now() + seconds * 1000);
 
-  //  #1: Darle el formato DD/MM/YYYY HH:MM
-  const now = new Date();
-  const day = String(now.getDate()).padStart(2, '0');
-  const month = String(now.getMonth() + 1).padStart(2, '0'); // ¡Importante! Enero es 0
-  const year = now.getFullYear();
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
+  // Convertir UTC a la zona horaria configurada usando el offset
+  const offsetMatch = timezoneOffset.match(/^([+-])(\d{2}):(\d{2})$/);
+  const offsetMinutes = offsetMatch
+    ? (offsetMatch[1] === '+' ? 1 : -1) * (parseInt(offsetMatch[2], 10) * 60 + parseInt(offsetMatch[3], 10))
+    : -300; // fallback UTC-5
 
-  const formattedNow = `${day}/${month}/${year} ${hours}:${minutes}`;
+  const localDate = new Date(futureDate.getTime() + offsetMinutes * 60 * 1000);
 
-  //  #2: Sumar segundos a la fecha actual
-  const futureDate = new Date(now.getTime() + seconds * 1000);
+  const day = String(localDate.getUTCDate()).padStart(2, '0');
+  const month = String(localDate.getUTCMonth() + 1).padStart(2, '0');
+  const year = localDate.getUTCFullYear();
+  const hours = String(localDate.getUTCHours()).padStart(2, '0');
+  const minutes = String(localDate.getUTCMinutes()).padStart(2, '0');
 
-  const futureDay = String(futureDate.getDate()).padStart(2, '0');
-  const futureMonth = String(futureDate.getMonth() + 1).padStart(2, '0');
-  const futureYear = futureDate.getFullYear();
-  const futureHours = String(futureDate.getHours()).padStart(2, '0');
-  const futureMinutes = String(futureDate.getMinutes()).padStart(2, '0');
-
-  const formattedFuture = `${futureDay}/${futureMonth}/${futureYear} ${futureHours}:${futureMinutes}`;
-
-  return formattedFuture;
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
 }

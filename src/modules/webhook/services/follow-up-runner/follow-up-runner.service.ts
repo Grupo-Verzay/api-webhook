@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Seguimiento } from '@prisma/client';
 
 import { LoggerService } from 'src/core/logger/logger.service';
@@ -14,6 +15,8 @@ import { buildWhatsAppJidCandidates } from 'src/utils/whatsapp-jid.util';
 
 @Injectable()
 export class FollowUpRunnerService {
+  private readonly timezoneOffset: string;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger: LoggerService,
@@ -22,7 +25,11 @@ export class FollowUpRunnerService {
     private readonly sessionService: SessionService,
     private readonly nodeSenderService: NodeSenderService,
     private readonly workflowService: WorkflowService,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    this.timezoneOffset =
+      this.configService.get<string>('FOLLOW_UP_TIMEZONE_OFFSET') ?? '-05:00';
+  }
 
   private clean(value?: string | null) {
     return (value ?? '').trim();
@@ -95,13 +102,22 @@ export class FollowUpRunnerService {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }
 
+  private parseScheduledTime(timeStr: string): Date | null {
+    const dateMatch = timeStr
+      .trim()
+      .match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
+    if (!dateMatch) return null;
+    const [, day, month, year, hours, minutes] = dateMatch;
+    // Times are stored in local timezone (configured via FOLLOW_UP_TIMEZONE_OFFSET)
+    return new Date(
+      `${year}-${month}-${day}T${hours}:${minutes}:00${this.timezoneOffset}`,
+    );
+  }
+
   private isDue(seguimiento: Pick<Seguimiento, 'createdAt' | 'time'>) {
     const timeStr = (seguimiento.time ?? '').trim();
-    // Absolute date format used by appointment reminders: "dd/MM/yyyy HH:mm"
-    const dateMatch = timeStr.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
-    if (dateMatch) {
-      const [, day, month, year, hours, minutes] = dateMatch;
-      const scheduled = new Date(`${year}-${month}-${day}T${hours}:${minutes}:00Z`);
+    const scheduled = this.parseScheduledTime(timeStr);
+    if (scheduled) {
       return scheduled.getTime() <= Date.now();
     }
     // Legacy format: numeric seconds from createdAt
@@ -111,11 +127,8 @@ export class FollowUpRunnerService {
 
   // Recordatorio creado después de su hora programada — nunca tuvo sentido enviarlo.
   private isBornDead(seguimiento: Pick<Seguimiento, 'createdAt' | 'time'>): boolean {
-    const timeStr = (seguimiento.time ?? '').trim();
-    const dateMatch = timeStr.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
-    if (!dateMatch) return false;
-    const [, day, month, year, hours, minutes] = dateMatch;
-    const scheduled = new Date(`${year}-${month}-${day}T${hours}:${minutes}:00Z`);
+    const scheduled = this.parseScheduledTime((seguimiento.time ?? '').trim());
+    if (!scheduled) return false;
     return seguimiento.createdAt.getTime() >= scheduled.getTime();
   }
 

@@ -25,6 +25,6 @@ import { NotificationContactsService } from '../ai-agent/services/notificacionSe
     SessionService,
     NotificationContactsService,
   ],
-  exports: [WorkflowService],
+  exports: [WorkflowService, NodeSenderService],
 })
 export class WorkflowModule {}

@@ -25,8 +25,16 @@ import { FollowUpRunnerService } from './services/follow-up-runner/follow-up-run
 import { FollowUpRunnerSchedulerService } from './services/follow-up-runner/follow-up-runner.scheduler.service';
 import { BillingCronService } from './services/billing-cron/billing-cron.service';
 import { BillingCronSchedulerService } from './services/billing-cron/billing-cron.scheduler.service';
+import { LogCleanupService } from './services/log-cleanup/log-cleanup.service';
+import { LogCleanupSchedulerService } from './services/log-cleanup/log-cleanup.scheduler.service';
 import { PaymentReceiptModule } from 'src/modules/payment-receipt/payment-receipt.module';
 import { AutoAssignService } from './services/auto-assign/auto-assign.service';
+import { SessionTriggerRunnerService } from './services/session-trigger-runner/session-trigger-runner.service';
+import { SessionTriggerRunnerSchedulerService } from './services/session-trigger-runner/session-trigger-runner.scheduler.service';
+import { RemindersRunnerService } from './services/reminders-runner/reminders-runner.service';
+import { RemindersRunnerSchedulerService } from './services/reminders-runner/reminders-runner.scheduler.service';
+import { WeeklyReportCronService } from './services/weekly-report-cron/weekly-report-cron.service';
+import { WeeklyReportCronSchedulerService } from './services/weekly-report-cron/weekly-report-cron.scheduler.service';
 
 @Module({
   imports: [HttpModule, WorkflowModule, AiAgentModule, LeadFunnelModule, PaymentReceiptModule],
@@ -50,6 +58,8 @@ import { AutoAssignService } from './services/auto-assign/auto-assign.service';
     WebhookControlService,
     BillingCronService,
     BillingCronSchedulerService,
+    LogCleanupService,
+    LogCleanupSchedulerService,
     FollowUpRunnerService,
     FollowUpRunnerSchedulerService,
     MessageDirectionService,
@@ -57,6 +67,12 @@ import { AutoAssignService } from './services/auto-assign/auto-assign.service';
     MessageBufferService,
     MessageTypeHandlerService,
     AutoAssignService,
+    SessionTriggerRunnerService,
+    SessionTriggerRunnerSchedulerService,
+    RemindersRunnerService,
+    RemindersRunnerSchedulerService,
+    WeeklyReportCronService,
+    WeeklyReportCronSchedulerService,
   ],
 })
 export class WebhookModule {}

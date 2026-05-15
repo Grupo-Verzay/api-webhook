@@ -1150,20 +1150,8 @@ export class WebhookService implements OnModuleInit {
     }
 
     const MILLISECONDS_PER_MINUTE = 60000;
-    const currentDate = new Date();
-    const futureDate = new Date(
-      currentDate.getTime() + minutesToReactivate * MILLISECONDS_PER_MINUTE,
-    );
-
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const day = pad(futureDate.getDate());
-    const month = pad(futureDate.getMonth() + 1);
-    const year = futureDate.getFullYear();
-    const hours = pad(futureDate.getHours());
-    const minutes = pad(futureDate.getMinutes());
-    const formatted = `${day}/${month}/${year} ${hours}:${minutes}`;
-
-    return formatted;
+    const futureDate = new Date(Date.now() + minutesToReactivate * MILLISECONDS_PER_MINUTE);
+    return futureDate.toISOString();
   }
 
   private async stopOrResumeConversation({

@@ -9,7 +9,7 @@ import { ChatHistoryService } from 'src/modules/chat-history/chat-history.servic
 import { buildChatHistorySessionId } from 'src/modules/chat-history/chat-history-session.helper';
 import { isLegacyWorkflowSeguimiento } from 'src/modules/seguimientos/legacy-workflow-follow-up.helper';
 import { SessionService } from 'src/modules/session/session.service';
-import { NodeSenderService } from 'src/modules/workflow/services/node-sender.service.ts/node-sender.service';
+import { WhatsAppSenderFactory } from 'src/modules/whatsapp/whatsapp-sender.factory';
 import { WorkflowService } from 'src/modules/workflow/services/workflow.service.ts/workflow.service';
 import { buildWhatsAppJidCandidates } from 'src/utils/whatsapp-jid.util';
 
@@ -23,7 +23,7 @@ export class FollowUpRunnerService {
     private readonly aiAgentService: AiAgentService,
     private readonly chatHistoryService: ChatHistoryService,
     private readonly sessionService: SessionService,
-    private readonly nodeSenderService: NodeSenderService,
+    private readonly factory: WhatsAppSenderFactory,
     private readonly workflowService: WorkflowService,
     private readonly configService: ConfigService,
   ) {
@@ -218,55 +218,35 @@ export class FollowUpRunnerService {
     const media = (seguimiento.media ?? '').trim();
     const tipoBase = this.getTipoBase(seguimiento.tipo);
 
-    if (!serverUrl || !instanceName || !remoteJid || !apikey) {
-      throw new Error('Seguimiento sin datos de conexion completos.');
+    if (!instanceName || !remoteJid) {
+      throw new Error('Seguimiento sin instancia o remoteJid.');
     }
+
+    const sender = await this.factory.getSender(instanceName);
 
     if (tipoBase === 'text') {
       if (!finalMessage.trim())
         throw new Error('Follow-up de texto sin mensaje final.');
-      const ok = await this.nodeSenderService.sendTextNode(
-        `${serverUrl}/message/sendText/${instanceName}`,
-        apikey,
-        remoteJid,
-        finalMessage,
-      );
+      const ok = await sender.sendText(instanceName, remoteJid, finalMessage, serverUrl, apikey);
       if (!ok) throw new Error('Error enviando follow-up de texto.');
       return;
     }
 
     if (['image', 'video', 'document'].includes(tipoBase)) {
       if (!media) throw new Error(`Follow-up ${tipoBase} sin media.`);
-      const ok = await this.nodeSenderService.sendMediaNode(
-        `${serverUrl}/message/sendMedia/${instanceName}`,
-        apikey,
-        remoteJid,
-        tipoBase,
-        finalMessage,
-        media,
-      );
+      const ok = await sender.sendMedia(instanceName, remoteJid, tipoBase, finalMessage, media, serverUrl, apikey);
       if (!ok) throw new Error(`Error enviando follow-up ${tipoBase}.`);
       return;
     }
 
     if (tipoBase === 'audio') {
       if (finalMessage.trim()) {
-        const okText = await this.nodeSenderService.sendTextNode(
-          `${serverUrl}/message/sendText/${instanceName}`,
-          apikey,
-          remoteJid,
-          finalMessage,
-        );
+        const okText = await sender.sendText(instanceName, remoteJid, finalMessage, serverUrl, apikey);
         if (!okText) throw new Error('Error enviando texto previo al audio.');
       }
 
       if (!media) throw new Error('Follow-up de audio sin media.');
-      const okAudio = await this.nodeSenderService.sendAudioNode(
-        `${serverUrl}/message/sendWhatsAppAudio/${instanceName}`,
-        apikey,
-        remoteJid,
-        media,
-      );
+      const okAudio = await sender.sendAudio(instanceName, remoteJid, media, serverUrl, apikey);
       if (!okAudio) throw new Error('Error enviando follow-up de audio.');
       return;
     }

@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { LoggerService } from 'src/core/logger/logger.service';
 import { PrismaService } from 'src/database/prisma.service';
-import { NodeSenderService } from 'src/modules/workflow/services/node-sender.service.ts/node-sender.service';
+import { WhatsAppSenderFactory } from 'src/modules/whatsapp/whatsapp-sender.factory';
 import { WorkflowService } from 'src/modules/workflow/services/workflow.service.ts/workflow.service';
 
 @Injectable()
@@ -14,7 +14,7 @@ export class RemindersRunnerService {
     private readonly prisma: PrismaService,
     private readonly logger: LoggerService,
     private readonly configService: ConfigService,
-    private readonly nodeSenderService: NodeSenderService,
+    private readonly factory: WhatsAppSenderFactory,
     private readonly workflowService: WorkflowService,
   ) {
     this.timezoneOffset =
@@ -163,7 +163,7 @@ export class RemindersRunnerService {
         const apikey = (reminder.apikey ?? '').trim();
         const message = (reminder.description ?? reminder.title ?? '').trim();
 
-        if (!targets.length || !serverUrl || !instanceName || !apikey) {
+        if (!targets.length || !instanceName) {
           this.logger.warn(
             `[REMINDERS] Reminder id=${reminder.id} sin datos completos. Avanzando/eliminando.`,
             'RemindersRunnerService',
@@ -173,14 +173,11 @@ export class RemindersRunnerService {
           continue;
         }
 
+        const sender = await this.factory.getSender(instanceName);
+
         for (const remoteJid of targets) {
           if (message) {
-            const ok = await this.nodeSenderService.sendTextNode(
-              `${serverUrl}/message/sendText/${instanceName}`,
-              apikey,
-              remoteJid,
-              message,
-            );
+            const ok = await sender.sendText(instanceName, remoteJid, message, serverUrl, apikey);
             if (!ok) {
               throw new Error(
                 `Error enviando reminder id=${reminder.id} a ${remoteJid}`,

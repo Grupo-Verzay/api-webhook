@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Param, Headers, UnauthorizedException, NotFoundException, BadRequestException, Res } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Query, Headers, UnauthorizedException, NotFoundException, BadRequestException, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import * as QRCode from 'qrcode';
@@ -96,5 +96,43 @@ export class WhatsAppController {
     await this.sessions.stopSession(instanceName);
     this.logger.log(`[Baileys] Sesión detenida manualmente: ${instanceName}`, 'WhatsAppController');
     return { message: `Sesión "${instanceName}" detenida.` };
+  }
+
+  /** GET /whatsapp/baileys/qr-page/:instanceName?secret=KEY
+   *  Página HTML con el QR que se refresca cada 10 segundos. */
+  @Get('qr-page/:instanceName')
+  async getQrPage(
+    @Param('instanceName') instanceName: string,
+    @Query('secret') secret: string,
+    @Res() res: Response,
+  ) {
+    const key = (this.config.get<string>('CRM_FOLLOW_UP_RUNNER_KEY') ?? '').trim();
+    if (!key || (secret ?? '').trim() !== key) throw new UnauthorizedException();
+
+    const connected = this.sessions.isConnected(instanceName);
+    const qr = this.sessions.getQr(instanceName);
+
+    let body: string;
+    if (connected) {
+      body = `<h2 style="color:green">✅ ${instanceName} está conectado a WhatsApp</h2>`;
+    } else if (qr) {
+      const png = await QRCode.toDataURL(qr, { width: 400 });
+      body = `
+        <h2>Escanea con WhatsApp — se renueva automáticamente</h2>
+        <img src="${png}" style="display:block;margin:20px auto;border:4px solid #000;border-radius:8px" />
+        <p style="text-align:center;color:#666">Instancia: <b>${instanceName}</b></p>
+      `;
+    } else {
+      body = `<h2 style="color:orange">⏳ Generando QR para ${instanceName}... espera unos segundos</h2>`;
+    }
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <meta http-equiv="refresh" content="8">
+      <title>QR Baileys — ${instanceName}</title>
+      <style>body{font-family:sans-serif;text-align:center;padding:40px;background:#f5f5f5}</style>
+    </head><body>${body}</body></html>`;
+
+    res.setHeader('Content-Type', 'text/html');
+    return res.send(html);
   }
 }

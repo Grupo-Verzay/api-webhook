@@ -69,12 +69,10 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     const { version } = await fetchLatestBaileysVersion();
 
-    const isDev = this.config.get<string>('NODE_ENV') !== 'production';
-
     const socket: WASocket = makeWASocket({
       version,
       auth: state,
-      printQRInTerminal: isDev,
+      printQRInTerminal: true,
       logger: makeBaileysLogger(),
       browser: ['Verzay-IA', 'Chrome', '1.0.0'],
     });

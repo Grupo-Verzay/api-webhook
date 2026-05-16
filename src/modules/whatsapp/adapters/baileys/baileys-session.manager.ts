@@ -18,6 +18,7 @@ function makeBaileysLogger() {
 export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
   private sockets = new Map<string, WASocket>();
   private qrCodes = new Map<string, string>();
+  private authenticated = new Set<string>();
   private readonly sessionsDir: string;
 
   constructor(
@@ -99,6 +100,7 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
         const shouldReconnect = (lastDisconnect?.error as any)?.output?.statusCode !== DisconnectReason.loggedOut;
         this.logger.warn(`[Baileys] Conexión cerrada para ${instanceName}. Reconectar: ${shouldReconnect}`, 'BaileysSessionManager');
         this.sockets.delete(instanceName);
+        this.authenticated.delete(instanceName);
         if (shouldReconnect) {
           setTimeout(() => this.startSession(instanceName), 5000);
         }
@@ -106,6 +108,7 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
 
       if (connection === 'open') {
         this.qrCodes.delete(instanceName);
+        this.authenticated.add(instanceName);
         this.logger.log(`[Baileys] Conectado: ${instanceName}`, 'BaileysSessionManager');
       }
     });
@@ -116,6 +119,7 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
     if (socket) {
       try { socket.end(); } catch {}
       this.sockets.delete(instanceName);
+      this.authenticated.delete(instanceName);
     }
   }
 
@@ -128,6 +132,6 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
   }
 
   isConnected(instanceName: string): boolean {
-    return this.sockets.has(instanceName);
+    return this.authenticated.has(instanceName);
   }
 }

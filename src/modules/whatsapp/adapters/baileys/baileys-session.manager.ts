@@ -14,11 +14,14 @@ function makeBaileysLogger() {
   return { level: 'silent', trace: noop, debug: noop, info: noop, warn: noop, error: noop, fatal: noop, child };
 }
 
+type IncomingMessageHandler = (instanceName: string, msg: any) => void;
+
 @Injectable()
 export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
   private sockets = new Map<string, WASocket>();
   private qrCodes = new Map<string, string>();
   private authenticated = new Set<string>();
+  private messageHandler: IncomingMessageHandler | null = null;
   private readonly sessionsDir: string;
 
   constructor(
@@ -112,6 +115,18 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
         this.logger.log(`[Baileys] Conectado: ${instanceName}`, 'BaileysSessionManager');
       }
     });
+
+    socket.ev.on('messages.upsert', ({ messages, type }: { messages: any[]; type: string }) => {
+      if (type !== 'notify') return;
+      for (const msg of messages) {
+        if (!msg?.key?.remoteJid) continue;
+        this.messageHandler?.(instanceName, msg);
+      }
+    });
+  }
+
+  registerMessageHandler(handler: IncomingMessageHandler): void {
+    this.messageHandler = handler;
   }
 
   async stopSession(instanceName: string): Promise<void> {

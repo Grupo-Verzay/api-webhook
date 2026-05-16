@@ -8,6 +8,12 @@ import { PrismaService } from 'src/database/prisma.service';
 type WASocket = any;
 type ConnectionState = { connection: string; lastDisconnect?: { error?: any } };
 
+function makeBaileysLogger() {
+  const noop = () => {};
+  const child = () => makeBaileysLogger();
+  return { level: 'silent', trace: noop, debug: noop, info: noop, warn: noop, error: noop, fatal: noop, child };
+}
+
 @Injectable()
 export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
   private sockets = new Map<string, WASocket>();
@@ -69,7 +75,7 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
       version,
       auth: state,
       printQRInTerminal: isDev,
-      logger: { level: 'silent', child: () => ({ level: 'silent', child: () => ({}) as any }) as any } as any,
+      logger: makeBaileysLogger(),
       browser: ['Verzay-IA', 'Chrome', '1.0.0'],
     });
 

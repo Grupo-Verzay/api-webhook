@@ -85,8 +85,14 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
       const { connection, lastDisconnect } = update;
 
       if ((update as any).qr) {
-        this.qrCodes.set(instanceName, (update as any).qr);
-        this.logger.log(`[Baileys] QR generado para ${instanceName}`, 'BaileysSessionManager');
+        const qrString: string = (update as any).qr;
+        this.qrCodes.set(instanceName, qrString);
+        this.logger.log(`[Baileys] QR generado para ${instanceName} — escanea con WhatsApp:`, 'BaileysSessionManager');
+        try {
+          const QRCode = await import('qrcode');
+          const ascii = await QRCode.default.toString(qrString, { type: 'terminal', small: true });
+          process.stdout.write(ascii + '\n');
+        } catch {}
       }
 
       if (connection === 'close') {

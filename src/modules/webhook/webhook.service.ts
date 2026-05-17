@@ -41,6 +41,7 @@ import { FollowUpRunnerService } from './services/follow-up-runner/follow-up-run
 import { PaymentReceiptProcessorService } from 'src/modules/payment-receipt/services/payment-receipt-processor.service';
 import { TtsService } from '../ai-agent/services/tts/tts.service';
 import { AutoAssignService } from './services/auto-assign/auto-assign.service';
+import { WhatsAppSenderFactory } from '../whatsapp/whatsapp-sender.factory';
 
 @Injectable()
 export class WebhookService implements OnModuleInit {
@@ -84,6 +85,7 @@ export class WebhookService implements OnModuleInit {
     private readonly paymentReceiptProcessor: PaymentReceiptProcessorService,
     private readonly ttsService: TtsService,
     private readonly autoAssignService: AutoAssignService,
+    private readonly whatsAppSenderFactory: WhatsAppSenderFactory,
   ) { }
 
   onModuleInit(): void {
@@ -175,6 +177,23 @@ export class WebhookService implements OnModuleInit {
       error: (msg: string, err?: any, context = 'WebhookService') =>
         this.logger.error(`${tag} ${msg}`, err, context),
     };
+  }
+
+  /**
+   * Devuelve una función de envío de texto que usa Baileys cuando server_url está vacío,
+   * o Evolution API cuando está presente.
+   */
+  private makeSendTextFn(
+    instanceName: string,
+    server_url: string,
+    apikey: string,
+  ): (remoteJid: string, text: string) => Promise<void> {
+    if (!server_url) {
+      const sender = this.whatsAppSenderFactory.getSenderSync('baileys');
+      return (remoteJid, text) => sender.sendText(instanceName, remoteJid, text).then(() => {});
+    }
+    const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
+    return (remoteJid, text) => this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, remoteJid, text);
   }
 
   /**
@@ -352,6 +371,7 @@ export class WebhookService implements OnModuleInit {
       canonicalRemoteJid,
     );
     const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
+    const sendTextFn = this.makeSendTextFn(instanceName, server_url, apikey);
 
     // this.logger.debug(`[PAUSA] fromMe=${fromMe} | msg="${conversationMsg}"`);
 
@@ -649,6 +669,7 @@ export class WebhookService implements OnModuleInit {
                 model,
                 provider,
                 muteAgentResponses: userWithRelations.muteAgentResponses,
+                sendTextFn,
               });
               // Sin return: la IA continúa y envía la pregunta del Paso 1
             }
@@ -694,6 +715,7 @@ export class WebhookService implements OnModuleInit {
                     apikeyOpenAi: defaultApiKey ?? '',
                     model, provider,
                     muteAgentResponses: userWithRelations.muteAgentResponses,
+                    sendTextFn,
                   });
                   // Notificar a la IA que este paso ya fue ejecutado para que avance su estado interno
                   await this.chatHistoryService.saveMessage(
@@ -788,6 +810,7 @@ export class WebhookService implements OnModuleInit {
               provider,
 
               muteAgentResponses: userWithRelations.muteAgentResponses,
+              sendTextFn,
             });
 
             return;
@@ -870,7 +893,8 @@ export class WebhookService implements OnModuleInit {
             return;
           }
 
-          const voiceEnabled = !!(userWithRelations as any).enableVoiceResponses && !!defaultApiKey;
+          // TTS solo disponible con Evolution API (requiere server_url válido)
+          const voiceEnabled = !!(userWithRelations as any).enableVoiceResponses && !!defaultApiKey && !!server_url;
 
           if (voiceEnabled) {
             const fullText = msgBlocks.join('\n\n');
@@ -903,7 +927,7 @@ export class WebhookService implements OnModuleInit {
             }
             if (!audioSent) {
               for (const msgBlock of msgBlocks) {
-                await this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, canonicalRemoteJid, msgBlock);
+                await sendTextFn(canonicalRemoteJid, msgBlock);
                 await new Promise((res) => setTimeout(res, 300));
               }
             }
@@ -913,12 +937,7 @@ export class WebhookService implements OnModuleInit {
                 `📤 Enviando bloque ${index + 1}/${msgBlocks.length}`,
                 'NodeSenderService',
               );
-              await this.nodeSenderService.sendTextNode(
-                apiMsgUrl,
-                apikey,
-                canonicalRemoteJid,
-                msgBlock,
-              );
+              await sendTextFn(canonicalRemoteJid, msgBlock);
               await new Promise((res) => setTimeout(res, 300));
             }
           }
@@ -1456,6 +1475,7 @@ export class WebhookService implements OnModuleInit {
           provider,
 
           muteAgentResponses: !!userWithRelations.muteAgentResponses,
+          sendTextFn: this.makeSendTextFn(instanceName, server_url, apikey),
         });
 
         /* Deja la session con status en true siempre despues de ejecutar  una respuesta rapida  */

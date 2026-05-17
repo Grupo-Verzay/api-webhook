@@ -80,6 +80,9 @@ export async function executeWorkflow(params: {
 
   // opcional: personalizar el prompt
   postPromptBuilder?: (workflowName: string) => string;
+
+  // override de envío: cuando se provee, reemplaza nodeSenderService.sendTextNode
+  sendTextFn?: (remoteJid: string, text: string) => Promise<any>;
 }) {
   const {
     workflowService,
@@ -108,6 +111,7 @@ export async function executeWorkflow(params: {
     delayBetweenBlocksMs = 300,
 
     postPromptBuilder,
+    sendTextFn,
   } = params;
 
   const context = 'WorkflowHelper';
@@ -191,12 +195,16 @@ export async function executeWorkflow(params: {
       `📤 Enviando bloque post-workflow ${index + 1}/${blocks.length}`,
       context,
     );
-    await nodeSenderService.sendTextNode(
-      finalApiMsgUrl,
-      apikey,
-      remoteJid,
-      block,
-    );
+    if (sendTextFn) {
+      await sendTextFn(remoteJid, block);
+    } else {
+      await nodeSenderService.sendTextNode(
+        finalApiMsgUrl,
+        apikey,
+        remoteJid,
+        block,
+      );
+    }
     await new Promise((res) => setTimeout(res, delayBetweenBlocksMs));
   }
 }

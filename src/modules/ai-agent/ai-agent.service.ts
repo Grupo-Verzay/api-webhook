@@ -2372,11 +2372,13 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
         ],
       });
       const response = await this.aiClient.invoke([message]);
-      return response.content.toString() ?? '[ERROR_DESCRIBING_IMAGE]';
+      const description = response.content.toString() ?? '[ERROR_DESCRIBING_IMAGE]';
+      logger.log(`[describeImage] Descripción obtenida: ${description.slice(0, 300)}`);
+      return description;
     } catch (error: any) {
       logger.error(
-        'Error describiendo imagen.',
-        error?.response?.data || error.message,
+        `[describeImage] Error describiendo imagen: ${error?.message ?? JSON.stringify(error)}`,
+        'describeImage',
       );
       return '[ERROR_DESCRIBING_IMAGE]';
     }

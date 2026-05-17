@@ -165,9 +165,9 @@ export class WeeklyReportCronService {
 
   private isDue(parts: ZonedDateTimeParts, settings: WeeklyReportSettings): boolean {
     if (parts.weekday !== settings.dayOfWeek) return false;
-    if (parts.hour > settings.hour) return true;
-    if (parts.hour < settings.hour) return false;
-    return parts.minute >= settings.minute;
+    if (parts.hour !== settings.hour) return false;
+    const minuteDiff = parts.minute - settings.minute;
+    return minuteDiff >= 0 && minuteDiff < 5;
   }
 
   private buildSlotKey(parts: ZonedDateTimeParts, settings: WeeklyReportSettings): string {
@@ -249,6 +249,10 @@ export class WeeklyReportCronService {
       headers['x-cron-secret'] = settings.secret;
     }
 
+    if (!force) {
+      this.lastRunSlotKey = slotKey;
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), settings.timeoutMs);
 
@@ -298,10 +302,6 @@ export class WeeklyReportCronService {
           responseBody,
           error: errorMessage,
         };
-      }
-
-      if (!force) {
-        this.lastRunSlotKey = slotKey;
       }
 
       await this.logger.log(

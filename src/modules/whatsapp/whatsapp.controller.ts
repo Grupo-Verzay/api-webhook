@@ -53,10 +53,13 @@ export class WhatsAppController {
     @Headers() headers: Record<string, string>,
   ) {
     this.authorize(headers);
+    const info = this.sessions.getUserInfo(instanceName);
     return {
       instanceName,
       connected: this.sessions.isConnected(instanceName),
       hasQr: !!this.sessions.getQr(instanceName),
+      profileName: info?.name ?? null,
+      phoneNumber: info?.phone ?? null,
     };
   }
 

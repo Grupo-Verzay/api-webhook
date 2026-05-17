@@ -16,11 +16,14 @@ function makeBaileysLogger() {
 
 type IncomingMessageHandler = (instanceName: string, msg: any) => void;
 
+interface UserInfo { name: string; phone: string; }
+
 @Injectable()
 export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
   private sockets = new Map<string, WASocket>();
   private qrCodes = new Map<string, string>();
   private authenticated = new Set<string>();
+  private userInfoMap = new Map<string, UserInfo>();
   private messageHandler: IncomingMessageHandler | null = null;
   private readonly sessionsDir: string;
 
@@ -119,6 +122,12 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
       if (connection === 'open') {
         this.qrCodes.delete(instanceName);
         this.authenticated.add(instanceName);
+        const user = socket.user;
+        if (user) {
+          const jid: string = user.id ?? '';
+          const phone = jid.split(':')[0].split('@')[0];
+          this.userInfoMap.set(instanceName, { name: user.name ?? instanceName, phone });
+        }
         this.logger.log(`[Baileys] Conectado: ${instanceName}`, 'BaileysSessionManager');
       }
     });
@@ -142,7 +151,12 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
       try { socket.end(); } catch {}
       this.sockets.delete(instanceName);
       this.authenticated.delete(instanceName);
+      this.userInfoMap.delete(instanceName);
     }
+  }
+
+  getUserInfo(instanceName: string): UserInfo | null {
+    return this.userInfoMap.get(instanceName) ?? null;
   }
 
   getSocket(instanceName: string): WASocket | null {

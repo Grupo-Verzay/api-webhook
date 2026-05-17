@@ -59,22 +59,29 @@ export class MessageTypeHandlerService {
         return '[AUDIO_MESSAGE_NOT_FOUND]';
 
       case 'imageMessage':
+        // Baileys inyecta mediaBase64 directamente (no hay mediaUrl como en Evolution API)
+        const imageBase64Direct: string | undefined = (data?.message as any)?.mediaBase64;
+        const imageMimetypeDirect: string | undefined = (data?.message as any)?.mediaMimetype;
+
+        if (imageBase64Direct) {
+          return await this.aiAgentService.describeImage(
+            data,
+            imageBase64Direct,
+            imageMimetypeDirect ?? 'image/jpeg',
+            userApiKey,
+            defaultAiModel,
+            defaultProvider,
+          );
+        }
+
+        // Evolution API: descargar desde mediaUrl
         const imageUrl = data?.message?.mediaUrl;
         if (imageUrl) {
           try {
-            // 1. Descargar la imagen como un 'ArrayBuffer' (datos binarios)
-            const response = await axios.get(imageUrl, {
-              responseType: 'arraybuffer',
-            });
-
-            // 2. Convertir el ArrayBuffer a un Buffer de Node.js
+            const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
             const imageBuffer = Buffer.from(response.data);
-
-            // 3. Convertir el Buffer de la imagen a una cadena Base64
             const base64Image = imageBuffer.toString('base64');
-            const imageType =
-              data.message?.imageMessage?.mimetype ?? 'image/jpeg';
-            // Ahora puedes usar la cadena `base64Image` con LangChain
+            const imageType = data.message?.imageMessage?.mimetype ?? 'image/jpeg';
             return await this.aiAgentService.describeImage(
               data,
               base64Image,

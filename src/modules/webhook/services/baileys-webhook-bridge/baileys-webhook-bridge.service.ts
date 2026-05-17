@@ -21,6 +21,28 @@ export class BaileysWebhookBridgeService implements OnModuleInit {
     });
   }
 
+  private async downloadMediaAsBase64(message: any, mediaType: 'image' | 'audio' | 'video' | 'document'): Promise<{ base64: string; mimetype: string } | null> {
+    try {
+      const { downloadContentFromMessage } = await import('@whiskeysockets/baileys');
+      const mediaMsg = message[`${mediaType}Message`];
+      if (!mediaMsg) return null;
+
+      const stream = await downloadContentFromMessage(mediaMsg, mediaType);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(chunk as Buffer);
+      }
+      const buffer = Buffer.concat(chunks);
+      return {
+        base64: buffer.toString('base64'),
+        mimetype: mediaMsg.mimetype ?? `${mediaType}/jpeg`,
+      };
+    } catch (err: any) {
+      this.logger.error(`[BaileyseBridge] Error descargando media (${mediaType}): ${err?.message}`, 'BaileysWebhookBridgeService');
+      return null;
+    }
+  }
+
   private async handleMessage(instanceName: string, msg: any): Promise<void> {
     const key = msg.key ?? {};
     const remoteJid: string = key.remoteJid ?? '';
@@ -33,6 +55,20 @@ export class BaileysWebhookBridgeService implements OnModuleInit {
       const phoneNumber = await this.messageStore.getContactPhone(instanceName, remoteJid);
       if (phoneNumber) {
         remoteJidAlt = `${phoneNumber}@s.whatsapp.net`;
+      }
+    }
+
+    // Para imágenes y audio de Baileys, descargar la media y agregar base64 al payload.
+    // Evolution API provee mediaUrl; Baileys necesita descarga directa via downloadContentFromMessage.
+    let mediaBase64: string | undefined;
+    let mediaMimetype: string | undefined;
+
+    if (messageType === 'imageMessage') {
+      const result = await this.downloadMediaAsBase64(message, 'image');
+      if (result) {
+        mediaBase64 = result.base64;
+        mediaMimetype = result.mimetype;
+        this.logger.log(`[BaileyseBridge] Imagen descargada para ${instanceName} (${Math.round(result.base64.length * 0.75 / 1024)}KB)`, 'BaileysWebhookBridgeService');
       }
     }
 
@@ -53,7 +89,11 @@ export class BaileysWebhookBridgeService implements OnModuleInit {
         },
         pushName: msg.pushName ?? '',
         status: 'DELIVERY_ACK',
-        message,
+        message: {
+          ...message,
+          // Campos adicionales para que message-type-handler los use igual que Evolution API
+          ...(mediaBase64 && { mediaBase64, mediaMimetype }),
+        },
         messageType,
       },
     };

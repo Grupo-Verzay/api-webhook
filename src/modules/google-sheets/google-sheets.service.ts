@@ -49,12 +49,18 @@ export class GoogleSheetsService implements OnModuleInit {
         return { success: false, error: `No se encontraron encabezados en la hoja "${sheetName}".` };
       }
 
+      // Normalizar claves del payload a mayúsculas para matching insensible a mayúsculas
+      const normalizedData: Record<string, string> = {};
+      for (const [k, v] of Object.entries(data)) {
+        normalizedData[k.toUpperCase()] = v;
+      }
+
       // 2. Mapear datos a columnas según encabezado
       const row = headers.map((h) => {
         if (h === 'FECHA_REGISTRO') {
           return new Date().toLocaleString('es-CR', { timeZone: 'America/Costa_Rica' });
         }
-        const val = data[h];
+        const val = normalizedData[h.toUpperCase()];
         return val !== undefined && val !== null && val !== '' ? String(val) : 'N/C';
       });
 

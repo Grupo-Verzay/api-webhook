@@ -200,6 +200,10 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
     const remoteJid: string = key.remoteJid ?? '';
     if (!remoteJid || remoteJid.endsWith('@broadcast')) return;
 
+    // Ignorar mensajes cuyo remoteJid es el propio número del bot (Notas/Saved Messages)
+    const ownInfo = this.userInfoMap.get(instanceName);
+    if (ownInfo?.phone && remoteJid === `${ownInfo.phone}@s.whatsapp.net`) return;
+
     const message = msg.message ?? {};
     const { body, type } = extractMessageBody(message);
     const tsSeconds: number = msg.messageTimestamp ?? Math.floor(Date.now() / 1000);
@@ -215,11 +219,12 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
       if (alt && !alt.toLowerCase().endsWith('@lid') && alt.includes('@')) {
         phoneNumber = alt.replace(/@[^@]*$/, '').replace(/\D/g, '') || null;
       }
-      this.logger.log(
-        `[Baileys] @lid msg key=${JSON.stringify({ remoteJid, remoteJidAlt: key.remoteJidAlt, senderPn: msg.senderPn, keySenderPn: key.senderPn })}`,
-        'BaileysSessionManager',
-      );
     }
+
+    this.logger.log(
+      `[Baileys] msg fromMe=${key.fromMe} type=${type} body="${(body ?? '').substring(0, 40)}" remoteJid=${remoteJid}`,
+      'BaileysSessionManager',
+    );
 
     this.messageStore.saveMessage({
       instanceName,

@@ -103,9 +103,12 @@ export class BaileysMessageStore {
     }
   }
 
-  async getChats(instanceName: string): Promise<ChatSummary[]> {
+  async getChats(instanceName: string, ownPhone?: string): Promise<ChatSummary[]> {
     const contacts = await this.prisma.baileysContact.findMany({
-      where: { instanceName },
+      where: {
+        instanceName,
+        ...(ownPhone ? { NOT: { remoteJid: `${ownPhone}@s.whatsapp.net` } } : {}),
+      },
       include: {
         messages: {
           orderBy: { timestamp: 'desc' },

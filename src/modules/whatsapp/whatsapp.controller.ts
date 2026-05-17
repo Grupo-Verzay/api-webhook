@@ -128,7 +128,8 @@ export class WhatsAppController {
     @Headers() headers: Record<string, string>,
   ) {
     this.authorize(headers);
-    const chats = await this.messageStore.getChats(instanceName);
+    const ownPhone = this.sessions.getUserInfo(instanceName)?.phone ?? undefined;
+    const chats = await this.messageStore.getChats(instanceName, ownPhone);
     return { instanceName, chats };
   }
 

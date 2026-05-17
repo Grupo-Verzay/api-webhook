@@ -1773,7 +1773,7 @@ export class AiAgentService {
 
             const result = await agent.invoke({
               messages: messagesForLlm,
-            }, { recursionLimit: 60 });
+            }, { recursionLimit: 8 });
 
             return result;
           } catch (err: any) {

@@ -310,11 +310,34 @@ export class AiAgentService {
     // que ya incluyó un nodo-notify en el workflow).
     const notificationSentThisTurn = { value: false };
 
+    // Busca la config de escribir_google_sheets para inyectarla en notificacion_asesor.
+    // Garantiza que Google Sheets siempre se escriba cuando el agente notifique al asesor
+    // sobre un comprobante, sin depender del orden en que el LLM llame las herramientas.
+    const escribirSheetsCfgRaw = allConfigs.find(
+      (c: any) => c.toolType === 'escribir_google_sheets' && c.isEnabled,
+    );
+    let _autoGoogleSheetsCfg: { spreadsheetId: string; sheetName: string } | null = null;
+    if (escribirSheetsCfgRaw?.promptTemplate) {
+      try {
+        const _u = new URL(escribirSheetsCfgRaw.promptTemplate);
+        _autoGoogleSheetsCfg = {
+          spreadsheetId: _u.searchParams.get('spreadsheetId') ?? '',
+          sheetName: _u.searchParams.get('sheet') ?? 'Hoja1',
+        };
+      } catch { /* URL inválida — sin auto-write */ }
+    }
+
     for (const cfg of allConfigs) {
       if (!cfg.isEnabled) continue;
       if (cfg.toolType === 'auto_inject') continue; // lo maneja processInput
 
-      const builtTool = this.buildToolFromConfig(cfg, params, notificationSentThisTurn);
+      // Inyectar config de Google Sheets en notificacion_asesor para auto-write
+      const enrichedCfg =
+        cfg.toolType === 'notificacion_asesor' && _autoGoogleSheetsCfg
+          ? { ...cfg, _googleSheetsCfg: _autoGoogleSheetsCfg }
+          : cfg;
+
+      const builtTool = this.buildToolFromConfig(enrichedCfg, params, notificationSentThisTurn);
       if (builtTool) {
         tools.push(builtTool);
       } else {
@@ -395,10 +418,11 @@ export class AiAgentService {
   }, notificationSentThisTurn?: { value: boolean }): any {
     const { userId, server_url, apikey, instanceName, remoteJid } = params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+    const googleSheetsCfg: { spreadsheetId: string; sheetName: string } | null = cfg._googleSheetsCfg ?? null;
 
     // @ts-ignore - evitar problemas de tipos profundos con LangChain + zod
     return tool(
-      async ({ nombre, detalles }: { nombre: string; detalles: string }) => {
+      async ({ nombre, detalles, cedula, banco, referencia, monto, fecha, sinpe_transid, estado }) => {
         if (notificationSentThisTurn?.value) {
           logger.warn(
             `[NOTIF_DEDUPE] Tool "${cfg.toolKey}" omitida: ya se envió una notificación en este turno del agente.`,
@@ -406,6 +430,38 @@ export class AiAgentService {
           return `Notificación ya enviada en este turno. Sin duplicado para "${nombre}".`;
         }
         logger.log(`Tool "${cfg.toolKey}" (notificacion_asesor) llamada para: ${nombre}`);
+
+        // ── AUTO-WRITE Google Sheets ────────────────────────────────────────
+        // Si hay campos de pago (monto/referencia/sinpe_transid) y config de Sheets
+        // → escribir automáticamente sin depender del orden del agente.
+        if (googleSheetsCfg?.spreadsheetId && (monto || referencia || sinpe_transid)) {
+          try {
+            const datos: Record<string, string> = {
+              WHATSAPP: remoteJid.split('@')[0],
+              NOMBRE: nombre,
+              DESCRIPCION: detalles,
+              ESTADO: estado ?? 'Pendiente',
+            };
+            if (cedula) datos['CEDULA'] = cedula;
+            if (banco) datos['BANCO'] = banco;
+            if (referencia) datos['REFERENCIA'] = referencia;
+            if (monto) datos['MONTO'] = monto;
+            if (fecha) datos['FECHA'] = fecha;
+            if (sinpe_transid) datos['SINPE_TRANSID'] = sinpe_transid;
+
+            const sheetResult = await this.googleSheetsService.appendRow(
+              googleSheetsCfg.spreadsheetId,
+              googleSheetsCfg.sheetName,
+              datos,
+            );
+            logger.log(
+              `[AUTO-SHEETS] Comprobante guardado en "${googleSheetsCfg.sheetName}" via notificacion_asesor: ${sheetResult.success ? '✅' : '❌ ' + sheetResult.error}`,
+            );
+          } catch (err: any) {
+            logger.error(`[AUTO-SHEETS] Error escribiendo Google Sheets: ${err?.message}`, 'buildNotificacionAsesorTool');
+          }
+        }
+
         const res = await this.notificacionTool.handleNotificacionTool(
           { nombre, detalles } as any,
           userId, server_url, apikey, instanceName, remoteJid,
@@ -419,8 +475,15 @@ export class AiAgentService {
         name: cfg.toolKey,
         description: cfg.toolDescription,
         schema: z.object({
-          nombre: z.string().describe('Nombre del usuario'),
-          detalles: z.string().describe('Detalle de la notificación o solicitud'),
+          nombre: z.string().describe('Nombre completo del cliente'),
+          detalles: z.string().describe('Descripción completa del comprobante o solicitud'),
+          cedula: z.string().optional().describe('Cédula o identificación del cliente (solo comprobantes de pago)'),
+          banco: z.string().optional().describe('Banco emisor del pago (solo comprobantes de pago)'),
+          referencia: z.string().optional().describe('Número de referencia o confirmación del pago'),
+          monto: z.string().optional().describe('Monto del pago con símbolo de moneda (solo comprobantes de pago)'),
+          fecha: z.string().optional().describe('Fecha del comprobante de pago'),
+          sinpe_transid: z.string().optional().describe('ID de transacción SINPE móvil'),
+          estado: z.string().optional().describe('Estado del pago: Pendiente, Verificado, Rechazado'),
         }),
       },
     );

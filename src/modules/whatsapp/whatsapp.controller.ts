@@ -1,9 +1,10 @@
-import { Controller, Get, Post, Delete, Param, Query, Headers, UnauthorizedException, NotFoundException, BadRequestException, Res } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, Headers, UnauthorizedException, NotFoundException, BadRequestException, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import * as QRCode from 'qrcode';
 import { BaileysSessionManager } from './adapters/baileys/baileys-session.manager';
 import { BaileysMessageStore } from './adapters/baileys/baileys-message.store';
+import { BaileysSenderAdapter } from './adapters/baileys/baileys-sender.adapter';
 import { PrismaService } from 'src/database/prisma.service';
 import { LoggerService } from 'src/core/logger/logger.service';
 
@@ -12,6 +13,7 @@ export class WhatsAppController {
   constructor(
     private readonly sessions: BaileysSessionManager,
     private readonly messageStore: BaileysMessageStore,
+    private readonly sender: BaileysSenderAdapter,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly logger: LoggerService,
@@ -101,6 +103,21 @@ export class WhatsAppController {
     await this.sessions.stopSession(instanceName);
     this.logger.log(`[Baileys] Sesión detenida manualmente: ${instanceName}`, 'WhatsAppController');
     return { message: `Sesión "${instanceName}" detenida.` };
+  }
+
+  /** POST /whatsapp/baileys/send/:instanceName
+   *  Envía un mensaje de texto desde la UI del chat. */
+  @Post('send/:instanceName')
+  async sendMessage(
+    @Param('instanceName') instanceName: string,
+    @Body() body: { remoteJid: string; text: string },
+    @Headers() headers: Record<string, string>,
+  ) {
+    this.authorize(headers);
+    if (!body?.remoteJid || !body?.text) throw new BadRequestException('remoteJid y text son requeridos.');
+    const ok = await this.sender.sendText(instanceName, body.remoteJid, body.text);
+    if (!ok) throw new BadRequestException(`Sin sesión activa para "${instanceName}".`);
+    return { ok: true };
   }
 
   /** GET /whatsapp/baileys/chats/:instanceName

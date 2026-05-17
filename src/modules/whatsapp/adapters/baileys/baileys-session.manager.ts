@@ -27,6 +27,7 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
   private userInfoMap = new Map<string, UserInfo>();
   private messageHandler: IncomingMessageHandler | null = null;
   private readonly sessionsDir: string;
+  private pendingSessions = new Set<string>();
 
   constructor(
     private readonly logger: LoggerService,
@@ -67,26 +68,40 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
   }
 
   async startSession(instanceName: string): Promise<void> {
-    if (this.sockets.has(instanceName)) return;
+    if (this.sockets.has(instanceName) || this.pendingSessions.has(instanceName)) return;
+    this.pendingSessions.add(instanceName);
 
-    const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } =
-      await import('@whiskeysockets/baileys');
+    let socket: WASocket;
+    let DisconnectReason: any;
+    let saveCreds: () => Promise<void>;
 
-    const sessionDir = path.join(this.sessionsDir, instanceName);
-    if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
+    try {
+      const baileys = await import('@whiskeysockets/baileys');
+      const makeWASocket = baileys.default;
+      DisconnectReason = baileys.DisconnectReason;
+      const { useMultiFileAuthState, fetchLatestBaileysVersion } = baileys;
 
-    const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
-    const { version } = await fetchLatestBaileysVersion();
+      const sessionDir = path.join(this.sessionsDir, instanceName);
+      if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
 
-    const socket: WASocket = makeWASocket({
-      version,
-      auth: state,
-      printQRInTerminal: true,
-      logger: makeBaileysLogger(),
-      browser: ['Verzay-IA', 'Chrome', '1.0.0'],
-    });
+      const authState = await useMultiFileAuthState(sessionDir);
+      saveCreds = authState.saveCreds;
+      const { version } = await fetchLatestBaileysVersion();
+
+      socket = makeWASocket({
+        version,
+        auth: authState.state,
+        printQRInTerminal: true,
+        logger: makeBaileysLogger(),
+        browser: ['Verzay-IA', 'Chrome', '1.0.0'],
+      });
+    } catch (err: any) {
+      this.pendingSessions.delete(instanceName);
+      throw err;
+    }
 
     this.sockets.set(instanceName, socket);
+    this.pendingSessions.delete(instanceName);
 
     socket.ev.on('creds.update', saveCreds);
 
@@ -139,6 +154,8 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
       for (const msg of messages) {
         if (!msg?.key?.remoteJid) continue;
         this.persistMessage(instanceName, msg);
+        // No procesar mensajes enviados por el bot (fromMe) para evitar loops
+        if (msg?.key?.fromMe) continue;
         this.messageHandler?.(instanceName, msg);
       }
     });

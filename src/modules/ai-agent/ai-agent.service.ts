@@ -1845,7 +1845,7 @@ export class AiAgentService {
 
             const result = await agent.invoke({
               messages: messagesForLlm,
-            }, { recursionLimit: 8 });
+            }, { recursionLimit: 25 });
 
             return result;
           } catch (err: any) {

@@ -5,6 +5,7 @@ import { LoggerService } from 'src/core/logger/logger.service';
 export interface ChatSummary {
   remoteJid: string;
   pushName: string | null;
+  phoneNumber: string | null;
   lastMessageBody: string | null;
   lastMessageAt: Date | null;
   lastMessageFromMe: boolean;
@@ -21,6 +22,7 @@ export interface SaveMessageParams {
   timestamp: Date;
   mediaUrl?: string | null;
   pushName?: string | null;
+  phoneNumber?: string | null;
 }
 
 export function extractMessageBody(message: Record<string, any>): { body: string | null; type: string } {
@@ -62,7 +64,7 @@ export class BaileysMessageStore {
   ) {}
 
   async saveMessage(params: SaveMessageParams): Promise<void> {
-    const { instanceName, remoteJid, messageId, fromMe, body, type, timestamp, mediaUrl, pushName } = params;
+    const { instanceName, remoteJid, messageId, fromMe, body, type, timestamp, mediaUrl, pushName, phoneNumber } = params;
 
     // skip protocol/system messages silently
     if (type === 'protocolMessage' || type === 'unknown') return;
@@ -70,9 +72,26 @@ export class BaileysMessageStore {
     try {
       await this.prisma.baileysContact.upsert({
         where: { instanceName_remoteJid: { instanceName, remoteJid } },
-        create: { instanceName, remoteJid, pushName: pushName ?? null },
-        update: pushName ? { pushName } : {},
+        create: { instanceName, remoteJid, pushName: pushName ?? null, phoneNumber: phoneNumber ?? null },
+        update: {
+          ...(pushName ? { pushName } : {}),
+          ...(phoneNumber ? { phoneNumber } : {}),
+        },
       });
+
+      // Si el JID es @lid y tenemos el número real, actualizamos remoteJidAlt en Session
+      // para que la página de Leads muestre el número correcto
+      if (phoneNumber && remoteJid.toLowerCase().endsWith('@lid')) {
+        const phoneJid = `${phoneNumber.replace(/\D/g, '')}@s.whatsapp.net`;
+        await this.prisma.session.updateMany({
+          where: {
+            remoteJid,
+            instanceName,
+            OR: [{ remoteJidAlt: null }, { remoteJidAlt: '' }],
+          },
+          data: { remoteJidAlt: phoneJid },
+        }).catch(() => {});
+      }
 
       await this.prisma.baileysMessage.upsert({
         where: { instanceName_messageId: { instanceName, messageId } },
@@ -101,6 +120,7 @@ export class BaileysMessageStore {
       return {
         remoteJid: c.remoteJid,
         pushName: c.pushName,
+        phoneNumber: c.phoneNumber ?? null,
         lastMessageBody: last?.body ?? null,
         lastMessageAt: last?.timestamp ?? null,
         lastMessageFromMe: last?.fromMe ?? false,

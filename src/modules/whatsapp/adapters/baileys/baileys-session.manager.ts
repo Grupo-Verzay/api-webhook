@@ -188,6 +188,10 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
     const tsSeconds: number = msg.messageTimestamp ?? Math.floor(Date.now() / 1000);
     const timestamp = new Date(tsSeconds * 1000);
 
+    // senderPn: número de teléfono real del contacto (disponible en JIDs @lid)
+    const rawPn: string = msg.senderPn ?? key.senderPn ?? '';
+    const phoneNumber = rawPn ? rawPn.replace(/\D/g, '') : null;
+
     this.messageStore.saveMessage({
       instanceName,
       remoteJid,
@@ -197,13 +201,19 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
       type,
       timestamp,
       pushName: msg.pushName ?? null,
+      phoneNumber,
     }).catch(() => {});
   }
 
   private async persistHistory(instanceName: string, messages: any[], contacts: any[]): Promise<void> {
     const contactMap = new Map<string, string>();
+    const contactPnMap = new Map<string, string>();
     for (const c of contacts ?? []) {
-      if (c?.id) contactMap.set(c.id, c.notify ?? c.name ?? '');
+      if (c?.id) {
+        contactMap.set(c.id, c.notify ?? c.name ?? '');
+        const pn = c.senderPn ?? c.phoneNumber ?? '';
+        if (pn) contactPnMap.set(c.id, pn.replace(/\D/g, ''));
+      }
     }
 
     let saved = 0;
@@ -217,6 +227,8 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
       const tsSeconds: number = msg.messageTimestamp ?? Math.floor(Date.now() / 1000);
       const timestamp = new Date(tsSeconds * 1000);
       const pushName = contactMap.get(remoteJid) || msg.pushName || null;
+      const rawPn = msg.senderPn ?? key.senderPn ?? contactPnMap.get(remoteJid) ?? '';
+      const phoneNumber = rawPn ? rawPn.replace(/\D/g, '') : null;
 
       await this.messageStore.saveMessage({
         instanceName,
@@ -227,6 +239,7 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
         type,
         timestamp,
         pushName,
+        phoneNumber,
       });
       saved++;
     }

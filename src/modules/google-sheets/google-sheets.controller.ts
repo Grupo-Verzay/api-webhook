@@ -23,7 +23,7 @@ export class GoogleSheetsController {
   @Post('append')
   @HttpCode(200)
   async append(
-    @Body() body: Record<string, string>,
+    @Body() body: Record<string, string> | string,
     @Query('spreadsheetId') spreadsheetId?: string,
     @Query('sheet') sheet?: string,
   ) {
@@ -34,6 +34,17 @@ export class GoogleSheetsController {
       return { success: false, error: 'spreadsheetId no configurado.' };
     }
 
-    return this.sheetsService.appendRow(sid, sheetName, body);
+    let data: Record<string, string>;
+    if (typeof body === 'string') {
+      try {
+        data = JSON.parse(body);
+      } catch {
+        return { success: false, error: 'Body inválido: no es JSON válido.' };
+      }
+    } else {
+      data = body;
+    }
+
+    return this.sheetsService.appendRow(sid, sheetName, data);
   }
 }

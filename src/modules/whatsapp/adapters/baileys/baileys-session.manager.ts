@@ -106,6 +106,13 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
         this.authenticated.delete(instanceName);
         if (shouldReconnect) {
           setTimeout(() => this.startSession(instanceName), 5000);
+        } else {
+          // loggedOut: borrar credenciales para que la próxima llamada a startSession genere QR nuevo
+          const sessionDir = path.join(this.sessionsDir, instanceName);
+          if (fs.existsSync(sessionDir)) {
+            fs.rmSync(sessionDir, { recursive: true, force: true });
+            this.logger.log(`[Baileys] Credenciales borradas para ${instanceName} — próxima reconexión pedirá QR nuevo.`, 'BaileysSessionManager');
+          }
         }
       }
 

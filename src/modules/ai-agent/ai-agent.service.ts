@@ -2351,7 +2351,17 @@ export class AiAgentService {
         content: [
           {
             type: 'text',
-            text: 'Describe de forma clara y detallada el contenido de esta imagen.',
+            text: `Analiza esta imagen. Si es un comprobante de pago (SINPE móvil, transferencia bancaria, depósito, recibo), extrae en texto plano TODOS los campos disponibles con este formato exacto:
+Comprobante de pago detectado.
+Banco: [banco emisor]
+Fecha: [fecha del comprobante]
+Monto: [monto transferido con símbolo de moneda]
+Referencia: [número de referencia o documento]
+Cuenta origen: [cuenta o nombre del titular origen, si aplica]
+Destinatario: [nombre o cuenta destino, si aplica]
+Motivo: [motivo o concepto del pago, si aplica]
+Para campos no visibles usa "N/C".
+Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natural.`,
           },
           {
             type: 'image_url',

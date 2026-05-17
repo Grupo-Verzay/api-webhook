@@ -143,8 +143,25 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
       }
     });
 
-    socket.ev.on('messaging-history.set', ({ messages, contacts }: { messages: any[]; contacts: any[]; isLatest: boolean }) => {
-      this.persistHistory(instanceName, messages, contacts).catch(() => {});
+    socket.ev.on('messaging-history.set', ({ messages, contacts, lidPnMappings }: { messages: any[]; contacts: any[]; isLatest: boolean; lidPnMappings?: Array<{ pn: string; lid: string }> }) => {
+      this.persistHistory(instanceName, messages, contacts, lidPnMappings).catch(() => {});
+    });
+
+    socket.ev.on('lid-mapping.update', (mapping: { pn: string; lid: string }) => {
+      if (mapping?.pn && mapping?.lid) {
+        const phoneDigits = mapping.pn.replace(/\D/g, '');
+        if (phoneDigits) {
+          this.messageStore.updateContactPhone(instanceName, mapping.lid, phoneDigits).catch(() => {});
+        }
+      }
+    });
+
+    socket.ev.on('contacts.upsert', (contacts: any[]) => {
+      this.persistContacts(instanceName, contacts).catch(() => {});
+    });
+
+    socket.ev.on('contacts.update', (contacts: any[]) => {
+      this.persistContacts(instanceName, contacts).catch(() => {});
     });
   }
 
@@ -205,14 +222,54 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
     }).catch(() => {});
   }
 
-  private async persistHistory(instanceName: string, messages: any[], contacts: any[]): Promise<void> {
+  private async persistContacts(instanceName: string, contacts: any[]): Promise<void> {
+    for (const c of contacts ?? []) {
+      if (!c?.id) continue;
+      const lidJid: string | null = c.id.toLowerCase().endsWith('@lid')
+        ? c.id
+        : c.lid ?? null;
+      // phoneNumber in Contact type is the @s.whatsapp.net JID
+      const pnRaw: string = c.senderPn ?? c.phoneNumber ?? '';
+      const phoneDigits = pnRaw.replace(/\D/g, '');
+      if (lidJid && phoneDigits) {
+        await this.messageStore.updateContactPhone(instanceName, lidJid, phoneDigits, c.notify ?? c.name ?? null).catch(() => {});
+      }
+    }
+  }
+
+  private async persistHistory(instanceName: string, messages: any[], contacts: any[], lidPnMappings?: Array<{ pn: string; lid: string }>): Promise<void> {
     const contactMap = new Map<string, string>();
     const contactPnMap = new Map<string, string>();
+
+    // Process explicit LID→PN mappings first (most reliable)
+    for (const m of lidPnMappings ?? []) {
+      if (m?.pn && m?.lid) {
+        const phoneDigits = m.pn.replace(/\D/g, '');
+        if (phoneDigits) {
+          contactPnMap.set(m.lid, phoneDigits);
+          await this.messageStore.updateContactPhone(instanceName, m.lid, phoneDigits).catch(() => {});
+        }
+      }
+    }
+
     for (const c of contacts ?? []) {
       if (c?.id) {
-        contactMap.set(c.id, c.notify ?? c.name ?? '');
+        const displayName = c.notify ?? c.name ?? '';
+        contactMap.set(c.id, displayName);
         const pn = c.senderPn ?? c.phoneNumber ?? '';
-        if (pn) contactPnMap.set(c.id, pn.replace(/\D/g, ''));
+        const phoneDigits = pn.replace(/\D/g, '');
+        if (phoneDigits) contactPnMap.set(c.id, phoneDigits);
+
+        // Cross-index: id=@s.whatsapp.net + lid=@lid → index by lid too
+        if (c.lid && c.lid !== c.id) {
+          if (!contactMap.has(c.lid)) contactMap.set(c.lid, displayName);
+          if (phoneDigits && !contactPnMap.has(c.lid)) contactPnMap.set(c.lid, phoneDigits);
+          // Persist the LID→phone mapping
+          if (phoneDigits) {
+            await this.messageStore.updateContactPhone(instanceName, c.lid, phoneDigits, displayName || null).catch(() => {});
+          }
+        }
+        // Cross-index: id=@lid + phoneNumber=@s.whatsapp.net → already captured above
       }
     }
 

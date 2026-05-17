@@ -145,4 +145,34 @@ export class BaileysMessageStore {
       take: limit,
     });
   }
+
+  async getContactPhone(instanceName: string, remoteJid: string): Promise<string | null> {
+    const contact = await this.prisma.baileysContact.findUnique({
+      where: { instanceName_remoteJid: { instanceName, remoteJid } },
+      select: { phoneNumber: true },
+    });
+    return contact?.phoneNumber ?? null;
+  }
+
+  async updateContactPhone(instanceName: string, lidJid: string, phoneDigits: string, pushName?: string | null): Promise<void> {
+    try {
+      await this.prisma.baileysContact.upsert({
+        where: { instanceName_remoteJid: { instanceName, remoteJid: lidJid } },
+        create: { instanceName, remoteJid: lidJid, phoneNumber: phoneDigits, pushName: pushName ?? null },
+        update: { phoneNumber: phoneDigits, ...(pushName ? { pushName } : {}) },
+      });
+
+      const phoneJid = `${phoneDigits}@s.whatsapp.net`;
+      await this.prisma.session.updateMany({
+        where: {
+          remoteJid: lidJid,
+          instanceName,
+          OR: [{ remoteJidAlt: null }, { remoteJidAlt: '' }, { remoteJidAlt: lidJid }],
+        },
+        data: { remoteJidAlt: phoneJid },
+      }).catch(() => {});
+    } catch (err) {
+      this.logger.error(`[BaileysStore] Error updating contact phone for ${lidJid}`, err?.message, 'BaileysMessageStore');
+    }
+  }
 }

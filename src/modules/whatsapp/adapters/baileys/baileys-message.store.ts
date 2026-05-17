@@ -26,6 +26,15 @@ export interface SaveMessageParams {
 export function extractMessageBody(message: Record<string, any>): { body: string | null; type: string } {
   if (!message) return { body: null, type: 'unknown' };
 
+  // Unwrap container types that nest another message inside
+  if (message.deviceSentMessage?.message) return extractMessageBody(message.deviceSentMessage.message);
+  if (message.ephemeralMessage?.message) return extractMessageBody(message.ephemeralMessage.message);
+  if (message.viewOnceMessage?.message) return extractMessageBody(message.viewOnceMessage.message);
+  if (message.viewOnceMessageV2?.message?.viewOnceMessage?.message)
+    return extractMessageBody(message.viewOnceMessageV2.message.viewOnceMessage.message);
+  if (message.documentWithCaptionMessage?.message) return extractMessageBody(message.documentWithCaptionMessage.message);
+  if (message.editedMessage?.message) return extractMessageBody(message.editedMessage.message);
+
   if (message.conversation) return { body: message.conversation, type: 'conversation' };
   if (message.extendedTextMessage?.text) return { body: message.extendedTextMessage.text, type: 'extendedTextMessage' };
   if (message.imageMessage) return { body: message.imageMessage.caption ?? null, type: 'imageMessage' };

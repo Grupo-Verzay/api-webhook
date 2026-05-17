@@ -1764,7 +1764,7 @@ export class AiAgentService {
 
             const result = await agent.invoke({
               messages: messagesForLlm,
-            });
+            }, { recursionLimit: 60 });
 
             return result;
           } catch (err: any) {
@@ -1843,6 +1843,19 @@ export class AiAgentService {
 
           // No responder nada al usuario final
           return '';
+        }
+
+        const isRecursion =
+          name === 'GraphRecursionError' ||
+          msg.includes('Recursion limit') ||
+          msg.includes('recursion limit') ||
+          msg.includes('GraphRecursionError');
+
+        if (isRecursion) {
+          logger.error(
+            `❌ [GraphRecursionError] El agente alcanzó el límite de recursión (60 ciclos). instanceName=${instanceName} remoteJid=${remoteJid}. Verifica el prompt y las herramientas configuradas.`,
+          );
+          return 'Lo siento, no pude completar la acción en este momento. Por favor intenta de nuevo.';
         }
 
         // Otros errores pasan al catch general de processInput

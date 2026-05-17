@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import * as QRCode from 'qrcode';
 import { BaileysSessionManager } from './adapters/baileys/baileys-session.manager';
+import { BaileysMessageStore } from './adapters/baileys/baileys-message.store';
 import { PrismaService } from 'src/database/prisma.service';
 import { LoggerService } from 'src/core/logger/logger.service';
 
@@ -10,6 +11,7 @@ import { LoggerService } from 'src/core/logger/logger.service';
 export class WhatsAppController {
   constructor(
     private readonly sessions: BaileysSessionManager,
+    private readonly messageStore: BaileysMessageStore,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly logger: LoggerService,
@@ -99,6 +101,35 @@ export class WhatsAppController {
     await this.sessions.stopSession(instanceName);
     this.logger.log(`[Baileys] Sesión detenida manualmente: ${instanceName}`, 'WhatsAppController');
     return { message: `Sesión "${instanceName}" detenida.` };
+  }
+
+  /** GET /whatsapp/baileys/chats/:instanceName
+   *  Lista de chats (contactos con último mensaje) almacenados para la instancia. */
+  @Get('chats/:instanceName')
+  async getChats(
+    @Param('instanceName') instanceName: string,
+    @Headers() headers: Record<string, string>,
+  ) {
+    this.authorize(headers);
+    const chats = await this.messageStore.getChats(instanceName);
+    return { instanceName, chats };
+  }
+
+  /** GET /whatsapp/baileys/messages/:instanceName/:remoteJid?limit=50&before=ISO_DATE
+   *  Mensajes de una conversación, paginados hacia atrás. */
+  @Get('messages/:instanceName/:remoteJid')
+  async getMessages(
+    @Param('instanceName') instanceName: string,
+    @Param('remoteJid') remoteJid: string,
+    @Query('limit') limit: string,
+    @Query('before') before: string,
+    @Headers() headers: Record<string, string>,
+  ) {
+    this.authorize(headers);
+    const parsedLimit = Math.min(Number(limit) || 50, 200);
+    const beforeDate = before ? new Date(before) : undefined;
+    const messages = await this.messageStore.getMessages(instanceName, remoteJid, parsedLimit, beforeDate);
+    return { instanceName, remoteJid, messages };
   }
 
   /** GET /whatsapp/baileys/qr-page/:instanceName?secret=KEY

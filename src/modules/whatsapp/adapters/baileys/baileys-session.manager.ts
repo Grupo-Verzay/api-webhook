@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { LoggerService } from 'src/core/logger/logger.service';
 import { PrismaService } from 'src/database/prisma.service';
+import { BaileysMessageStore, extractMessageBody } from './baileys-message.store';
 
 type WASocket = any;
 type ConnectionState = { connection: string; lastDisconnect?: { error?: any } };
@@ -31,6 +32,7 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
     private readonly logger: LoggerService,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly messageStore: BaileysMessageStore,
   ) {
     this.sessionsDir = this.config.get<string>('BAILEYS_SESSIONS_DIR') ?? path.join(process.cwd(), 'baileys-sessions');
   }
@@ -136,8 +138,13 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
       if (type !== 'notify') return;
       for (const msg of messages) {
         if (!msg?.key?.remoteJid) continue;
+        this.persistMessage(instanceName, msg);
         this.messageHandler?.(instanceName, msg);
       }
+    });
+
+    socket.ev.on('messaging-history.set', ({ messages, contacts }: { messages: any[]; contacts: any[]; isLatest: boolean }) => {
+      this.persistHistory(instanceName, messages, contacts).catch(() => {});
     });
   }
 
@@ -169,5 +176,63 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
 
   isConnected(instanceName: string): boolean {
     return this.authenticated.has(instanceName);
+  }
+
+  private persistMessage(instanceName: string, msg: any): void {
+    const key = msg.key ?? {};
+    const remoteJid: string = key.remoteJid ?? '';
+    if (!remoteJid || remoteJid.endsWith('@broadcast')) return;
+
+    const message = msg.message ?? {};
+    const { body, type } = extractMessageBody(message);
+    const tsSeconds: number = msg.messageTimestamp ?? Math.floor(Date.now() / 1000);
+    const timestamp = new Date(tsSeconds * 1000);
+
+    this.messageStore.saveMessage({
+      instanceName,
+      remoteJid,
+      messageId: key.id ?? '',
+      fromMe: key.fromMe ?? false,
+      body,
+      type,
+      timestamp,
+      pushName: msg.pushName ?? null,
+    }).catch(() => {});
+  }
+
+  private async persistHistory(instanceName: string, messages: any[], contacts: any[]): Promise<void> {
+    const contactMap = new Map<string, string>();
+    for (const c of contacts ?? []) {
+      if (c?.id) contactMap.set(c.id, c.notify ?? c.name ?? '');
+    }
+
+    let saved = 0;
+    for (const msg of messages ?? []) {
+      const key = msg.key ?? {};
+      const remoteJid: string = key.remoteJid ?? '';
+      if (!remoteJid || remoteJid.endsWith('@broadcast')) continue;
+
+      const message = msg.message ?? {};
+      const { body, type } = extractMessageBody(message);
+      const tsSeconds: number = msg.messageTimestamp ?? Math.floor(Date.now() / 1000);
+      const timestamp = new Date(tsSeconds * 1000);
+      const pushName = contactMap.get(remoteJid) || msg.pushName || null;
+
+      await this.messageStore.saveMessage({
+        instanceName,
+        remoteJid,
+        messageId: key.id ?? '',
+        fromMe: key.fromMe ?? false,
+        body,
+        type,
+        timestamp,
+        pushName,
+      });
+      saved++;
+    }
+
+    if (saved > 0) {
+      this.logger.log(`[Baileys] Historial inicial: ${saved} mensajes guardados para ${instanceName}`, 'BaileysSessionManager');
+    }
   }
 }

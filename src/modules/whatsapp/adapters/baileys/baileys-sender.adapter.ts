@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/core/logger/logger.service';
 import { IWhatsAppSender } from '../../interfaces/whatsapp-sender.interface';
 import { BaileysSessionManager } from './baileys-session.manager';
+import { BaileysMessageStore } from './baileys-message.store';
 
 @Injectable()
 export class BaileysSenderAdapter implements IWhatsAppSender {
   constructor(
     private readonly sessions: BaileysSessionManager,
     private readonly logger: LoggerService,
+    private readonly messageStore: BaileysMessageStore,
   ) {}
 
   async sendText(instanceName: string, remoteJid: string, text: string): Promise<boolean> {
@@ -17,7 +19,16 @@ export class BaileysSenderAdapter implements IWhatsAppSender {
       return false;
     }
     try {
-      await socket.sendMessage(remoteJid, { text });
+      const sent = await socket.sendMessage(remoteJid, { text });
+      this.messageStore.saveMessage({
+        instanceName,
+        remoteJid,
+        messageId: sent?.key?.id ?? `out-${Date.now()}`,
+        fromMe: true,
+        body: text,
+        type: 'conversation',
+        timestamp: new Date(),
+      }).catch(() => {});
       return true;
     } catch (err) {
       this.logger.error(`[Baileys] Error enviando texto a ${remoteJid}`, err?.message, 'BaileysSenderAdapter');

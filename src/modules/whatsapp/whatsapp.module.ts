@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { EvolutionApiSenderAdapter } from './adapters/evolution-api.adapter';
 import { BaileysSessionManager } from './adapters/baileys/baileys-session.manager';
 import { BaileysSenderAdapter } from './adapters/baileys/baileys-sender.adapter';
+import { BaileysMessageStore } from './adapters/baileys/baileys-message.store';
 import { WhatsAppSenderFactory } from './whatsapp-sender.factory';
 import { WhatsAppController } from './whatsapp.controller';
 import { WorkflowModule } from 'src/modules/workflow/workflow.module';
@@ -13,8 +14,9 @@ import { WorkflowModule } from 'src/modules/workflow/workflow.module';
     EvolutionApiSenderAdapter,
     BaileysSessionManager,
     BaileysSenderAdapter,
+    BaileysMessageStore,
     WhatsAppSenderFactory,
   ],
-  exports: [WhatsAppSenderFactory, BaileysSessionManager],
+  exports: [WhatsAppSenderFactory, BaileysSessionManager, BaileysMessageStore],
 })
 export class WhatsAppModule {}

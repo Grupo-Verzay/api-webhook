@@ -154,8 +154,6 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
       for (const msg of messages) {
         if (!msg?.key?.remoteJid) continue;
         this.persistMessage(instanceName, msg);
-        // No procesar mensajes enviados por el bot (fromMe) para evitar loops
-        if (msg?.key?.fromMe) continue;
         this.messageHandler?.(instanceName, msg);
       }
     });

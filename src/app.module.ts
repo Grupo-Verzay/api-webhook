@@ -9,6 +9,7 @@ import { AiAgentModule } from './modules/ai-agent/ai-agent.module';
 import { LeadFunnelModule } from './modules/lead-funnel/lead-funnel.module';
 import { RegistrosModule } from './modules/registros/registros.module';
 import { ChatHistoryModule } from './modules/chat-history/chat-history.module';
+import { GoogleSheetsModule } from './modules/google-sheets/google-sheets.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { ChatHistoryModule } from './modules/chat-history/chat-history.module';
     LeadFunnelModule,
     RegistrosModule,
     ChatHistoryModule,
+    GoogleSheetsModule,
   ],
   providers: [
     ServicesService,

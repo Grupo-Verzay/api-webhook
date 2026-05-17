@@ -1245,9 +1245,8 @@ export class AiAgentService {
             return 'La hoja no contiene datos.';
           }
 
-          const preview = results.slice(0, 10);
-          const header = `📊 Google Sheets — ${results.length} fila(s)${results.length > 10 ? ' (mostrando primeras 10)' : ''}:\n\n`;
-          const body = preview
+          const header = `📊 Google Sheets — ${results.length} fila(s):\n\n`;
+          const body = results
             .map((row, i) => `${i + 1}. ${Object.entries(row).map(([k, v]) => `*${k}*: ${v}`).join(' | ')}`)
             .join('\n');
 

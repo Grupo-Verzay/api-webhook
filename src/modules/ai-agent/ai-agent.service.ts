@@ -18,6 +18,7 @@ import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { SessionService } from '../session/session.service';
 import { ExternalClientDataService } from '../external-client-data/external-client-data.service';
+import { GoogleSheetsService } from '../google-sheets/google-sheets.service';
 
 // Refactor
 import { LlmClientFactory } from './services/llmClientFactory/llmClientFactory.service';
@@ -82,6 +83,7 @@ export class AiAgentService {
 
     @Inject(forwardRef(() => WorkflowService))
     private readonly workflowService: WorkflowService,
+    private readonly googleSheetsService: GoogleSheetsService,
   ) {}
 
   private async getClientForUser(userId: string, temperature?: number): Promise<BaseChatModel> {
@@ -1206,44 +1208,51 @@ export class AiAgentService {
     const { userId, instanceName, remoteJid } = params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
+    // Extraer spreadsheetId y sheetName de la URL configurada en Verzay
+    const parseSheetParams = (rawUrl: string): { spreadsheetId: string; sheetName: string } => {
+      try {
+        const u = new URL(rawUrl);
+        return {
+          spreadsheetId: u.searchParams.get('spreadsheetId') ?? '',
+          sheetName: u.searchParams.get('sheet') ?? 'Hoja1',
+        };
+      } catch {
+        return { spreadsheetId: '', sheetName: 'Hoja1' };
+      }
+    };
+
     // @ts-ignore
     return tool(
-      async ({ datos, url }: { datos: Record<string, string>; url?: string }) => {
-        const resolvedUrl = url ?? cfg.promptTemplate ?? '';
-        logger.log(`Tool "${cfg.toolKey}" (escribir_google_sheets) llamada. url="${resolvedUrl}" datos=${JSON.stringify(datos)}`);
-        if (!resolvedUrl) return 'No se proporcionó la URL del webhook de Google Apps Script. Configura la URL en la herramienta.';
+      async ({ datos, spreadsheetId: sidOverride, sheetName: sheetOverride }: {
+        datos: Record<string, string>;
+        spreadsheetId?: string;
+        sheetName?: string;
+      }) => {
+        const configUrl = cfg.promptTemplate ?? '';
+        const { spreadsheetId: sidFromUrl, sheetName: sheetFromUrl } = parseSheetParams(configUrl);
+        const spreadsheetId = sidOverride || sidFromUrl;
+        const sheetName = sheetOverride || sheetFromUrl;
 
-        try {
-          const parsed = new URL(resolvedUrl);
-          if (!['http:', 'https:'].includes(parsed.protocol)) return 'Error: Solo se permiten URLs http o https.';
+        logger.log(`Tool "${cfg.toolKey}" (escribir_google_sheets) llamada. spreadsheetId="${spreadsheetId}" sheet="${sheetName}" datos=${JSON.stringify(datos)}`);
 
-          // Apps Script redirige POST → usar text/plain para que el redirect preserve el método
-          const response = await axios.post(resolvedUrl, JSON.stringify(datos), {
-            headers: { 'Content-Type': 'text/plain' },
-            timeout: 15_000,
-            maxRedirects: 5,
-          });
-
-          const body = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
-          if (body?.success) {
-            return `✅ Datos guardados correctamente en Google Sheets.${body.message ? ' ' + body.message : ''}`;
-          }
-          return `Error al guardar: ${body?.error ?? body?.message ?? 'Respuesta inesperada del servidor'}`;
-        } catch (err: any) {
-          logger.error(`[escribir_google_sheets] Error: ${err?.message}`);
-          if (err?.response?.status === 403 || err?.response?.status === 401)
-            return 'Error: Sin permiso para escribir. Verifica que el Apps Script esté publicado como "Cualquiera puede acceder".';
-          if (err?.response?.status === 404)
-            return 'Error 404: URL del webhook no encontrada. Verifica la URL del Apps Script.';
-          return `No se pudo guardar en la hoja. Error: ${err?.message ?? 'desconocido'}`;
+        if (!spreadsheetId) {
+          return 'No se proporcionó spreadsheetId. Configura la URL en la herramienta con ?spreadsheetId=...';
         }
+
+        const result = await this.googleSheetsService.appendRow(spreadsheetId, sheetName, datos);
+
+        if (result.success) {
+          return `✅ Datos guardados correctamente en Google Sheets (hoja: ${sheetName}).`;
+        }
+        return `Error al guardar en Google Sheets: ${result.error ?? 'error desconocido'}`;
       },
       {
         name: cfg.toolKey,
         description: cfg.toolDescription,
         schema: z.object({
-          datos: z.record(z.string()).describe('Objeto con los datos a guardar. Las claves deben coincidir exactamente con los encabezados de la hoja. Ejemplo: {"NOMBRE": "Juan", "TELEFONO": "3001234567", "PAIS": "Colombia"}'),
-          url: z.string().optional().describe('URL del webhook de Google Apps Script (opcional si ya hay una configurada por defecto).'),
+          datos: z.record(z.string()).describe('Objeto con los datos a guardar. Las claves deben coincidir con los encabezados de la hoja. Ejemplo: {"NOMBRE": "Juan", "BANCO": "BCR", "MONTO": "18500"}'),
+          spreadsheetId: z.string().optional().describe('ID del Google Sheets (opcional, se toma de la configuración por defecto).'),
+          sheetName: z.string().optional().describe('Nombre de la hoja (opcional, se toma de la configuración por defecto).'),
         }),
       },
     );

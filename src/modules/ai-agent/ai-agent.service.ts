@@ -432,9 +432,13 @@ export class AiAgentService {
         logger.log(`Tool "${cfg.toolKey}" (notificacion_asesor) llamada para: ${nombre}`);
 
         // ── AUTO-WRITE Google Sheets ────────────────────────────────────────
-        // Si hay campos de pago (monto/referencia/sinpe_transid) y config de Sheets
-        // → escribir automáticamente sin depender del orden del agente.
-        if (googleSheetsCfg?.spreadsheetId && (monto || referencia || sinpe_transid)) {
+        // Dispara si hay campos estructurados de pago O si detalles/nombre mencionan
+        // palabras clave de comprobante (cubre el caso de imagen procesada por OCR).
+        const _paymentKeywords = /comprobante|sinpe|transferencia|dep[oó]sito|banco|monto|recibo|pago/i;
+        const _isPayment = !!(monto || referencia || sinpe_transid) ||
+          _paymentKeywords.test(detalles ?? '') ||
+          _paymentKeywords.test(nombre ?? '');
+        if (googleSheetsCfg?.spreadsheetId && _isPayment) {
           try {
             const datos: Record<string, string> = {
               WHATSAPP: remoteJid.split('@')[0],

@@ -49,12 +49,24 @@ export class BaileysWebhookBridgeService implements OnModuleInit {
     const message = msg.message ?? {};
     const messageType = Object.keys(message)[0] ?? 'conversation';
 
-    // Resolve real phone JID for @lid contacts from our contact store
+    // Resolve real phone JID for @lid contacts
     let remoteJidAlt = remoteJid;
     if (remoteJid.toLowerCase().endsWith('@lid')) {
-      const phoneNumber = await this.messageStore.getContactPhone(instanceName, remoteJid);
-      if (phoneNumber) {
-        remoteJidAlt = `${phoneNumber}@s.whatsapp.net`;
+      // 1st: Baileys resuelve key.remoteJidAlt desde su auth state
+      const baileysAlt: string = key.remoteJidAlt ?? '';
+      if (baileysAlt && !baileysAlt.toLowerCase().endsWith('@lid')) {
+        remoteJidAlt = baileysAlt;
+        // Persistir en BD para próximos usos
+        const phoneDigits = baileysAlt.replace(/@[^@]*$/, '').replace(/\D/g, '');
+        if (phoneDigits) {
+          this.messageStore.updateContactPhone(instanceName, remoteJid, phoneDigits).catch(() => {});
+        }
+      } else {
+        // 2nd: fallback a nuestra BD
+        const phoneNumber = await this.messageStore.getContactPhone(instanceName, remoteJid);
+        if (phoneNumber) {
+          remoteJidAlt = `${phoneNumber}@s.whatsapp.net`;
+        }
       }
     }
 

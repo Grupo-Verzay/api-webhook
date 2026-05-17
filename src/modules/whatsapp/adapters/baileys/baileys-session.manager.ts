@@ -205,9 +205,21 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
     const tsSeconds: number = msg.messageTimestamp ?? Math.floor(Date.now() / 1000);
     const timestamp = new Date(tsSeconds * 1000);
 
-    // senderPn: número de teléfono real del contacto (disponible en JIDs @lid)
+    // Resolver número real: senderPn → key.remoteJidAlt (resuelto por Baileys desde auth state)
+    let phoneNumber: string | null = null;
     const rawPn: string = msg.senderPn ?? key.senderPn ?? '';
-    const phoneNumber = rawPn ? rawPn.replace(/\D/g, '') : null;
+    if (rawPn) {
+      phoneNumber = rawPn.replace(/\D/g, '') || null;
+    } else if (remoteJid.toLowerCase().endsWith('@lid')) {
+      const alt: string = key.remoteJidAlt ?? '';
+      if (alt && !alt.toLowerCase().endsWith('@lid') && alt.includes('@')) {
+        phoneNumber = alt.replace(/@[^@]*$/, '').replace(/\D/g, '') || null;
+      }
+      this.logger.log(
+        `[Baileys] @lid msg key=${JSON.stringify({ remoteJid, remoteJidAlt: key.remoteJidAlt, senderPn: msg.senderPn, keySenderPn: key.senderPn })}`,
+        'BaileysSessionManager',
+      );
+    }
 
     this.messageStore.saveMessage({
       instanceName,

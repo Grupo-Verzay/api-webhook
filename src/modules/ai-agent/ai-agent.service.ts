@@ -1232,9 +1232,7 @@ export class AiAgentService {
             results = rows.filter((row) => normalize(row[matchedKey] ?? '').includes(normalize(valor)));
 
             if (!results.length) {
-              // Devuelve los valores únicos de esa columna para que el AI sepa qué hay disponible
-              const uniqueVals = [...new Set(rows.map((r) => r[matchedKey]).filter(Boolean))].slice(0, 20);
-              return `No se encontraron filas donde "${matchedKey}" contenga "${valor}". Valores disponibles en esa columna: ${uniqueVals.join(', ')}.`;
+              return `REGISTRO NO ENCONTRADO: No existe ningún registro donde "${matchedKey}" sea "${valor}".\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: El dato buscado no está en la base de datos. Informa al usuario que no se encontró el registro y pide que verifique el dato ingresado. PROHIBIDO reintentar la búsqueda con otros valores.`;
             }
           } else if (!rows.length) {
             return 'La hoja no contiene datos.';
@@ -1929,7 +1927,7 @@ export class AiAgentService {
 
         if (isRecursion) {
           logger.error(
-            `❌ [GraphRecursionError] El agente alcanzó el límite de recursión (60 ciclos). instanceName=${instanceName} remoteJid=${remoteJid}. Verifica el prompt y las herramientas configuradas.`,
+            `❌ [GraphRecursionError] El agente alcanzó el límite de recursión (8 ciclos). instanceName=${instanceName} remoteJid=${remoteJid}. Verifica el prompt y las herramientas configuradas.`,
           );
           return 'Lo siento, no pude completar la acción en este momento. Por favor intenta de nuevo.';
         }

@@ -1223,16 +1223,23 @@ export class AiAgentService {
           logger.log(`[leer_google_sheets] ${rows.length} filas leídas. Columnas: ${headers.join(', ')}`);
 
           let results = rows;
-          if (columna && valor) {
-            // Busca la columna con normalización de tildes
-            const matchedKey = headers.find((h) => normalize(h) === normalize(columna));
-            if (!matchedKey) {
-              return `No existe la columna "${columna}" en la hoja. Columnas disponibles: ${headers.join(', ')}.`;
+          if (valor) {
+            if (columna) {
+              // Buscar en columna específica con normalización de tildes
+              const matchedKey = headers.find((h) => normalize(h) === normalize(columna));
+              if (!matchedKey) {
+                return `No existe la columna "${columna}" en la hoja. Columnas disponibles: ${headers.join(', ')}.`;
+              }
+              results = rows.filter((row) => normalize(row[matchedKey] ?? '').includes(normalize(valor)));
+            } else {
+              // Sin columna especificada → buscar en TODAS las columnas
+              results = rows.filter((row) =>
+                Object.values(row).some((v) => normalize(String(v ?? '')).includes(normalize(valor))),
+              );
             }
-            results = rows.filter((row) => normalize(row[matchedKey] ?? '').includes(normalize(valor)));
 
             if (!results.length) {
-              return `REGISTRO NO ENCONTRADO: No existe ningún registro donde "${matchedKey}" sea "${valor}".\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: El dato buscado no está en la base de datos. Informa al usuario que no se encontró el registro y pide que verifique el dato ingresado. PROHIBIDO reintentar la búsqueda con otros valores.`;
+              return `REGISTRO NO ENCONTRADO: No existe ningún registro con el valor "${valor}" en la hoja.\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: El dato buscado no está en la base de datos. Informa al usuario que no se encontró el registro y pide que verifique el dato ingresado. PROHIBIDO reintentar la búsqueda con otros valores.`;
             }
           } else if (!rows.length) {
             return 'La hoja no contiene datos.';

@@ -89,7 +89,7 @@ export class BaileysSenderAdapter implements IWhatsAppSender {
       await socket.sendMessage(remoteJid, {
         audio: buffer,
         ptt: true,
-        mimetype: 'audio/mp4',
+        mimetype: 'audio/mpeg',
       } as any);
       return true;
     } catch (err) {

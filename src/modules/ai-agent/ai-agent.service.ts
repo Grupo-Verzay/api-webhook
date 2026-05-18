@@ -1158,9 +1158,9 @@ export class AiAgentService {
         logger.log(`Tool "${cfg.toolKey}" (leer_google_sheets) llamada. url="${resolvedUrl}" columna="${columna ?? ''}" valor="${valor ?? ''}"`);
         if (!resolvedUrl) return 'No se proporcionó una URL de Google Sheets. Por favor indica la URL de la hoja.';
 
-        // Normaliza tildes/diacríticos para comparaciones flexibles
+        // Normaliza tildes, diacríticos, guiones, puntos y espacios para comparaciones flexibles
         const normalize = (s: string) =>
-          s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+          s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[\s\-_.\/]/g, '').trim();
 
         try {
           const parsed = new URL(resolvedUrl);

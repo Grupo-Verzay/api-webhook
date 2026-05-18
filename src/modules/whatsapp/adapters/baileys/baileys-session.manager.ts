@@ -236,11 +236,6 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    this.logger.log(
-      `[Baileys] msg fromMe=${key.fromMe} type=${type} body="${(body ?? '').substring(0, 40)}" remoteJid=${remoteJid}`,
-      'BaileysSessionManager',
-    );
-
     this.messageStore.saveMessage({
       instanceName,
       remoteJid,

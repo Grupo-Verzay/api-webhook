@@ -407,8 +407,6 @@ export class WebhookService implements OnModuleInit {
       return;
     }
 
-    logger.log(`Is from me: ${fromMe}`);
-    logger.log(`Estado de la session: ${canonicalSession?.status ?? sessionRes.status}`);
 
     /* Extract content — reutiliza la extracción temprana si ya se hizo (admin) */
     const incomingMessage = preExtractedMessage !== null

@@ -7,6 +7,7 @@ export interface ChatSummary {
   pushName: string | null;
   phoneNumber: string | null;
   lastMessageBody: string | null;
+  lastMessageType: string | null;
   lastMessageAt: Date | null;
   lastMessageFromMe: boolean;
   unreadCount: number;
@@ -125,6 +126,7 @@ export class BaileysMessageStore {
         pushName: c.pushName,
         phoneNumber: c.phoneNumber ?? null,
         lastMessageBody: last?.body ?? null,
+        lastMessageType: last?.type ?? null,
         lastMessageAt: last?.timestamp ?? null,
         lastMessageFromMe: last?.fromMe ?? false,
         unreadCount: 0,

@@ -458,7 +458,7 @@ export class FollowUpRunnerService {
     limit = 25,
     scope?: { userId?: string; instanceId?: string; remoteJid?: string },
   ) {
-    const take = Math.max(limit * 4, 50);
+    const take = Math.max(limit * 20, 500);
     let scopedWhere:
       | {
           OR?: Array<{ remoteJid: string; instancia: string }>;
@@ -539,20 +539,19 @@ export class FollowUpRunnerService {
       take: 50,
     });
 
-    // Registros en el rango medio (12 h – 7 días) que nunca fueron intentados.
-    // Sin esta query, quedan atrapados entre los 100 más viejos y los 50 más recientes.
+    // Registros creados hace más de 12 h que nunca fueron intentados.
+    // Sin el take amplio, quedan atrapados si hay >500 registros más viejos delante de ellos.
     const backlogPending = await this.prisma.seguimiento.findMany({
       where: {
         followUpStatus: 'pending',
         followUpAttempt: 0,
         ...(scopedWhere ?? {}),
         createdAt: {
-          gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-          lt:  new Date(Date.now() - 12 * 60 * 60 * 1000),
+          lt: new Date(Date.now() - 12 * 60 * 60 * 1000),
         },
       },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-      take: 100,
+      take: 500,
     });
 
     const seenIds = new Set<number>();

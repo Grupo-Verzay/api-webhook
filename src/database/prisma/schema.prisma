@@ -1028,12 +1028,17 @@ model BaileysContact {
   remoteJid    String
   pushName     String?
   phoneNumber  String?
+  lastBody     String?
+  lastType     String?
+  lastAt       DateTime?
+  lastFromMe   Boolean          @default(false)
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
   messages     BaileysMessage[]
 
   @@unique([instanceName, remoteJid])
   @@index([instanceName])
+  @@index([instanceName, lastAt])
   @@map("baileys_contacts")
 }
 

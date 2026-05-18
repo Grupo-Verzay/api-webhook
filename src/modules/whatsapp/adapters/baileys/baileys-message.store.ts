@@ -73,10 +73,18 @@ export class BaileysMessageStore {
     try {
       await this.prisma.baileysContact.upsert({
         where: { instanceName_remoteJid: { instanceName, remoteJid } },
-        create: { instanceName, remoteJid, pushName: pushName ?? null, phoneNumber: phoneNumber ?? null },
+        create: {
+          instanceName, remoteJid,
+          pushName: pushName ?? null, phoneNumber: phoneNumber ?? null,
+          lastBody: body, lastType: type, lastAt: timestamp, lastFromMe: fromMe,
+        },
         update: {
           ...(pushName ? { pushName } : {}),
           ...(phoneNumber ? { phoneNumber } : {}),
+          lastBody: body,
+          lastType: type,
+          lastAt: timestamp,
+          lastFromMe: fromMe,
         },
       });
 
@@ -110,28 +118,19 @@ export class BaileysMessageStore {
         instanceName,
         ...(ownPhone ? { NOT: { remoteJid: `${ownPhone}@s.whatsapp.net` } } : {}),
       },
-      include: {
-        messages: {
-          orderBy: { timestamp: 'desc' },
-          take: 1,
-        },
-      },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: { lastAt: 'desc' },
     });
 
-    return contacts.map((c) => {
-      const last = c.messages[0] ?? null;
-      return {
-        remoteJid: c.remoteJid,
-        pushName: c.pushName,
-        phoneNumber: c.phoneNumber ?? null,
-        lastMessageBody: last?.body ?? null,
-        lastMessageType: last?.type ?? null,
-        lastMessageAt: last?.timestamp ?? null,
-        lastMessageFromMe: last?.fromMe ?? false,
-        unreadCount: 0,
-      };
-    });
+    return contacts.map((c) => ({
+      remoteJid: c.remoteJid,
+      pushName: c.pushName,
+      phoneNumber: c.phoneNumber ?? null,
+      lastMessageBody: c.lastBody ?? null,
+      lastMessageType: c.lastType ?? null,
+      lastMessageAt: c.lastAt ?? null,
+      lastMessageFromMe: c.lastFromMe,
+      unreadCount: 0,
+    }));
   }
 
   async getMessages(

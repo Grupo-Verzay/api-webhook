@@ -386,6 +386,24 @@ export class FollowUpRunnerService {
     return !current || current.followUpStatus !== 'processing';
   }
 
+  async recoverStuckProcessing(): Promise<number> {
+    const cutoff = new Date(Date.now() - 5 * 60 * 1000);
+    const result = await this.prisma.seguimiento.updateMany({
+      where: {
+        followUpStatus: 'processing',
+        updatedAt: { lte: cutoff },
+      },
+      data: { followUpStatus: 'pending' },
+    });
+    if (result.count > 0) {
+      this.logger.warn(
+        `[FOLLOW_UP] Recuperados ${result.count} seguimiento(s) atascados en 'processing' → reset a 'pending'.`,
+        'FollowUpRunnerService',
+      );
+    }
+    return result.count;
+  }
+
   async cancelPendingFollowUpsOnReply(args: {
     userId: string;
     remoteJid: string;
@@ -510,9 +528,7 @@ export class FollowUpRunnerService {
       take,
     });
 
-    // Recordatorios de cita (creados recientemente pero con tiempo ya vencido)
-    // pueden quedar bloqueados detrás de registros más antiguos en la cola.
-    // Esta consulta secundaria los rescata explícitamente.
+    // Registros recientes (últimas 12 h) — pueden estar detrás de colas largas.
     const recentPending = await this.prisma.seguimiento.findMany({
       where: {
         followUpStatus: 'pending',
@@ -523,8 +539,24 @@ export class FollowUpRunnerService {
       take: 50,
     });
 
+    // Registros en el rango medio (12 h – 7 días) que nunca fueron intentados.
+    // Sin esta query, quedan atrapados entre los 100 más viejos y los 50 más recientes.
+    const backlogPending = await this.prisma.seguimiento.findMany({
+      where: {
+        followUpStatus: 'pending',
+        followUpAttempt: 0,
+        ...(scopedWhere ?? {}),
+        createdAt: {
+          gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+          lt:  new Date(Date.now() - 12 * 60 * 60 * 1000),
+        },
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: 100,
+    });
+
     const seenIds = new Set<number>();
-    const merged = [...pending, ...recentPending].filter((seg) => {
+    const merged = [...pending, ...recentPending, ...backlogPending].filter((seg) => {
       if (seenIds.has(seg.id)) return false;
       seenIds.add(seg.id);
       return true;
@@ -578,7 +610,14 @@ export class FollowUpRunnerService {
 
       const loggerCtx = `[FOLLOW_UP][id=${seguimiento.id}][instance=${seguimiento.instancia ?? '-'}][remoteJid=${seguimiento.remoteJid ?? '-'}]`;
 
-      if (!session) {
+      // Si no hay sesión pero el seguimiento es estático con datos propios, intentar enviar directamente
+      const canSendWithoutSession =
+        !session &&
+        (seguimiento.followUpMode ?? 'static') === 'static' &&
+        (seguimiento.remoteJid ?? '').trim() !== '' &&
+        (seguimiento.instancia ?? '').trim() !== '';
+
+      if (!session && !canSendWithoutSession) {
         this.logger.warn(
           `${loggerCtx} sesion no encontrada.`,
           'FollowUpRunnerService',
@@ -592,10 +631,27 @@ export class FollowUpRunnerService {
         continue;
       }
 
+      if (!session) {
+        this.logger.warn(
+          `${loggerCtx} sesion no encontrada — enviando directamente con datos del seguimiento.`,
+          'FollowUpRunnerService',
+        );
+      }
+
+      // Datos de contexto: usa la sesión si existe, o los datos del seguimiento como fallback
+      const effectiveRemoteJid = session?.remoteJid ?? (seguimiento.remoteJid ?? '').trim();
+      const effectiveUserId = session?.userId ?? '';
+      const effectiveInstanceId = session?.instanceId ?? (seguimiento.instancia ?? '').trim();
+
       try {
         const finalMessage = await this.resolveFollowUpMessage(
           seguimiento,
-          session,
+          session ?? {
+            id: 0,
+            userId: effectiveUserId,
+            pushName: null,
+            remoteJid: effectiveRemoteJid,
+          },
         );
 
         if (await this.shouldAbortFollowUp(seguimiento.id)) {
@@ -606,20 +662,22 @@ export class FollowUpRunnerService {
         await this.sendSeguimiento(
           seguimiento,
           finalMessage,
-          session.remoteJid,
+          effectiveRemoteJid,
         );
 
-        // Si el recordatorio tiene un workflow asignado, ejecutarlo
-        await this.tryExecuteReminderWorkflow(seguimiento, {
-          userId: session.userId,
-          remoteJid: session.remoteJid,
-          instanceId: session.instanceId,
-        });
+        // Si el recordatorio tiene un workflow asignado y hay sesión, ejecutarlo
+        if (session) {
+          await this.tryExecuteReminderWorkflow(seguimiento, {
+            userId: session.userId,
+            remoteJid: session.remoteJid,
+            instanceId: session.instanceId,
+          });
+        }
 
         if (finalMessage.trim()) {
           const sessionHistoryId = buildChatHistorySessionId(
             seguimiento.instancia ?? '',
-            session.remoteJid,
+            effectiveRemoteJid,
           );
           await this.chatHistoryService.saveMessage(
             sessionHistoryId,
@@ -631,9 +689,9 @@ export class FollowUpRunnerService {
         await this.markSent(
           seguimiento.id,
           {
-            userId: session.userId,
-            remoteJid: session.remoteJid,
-            instanceId: session.instanceId,
+            userId: effectiveUserId,
+            remoteJid: effectiveRemoteJid,
+            instanceId: effectiveInstanceId,
           },
           finalMessage.trim(),
         );
@@ -646,11 +704,17 @@ export class FollowUpRunnerService {
         );
         await this.markFailure(
           seguimiento,
-          {
-            userId: session.userId,
-            remoteJid: session.remoteJid,
-            instanceId: session.instanceId,
-          },
+          session
+            ? {
+                userId: session.userId,
+                remoteJid: session.remoteJid,
+                instanceId: session.instanceId,
+              }
+            : {
+                userId: effectiveUserId,
+                remoteJid: effectiveRemoteJid,
+                instanceId: effectiveInstanceId,
+              },
           error?.message || String(error),
         );
         summary.failed++;

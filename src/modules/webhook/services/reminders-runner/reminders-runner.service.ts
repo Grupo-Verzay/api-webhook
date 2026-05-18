@@ -139,11 +139,27 @@ export class RemindersRunnerService {
     });
   }
 
+  private buildLookbackCandidates(windowMinutes = 5): string[] {
+    const candidates: string[] = [];
+    for (let i = 0; i < windowMinutes; i++) {
+      const t = new Date(Date.now() - i * 60 * 1000);
+      const offsetMinutes = this.parseOffsetToMinutes(this.timezoneOffset);
+      const local = new Date(t.getTime() + offsetMinutes * 60 * 1000);
+      const dd = String(local.getUTCDate()).padStart(2, '0');
+      const mm = String(local.getUTCMonth() + 1).padStart(2, '0');
+      const yyyy = local.getUTCFullYear();
+      const hh = String(local.getUTCHours()).padStart(2, '0');
+      const min = String(local.getUTCMinutes()).padStart(2, '0');
+      candidates.push(`${dd}/${mm}/${yyyy} ${hh}:${min}`);
+    }
+    return candidates;
+  }
+
   async processDueReminders(): Promise<{ processed: number; failed: number }> {
-    const currentTime = this.getCurrentFormattedTime();
+    const candidates = this.buildLookbackCandidates(5);
 
     const dueReminders = await this.prisma.reminders.findMany({
-      where: { time: currentTime },
+      where: { time: { in: candidates } },
     });
 
     const summary = { processed: 0, failed: 0 };

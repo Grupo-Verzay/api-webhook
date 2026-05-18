@@ -66,6 +66,9 @@ export class FollowUpRunnerSchedulerService
       return;
     }
 
+    // Recuperar seguimientos que quedaron en 'processing' si el servidor se reinició
+    await this.followUpRunnerService.recoverStuckProcessing();
+
     this.timer = setInterval(() => {
       void this.runTick();
     }, intervalMs);

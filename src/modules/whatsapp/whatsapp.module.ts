@@ -17,6 +17,6 @@ import { WorkflowModule } from 'src/modules/workflow/workflow.module';
     BaileysMessageStore,
     WhatsAppSenderFactory,
   ],
-  exports: [WhatsAppSenderFactory, BaileysSessionManager, BaileysMessageStore],
+  exports: [WhatsAppSenderFactory, BaileysSessionManager, BaileysMessageStore, BaileysSenderAdapter],
 })
 export class WhatsAppModule {}

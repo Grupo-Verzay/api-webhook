@@ -42,6 +42,7 @@ import { PaymentReceiptProcessorService } from 'src/modules/payment-receipt/serv
 import { TtsService } from '../ai-agent/services/tts/tts.service';
 import { AutoAssignService } from './services/auto-assign/auto-assign.service';
 import { WhatsAppSenderFactory } from '../whatsapp/whatsapp-sender.factory';
+import { BaileysSenderAdapter } from '../whatsapp/adapters/baileys/baileys-sender.adapter';
 
 @Injectable()
 export class WebhookService implements OnModuleInit {
@@ -86,6 +87,7 @@ export class WebhookService implements OnModuleInit {
     private readonly ttsService: TtsService,
     private readonly autoAssignService: AutoAssignService,
     private readonly whatsAppSenderFactory: WhatsAppSenderFactory,
+    private readonly baileysSender: BaileysSenderAdapter,
   ) { }
 
   onModuleInit(): void {
@@ -893,8 +895,8 @@ export class WebhookService implements OnModuleInit {
             return;
           }
 
-          // TTS solo disponible con Evolution API (requiere server_url válido)
-          const voiceEnabled = !!(userWithRelations as any).enableVoiceResponses && !!defaultApiKey && !!server_url;
+          const isBaileysInstance = !server_url;
+          const voiceEnabled = !!(userWithRelations as any).enableVoiceResponses && !!defaultApiKey;
 
           if (voiceEnabled) {
             const fullText = msgBlocks.join('\n\n');
@@ -905,7 +907,7 @@ export class WebhookService implements OnModuleInit {
             const elApiKey = (userWithRelations as any).elevenLabsApiKey;
             const elVoiceId = (userWithRelations as any).elevenLabsVoiceId;
 
-            logger.log(`🎙️ Generando nota de voz (provider=${ttsProvider}, voice=${ttsProvider === 'elevenlabs' ? elVoiceId : voiceId})`, 'TtsService');
+            logger.log(`🎙️ Generando nota de voz (provider=${ttsProvider}, voice=${ttsProvider === 'elevenlabs' ? elVoiceId : voiceId}, baileys=${isBaileysInstance})`, 'TtsService');
 
             let audioBase64: string | null = null;
             if (ttsProvider === 'elevenlabs' && elApiKey && elVoiceId) {
@@ -915,12 +917,16 @@ export class WebhookService implements OnModuleInit {
             }
             let audioSent = false;
             if (audioBase64) {
-              const audioUrl = `${server_url}/message/sendWhatsAppAudio/${instanceName}`;
-              audioSent = await this.nodeSenderService.sendAudioNode(audioUrl, apikey, canonicalRemoteJid, audioBase64);
+              if (isBaileysInstance) {
+                audioSent = await this.baileysSender.sendAudioBase64(instanceName, canonicalRemoteJid, audioBase64);
+              } else {
+                const audioUrl = `${server_url}/message/sendWhatsAppAudio/${instanceName}`;
+                audioSent = await this.nodeSenderService.sendAudioNode(audioUrl, apikey, canonicalRemoteJid, audioBase64);
+              }
               if (audioSent) {
                 logger.log(`✅ Nota de voz enviada a ${canonicalRemoteJid}`, 'TtsService');
               } else {
-                logger.warn(`sendAudioNode falló, enviando como texto`, 'TtsService');
+                logger.warn(`sendAudio falló, enviando como texto`, 'TtsService');
               }
             } else {
               logger.warn(`TTS falló, enviando como texto`, 'TtsService');

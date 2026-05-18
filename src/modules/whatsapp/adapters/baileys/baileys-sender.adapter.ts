@@ -77,4 +77,24 @@ export class BaileysSenderAdapter implements IWhatsAppSender {
       return false;
     }
   }
+
+  async sendAudioBase64(instanceName: string, remoteJid: string, base64: string): Promise<boolean> {
+    const socket = this.sessions.getSocket(instanceName);
+    if (!socket) {
+      this.logger.warn(`[Baileys] Sin socket activo para ${instanceName}`, 'BaileysSenderAdapter');
+      return false;
+    }
+    try {
+      const buffer = Buffer.from(base64, 'base64');
+      await socket.sendMessage(remoteJid, {
+        audio: buffer,
+        ptt: true,
+        mimetype: 'audio/mp4',
+      } as any);
+      return true;
+    } catch (err) {
+      this.logger.error(`[Baileys] Error enviando audio base64 a ${remoteJid}`, err?.message, 'BaileysSenderAdapter');
+      return false;
+    }
+  }
 }

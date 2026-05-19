@@ -66,7 +66,7 @@ export class WebhookController {
       (process.env.BILLING_CRON_RUNNER_KEY ?? '').trim() ||
       (process.env.FOLLOW_UP_RUNNER_KEY ?? '').trim();
 
-    if (expectedKey && runnerKey !== expectedKey) {
+    if (!expectedKey || runnerKey !== expectedKey) {
       throw new UnauthorizedException('runner key invalida');
     }
 

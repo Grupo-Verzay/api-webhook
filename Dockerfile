@@ -25,7 +25,8 @@ COPY --from=builder /app/package.json /app/package-lock.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/src/database/prisma ./src/database/prisma
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 
 EXPOSE 5001
 
-CMD ["sh", "-c", "npx prisma db push --schema=src/database/prisma/schema.prisma --skip-generate && node dist/main"]
+CMD ["sh", "-c", "npx prisma migrate deploy --schema=src/database/prisma/schema.prisma && node dist/main"]

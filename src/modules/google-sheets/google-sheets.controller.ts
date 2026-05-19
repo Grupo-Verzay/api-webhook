@@ -5,20 +5,19 @@ import { GoogleSheetsService } from './google-sheets.service';
 @Controller('google-sheets')
 export class GoogleSheetsController {
   private readonly defaultSpreadsheetId: string;
-  private readonly defaultSheetName: string;
 
   constructor(
     private readonly sheetsService: GoogleSheetsService,
     private readonly configService: ConfigService,
   ) {
     this.defaultSpreadsheetId = this.configService.get<string>('GOOGLE_SHEETS_SPREADSHEET_ID') ?? '';
-    this.defaultSheetName = this.configService.get<string>('GOOGLE_SHEETS_DEFAULT_SHEET') ?? 'Pagos';
   }
 
   /**
    * POST /google-sheets/append
    * Body: JSON plano con los datos a insertar (campos = nombres de columna)
-   * Query params opcionales: spreadsheetId, sheet
+   * Query params requeridos: sheet
+   * Query params opcionales: spreadsheetId
    */
   @Post('append')
   @HttpCode(200)
@@ -28,10 +27,13 @@ export class GoogleSheetsController {
     @Query('sheet') sheet?: string,
   ) {
     const sid = spreadsheetId || this.defaultSpreadsheetId;
-    const sheetName = sheet || this.defaultSheetName;
 
     if (!sid) {
       return { success: false, error: 'spreadsheetId no configurado.' };
+    }
+
+    if (!sheet) {
+      return { success: false, error: 'El parámetro sheet es requerido.' };
     }
 
     let data: Record<string, string>;
@@ -45,6 +47,6 @@ export class GoogleSheetsController {
       data = body;
     }
 
-    return this.sheetsService.appendRow(sid, sheetName, data);
+    return this.sheetsService.appendRow(sid, sheet, data);
   }
 }

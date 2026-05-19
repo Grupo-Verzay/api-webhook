@@ -167,8 +167,7 @@ export class WebhookService implements OnModuleInit {
     instanceName?: string;
     remoteJid?: string;
   }) {
-    // const tag = `[UID=${ctx.userId ?? '-'}][I=${ctx.instanceName ?? '-'}][R=${ctx.remoteJid ?? '-'}]`;
-    const tag = ``;
+    const tag = `[UID=${ctx.userId ?? '-'}][I=${ctx.instanceName ?? '-'}][R=${ctx.remoteJid ?? '-'}]`;
     return {
       log: (msg: string, context = 'WebhookService') =>
         this.logger.log(`${tag} ${msg}`, context),
@@ -592,13 +591,15 @@ export class WebhookService implements OnModuleInit {
             instanceName,
           );
 
+          // Una sola query de historial reutilizada por el sintetizador y la lógica de bienvenida
+          const chatHistory =
+            await this.chatHistoryService.getChatHistory(sessionHistoryId);
+
           //Lead Funnel (bucket/sintetizador)
           if (canonicalSession?.id && userWithRelations.enabledSynthesizer) {
             this.logger.debug(
               `Entrando a sintetizador... instanceID=${instanceId} userId=${userId} remoteJid=${canonicalRemoteJid}`,
             );
-            const history =
-              await this.chatHistoryService.getChatHistory(sessionHistoryId);
 
             const funnelRes = await this.leadFunnelService.processIncomingText({
               userId,
@@ -610,7 +611,7 @@ export class WebhookService implements OnModuleInit {
               enabledCrmFollowUps: !!userWithRelations.enabledCrmFollowUps,
               sessionDbId: canonicalSession.id,
               text: mergedTextStr,
-              history,
+              history: chatHistory,
             });
 
             this.logger.debug(
@@ -619,8 +620,7 @@ export class WebhookService implements OnModuleInit {
           }
 
           // Auto-ejecutar flujo BIENVENIDA en primera conexión
-          const historyForBienvenida =
-            await this.chatHistoryService.getChatHistory(sessionHistoryId);
+          const historyForBienvenida = chatHistory;
           logger.log(
             `[BIENVENIDA] historyLength=${historyForBienvenida.length} sessionHistoryId=${sessionHistoryId} userId=${userId}`,
             'WebhookService',

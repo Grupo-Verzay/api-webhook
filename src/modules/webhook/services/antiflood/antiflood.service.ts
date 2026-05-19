@@ -53,14 +53,9 @@ export class AntifloodService implements OnModuleInit, OnModuleDestroy {
   // mensajes con menos de 3s de separación se colapsan a un solo evento.
   private readonly humanBurstWindowMs = 3_000;
 
-  // 🔧 Lista blanca: estos números de teléfono omiten todos los checks de antiflood
-  private readonly WHITELIST_PHONES = new Set<string>([
-    '573233246305',
-    '573233612620',
-    '573115616975',
-    '573216031493',
-    '573186571866',
-  ]);
+  // 🔧 Lista blanca: números de teléfono que omiten todos los checks de antiflood.
+  // Se configura con la variable de entorno ANTIFLOOD_WHITELIST_PHONES (separada por comas).
+  private readonly WHITELIST_PHONES: Set<string>;
 
   // 🔧 Palabras ofensivas (español + inglés básico)
   private readonly BAD_WORDS = new Set<string>([
@@ -94,7 +89,12 @@ export class AntifloodService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger: LoggerService,
-  ) {}
+  ) {
+    const raw = (process.env.ANTIFLOOD_WHITELIST_PHONES ?? '').trim();
+    this.WHITELIST_PHONES = new Set(
+      raw ? raw.split(',').map((p) => p.trim()).filter(Boolean) : [],
+    );
+  }
 
   // ─── Lifecycle ───────────────────────────────────────────────────────────
 

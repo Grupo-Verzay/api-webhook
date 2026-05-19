@@ -43,12 +43,11 @@ export class ChatHistoryService {
         sessionId: sessionId,
         message: { path: ['type'], not: 'intention' },
       },
-      orderBy: { id: 'desc' }, // más recientes primero
+      orderBy: { id: 'asc' },
       take: 30,
     });
 
     return messages
-      .reverse() // revertimos para mostrar del más antiguo al más reciente
       .map((msg) => {
         if (
           msg.message &&
@@ -93,6 +92,8 @@ export class ChatHistoryService {
           equals: 'intention',
         },
       },
+      select: { message: true },
+      take: 500,
     });
 
     if (!executed || executed.length === 0) {

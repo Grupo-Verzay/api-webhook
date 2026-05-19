@@ -2,9 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { User } from '@prisma/client';
 import { DefaultAiConfig, UserWithPausar } from 'src/types/open-ai';
+import { TtlCache } from 'src/utils/ttl-cache';
 
 @Injectable()
 export class UserService {
+  private readonly userCache = new TtlCache<string, UserWithPausar | null>(60_000);
+  private readonly aiConfigCache = new TtlCache<string, DefaultAiConfig | null>(2 * 60_000);
+
   constructor(private readonly prisma: PrismaService) {}
 
   // =================================================================
@@ -52,12 +56,16 @@ export class UserService {
   }
 
   async getUserWithPausar(userId: string): Promise<UserWithPausar | null> {
-    return this.prisma.user.findUnique({
+    const cached = this.userCache.get(userId);
+    if (cached !== undefined) return cached;
+
+    const result = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: {
-        pausar: true,
-      },
+      include: { pausar: true },
     });
+
+    this.userCache.set(userId, result);
+    return result;
   }
 
   // =================================================================
@@ -67,23 +75,34 @@ export class UserService {
   async getUserDefaultAiConfig(
     userId: string,
   ): Promise<DefaultAiConfig | null> {
+    const cached = this.aiConfigCache.get(userId);
+    if (cached !== undefined) return cached;
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
         defaultProviderId: true,
-        defaultAiModel: { select: { id: true, name: true } }, // <- relación real en tu schema
+        defaultAiModel: { select: { id: true, name: true } },
         aiConfigs: {
-          select: { providerId: true, apiKey: true, isActive: true },
-        }, // <- relación real en tu schema
+          select: {
+            providerId: true,
+            apiKey: true,
+            isActive: true,
+            provider: { select: { id: true, name: true } },
+          },
+        },
       },
     });
 
-    if (!user) return null;
+    if (!user) {
+      this.aiConfigCache.set(userId, null);
+      return null;
+    }
 
-    // 1) Elegir config candidata
+    // Elegir config candidata
     let chosen:
-      | { providerId: string; apiKey: string; isActive: boolean }
+      | { providerId: string; apiKey: string; isActive: boolean; provider: { id: string; name: string } }
       | undefined;
 
     if (user.defaultProviderId) {
@@ -98,25 +117,14 @@ export class UserService {
       chosen = user.aiConfigs.find((c) => c.isActive) ?? user.aiConfigs[0];
     }
 
-    // 2) Resolver proveedor
-    let defaultProvider: { id: string; name: string } | null = null;
-    let defaultApiKey: string | null = null;
-
-    if (chosen) {
-      const provider = await this.prisma.aiProvider.findUnique({
-        where: { id: chosen.providerId },
-        select: { id: true, name: true },
-      });
-
-      defaultProvider = provider ?? null;
-      defaultApiKey = chosen.apiKey ?? null;
-    }
-
-    return {
+    const result: DefaultAiConfig = {
       userId: user.id,
-      defaultProvider,
+      defaultProvider: chosen?.provider ?? null,
       defaultModel: user.defaultAiModel ?? null,
-      defaultApiKey,
+      defaultApiKey: chosen?.apiKey ?? null,
     };
+
+    this.aiConfigCache.set(userId, result);
+    return result;
   }
 }

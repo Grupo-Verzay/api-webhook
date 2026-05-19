@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
+import { TtlCache } from 'src/utils/ttl-cache';
 
 @Injectable()
 export class InstancesService {
   private readonly logger = new Logger(InstancesService.name);
+  private readonly instanceCache = new TtlCache<string, any>(5 * 60_000);
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -21,6 +23,9 @@ export class InstancesService {
     }
 
     try {
+      const cached = this.instanceCache.get(instanceName);
+      if (cached !== undefined) return cached;
+
       const result = await this.prisma.instancia.findFirst({
         where: { instanceName },
       });
@@ -31,6 +36,7 @@ export class InstancesService {
         );
       }
 
+      this.instanceCache.set(instanceName, result);
       return result;
     } catch (error) {
       this.logger.error(

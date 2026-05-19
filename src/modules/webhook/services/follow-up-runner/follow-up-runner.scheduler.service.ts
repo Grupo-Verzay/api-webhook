@@ -51,7 +51,7 @@ export class FollowUpRunnerSchedulerService
     return {
       enabled,
       intervalMs,
-      limit: Math.min(limit, 100),
+      limit: Math.min(limit, 500),
     };
   }
 

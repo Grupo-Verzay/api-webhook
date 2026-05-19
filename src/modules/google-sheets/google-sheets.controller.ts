@@ -1,35 +1,34 @@
-import { Body, Controller, HttpCode, Post, Query } from '@nestjs/common';
+import { Body, Controller, Headers, HttpCode, Post, Query, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GoogleSheetsService } from './google-sheets.service';
 
 @Controller('google-sheets')
 export class GoogleSheetsController {
-  private readonly defaultSpreadsheetId: string;
-
   constructor(
     private readonly sheetsService: GoogleSheetsService,
     private readonly configService: ConfigService,
-  ) {
-    this.defaultSpreadsheetId = this.configService.get<string>('GOOGLE_SHEETS_SPREADSHEET_ID') ?? '';
-  }
+  ) {}
 
   /**
    * POST /google-sheets/append
+   * Headers: x-internal-secret o Authorization: Bearer <CRM_FOLLOW_UP_RUNNER_KEY>
+   * Query params requeridos: spreadsheetId, sheet
    * Body: JSON plano con los datos a insertar (campos = nombres de columna)
-   * Query params requeridos: sheet
-   * Query params opcionales: spreadsheetId
    */
   @Post('append')
   @HttpCode(200)
   async append(
+    @Headers() headers: Record<string, string>,
     @Body() body: Record<string, string> | string,
     @Query('spreadsheetId') spreadsheetId?: string,
     @Query('sheet') sheet?: string,
   ) {
-    const sid = spreadsheetId || this.defaultSpreadsheetId;
+    const key = (this.configService.get<string>('CRM_FOLLOW_UP_RUNNER_KEY') ?? '').trim();
+    const provided = (headers['x-internal-secret'] ?? headers['authorization']?.replace('Bearer ', '') ?? '').trim();
+    if (!key || provided !== key) throw new UnauthorizedException();
 
-    if (!sid) {
-      return { success: false, error: 'spreadsheetId no configurado.' };
+    if (!spreadsheetId) {
+      return { success: false, error: 'El parámetro spreadsheetId es requerido.' };
     }
 
     if (!sheet) {
@@ -47,6 +46,6 @@ export class GoogleSheetsController {
       data = body;
     }
 
-    return this.sheetsService.appendRow(sid, sheet, data);
+    return this.sheetsService.appendRow(spreadsheetId, sheet, data);
   }
 }

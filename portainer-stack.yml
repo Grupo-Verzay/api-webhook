@@ -75,7 +75,7 @@ services:
       ADMIN_USER_ID: cm842kthc0000qd2l66nbnytv
       VERZAY_ACCOUNTS_WHITELIST: 752-000-164-59,oscarmanrique_contreras@hotmail.com,rondongenesis606@gmail.com,lennis
       BAILEYS_SESSIONS_DIR: /app/baileys-sessions
-      ANTIFLOOD_WHITELIST_PHONES: "573233246305,573233612620,573115616975,573216031493,573186571866"
+      ANTIFLOOD_WHITELIST_PHONES: ""
     volumes:
       - baileys-sessions:/app/baileys-sessions
     deploy:

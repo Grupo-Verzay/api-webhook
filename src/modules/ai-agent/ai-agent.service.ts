@@ -64,8 +64,6 @@ const COUNTRY_TZ_MAP: [string, string][] = [
 @Injectable()
 export class AiAgentService {
   // Cliente LLM (LangChain / OpenAI envuelto)
-  private aiClient: BaseChatModel | null = null;
-
   // Nombre del flujo de bienvenida inicial
   readonly initWorkflowName: string = 'BIENVENIDA';
 
@@ -164,12 +162,11 @@ export class AiAgentService {
       `Inicializando cliente LLM. provider=${provider} model=${model}`,
       'AiAgentService',
     );
-    this.aiClient = this.llmClientFactory.getClient({
+    return this.llmClientFactory.getClient({
       provider,
       apiKey: apikeyOpenAi,
       model,
     });
-    return this.aiClient;
   }
 
   // Valida si una API Key parece válida.
@@ -184,11 +181,10 @@ export class AiAgentService {
   /**
    * Agente interno de detección de flujos.
    */
-  private async openAIToolDetection({
-    input,
-    sessionId,
-    userId,
-  }: openAIToolDetection): Promise<OpenAIDetectionResult> {
+  private async openAIToolDetection(
+    { input, sessionId, userId }: openAIToolDetection,
+    client: BaseChatModel,
+  ): Promise<OpenAIDetectionResult> {
     const logger = this.scopedLogger({ userId });
     try {
       const workflows = await this.workflowService.getWorkflow(userId);
@@ -214,7 +210,7 @@ export class AiAgentService {
         }),
       ];
 
-      const responseR = await this.aiClient.invoke(messagesR);
+      const responseR = await client.invoke(messagesR);
 
       const choice = responseR.content.toString();
       const content = choice.trim();
@@ -267,6 +263,7 @@ export class AiAgentService {
     remoteJid: string;
     pushName: string;
     toolConfigs?: any[];
+    client: BaseChatModel;
   }): Promise<any[]> {
     const {
       userId,
@@ -359,6 +356,7 @@ export class AiAgentService {
     instanceName: string;
     remoteJid: string;
     pushName: string;
+    client: BaseChatModel;
   }, notificationSentThisTurn?: { value: boolean }): any | null {
     switch (cfg.toolType) {
       case 'notificacion_asesor':
@@ -490,8 +488,9 @@ export class AiAgentService {
   private buildEjecutarFlujosTool(cfg: any, params: {
     userId: string; sessionId: string; server_url: string;
     apikey: string; instanceName: string; remoteJid: string;
+    client: BaseChatModel;
   }, notificationSentThisTurn?: { value: boolean }): any {
-    const { userId, sessionId, server_url, apikey, instanceName, remoteJid } = params;
+    const { userId, sessionId, server_url, apikey, instanceName, remoteJid, client } = params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
     // @ts-ignore
@@ -500,7 +499,7 @@ export class AiAgentService {
         logger.log(`Tool "${cfg.toolKey}" (ejecutar_flujos) → "${nombre_flujo}"`);
         const follow = await this.handleExecuteWorkflowTool(
           { nombre_flujo: [nombre_flujo], descripcion: detalles } as any,
-          userId, sessionId, server_url, apikey, instanceName, remoteJid,
+          userId, sessionId, server_url, apikey, instanceName, remoteJid, client,
         );
         // El workflow puede incluir un nodo-notify. Marcar como notificado para
         // impedir que Notificacion_Asesor se dispare en el mismo turno del agente.
@@ -1699,8 +1698,8 @@ export class AiAgentService {
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
     try {
-      // Inicializar LLM (LangChain client)
-      this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
+      // Inicializar LLM (LangChain client) — local a esta llamada para evitar race conditions
+      const client = this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
 
       const systemPrompt = await this.promptService
         .getPromptUserId(userId, CRM_AGENT_PROMPT_IDS.systemPrompAI)
@@ -1823,6 +1822,7 @@ export class AiAgentService {
         remoteJid,
         pushName: pushName ?? '',
         toolConfigs,
+        client,
       });
 
       const createReactAgentWithRetry = async () => {
@@ -1832,7 +1832,7 @@ export class AiAgentService {
         while (true) {
           try {
             const agent = createReactAgent({
-              llm: this.aiClient,
+              llm: client,
               tools,
             });
 
@@ -1999,6 +1999,7 @@ export class AiAgentService {
         apikey,
         instanceName,
         remoteJid,
+        client,
       });
 
       return finalText;
@@ -2081,6 +2082,7 @@ export class AiAgentService {
     apikey: string,
     instanceName: string,
     remoteJid: string,
+    client: BaseChatModel,
   ): Promise<string> {
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
     logger.log('Se está ejecutando la tool Ejecutar_Flujos... 😎');
@@ -2097,7 +2099,7 @@ export class AiAgentService {
       input: args,
       sessionId,
       userId,
-    });
+    }, client);
     const raw = detectionResult.content?.toString()?.trim();
 
     if (!raw || raw.toLowerCase() === 'ninguno') {
@@ -2182,8 +2184,9 @@ export class AiAgentService {
     apikey: string;
     instanceName: string;
     remoteJid: string;
+    client: BaseChatModel;
   }): Promise<void> {
-    const { input, userId, sessionId, server_url, apikey, instanceName, remoteJid } = params;
+    const { input, userId, sessionId, server_url, apikey, instanceName, remoteJid, client } = params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
     try {
@@ -2205,7 +2208,7 @@ export class AiAgentService {
             .filter(Boolean);
           matches = keywords.some((kw: string) => input.toLowerCase().includes(kw));
         } else {
-          matches = await this.classifyInputWithPrompt(input, trigger.condition);
+          matches = await this.classifyInputWithPrompt(input, trigger.condition, client);
         }
 
         if (!matches) continue;
@@ -2236,9 +2239,9 @@ export class AiAgentService {
     }
   }
 
-  private async classifyInputWithPrompt(input: string, condition: string): Promise<boolean> {
+  private async classifyInputWithPrompt(input: string, condition: string, client: BaseChatModel): Promise<boolean> {
     try {
-      const response = await this.aiClient.invoke([
+      const response = await client.invoke([
         new SystemMessage({
           content: `Eres un clasificador. Responde ÚNICAMENTE con "SI" o "NO".\n¿El siguiente mensaje del usuario cumple con esta condición: "${condition}"?`,
         }),
@@ -2302,7 +2305,7 @@ export class AiAgentService {
         return transcription;
       }
 
-      this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
+      const client = this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
 
       const message = new HumanMessage({
         content: [
@@ -2318,7 +2321,7 @@ export class AiAgentService {
             : { type: 'media', data: base64Audio, mimeType: `${audioType}` },
         ],
       });
-      const state = await this.aiClient.invoke([message]);
+      const state = await client.invoke([message]);
       return state.content.toString();
     } catch (error: any) {
       logger.error(
@@ -2344,7 +2347,7 @@ export class AiAgentService {
   ): Promise<string> {
     const logger = this.scopedLogger({});
     try {
-      this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
+      const client = this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
       const message = new HumanMessage({
         content: [
           {
@@ -2369,7 +2372,7 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
           },
         ],
       });
-      const response = await this.aiClient.invoke([message]);
+      const response = await client.invoke([message]);
       return response.content.toString() ?? '[ERROR_DESCRIBING_IMAGE]';
     } catch (error: any) {
       logger.error(

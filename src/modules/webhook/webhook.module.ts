@@ -38,6 +38,7 @@ import { WeeklyReportCronSchedulerService } from './services/weekly-report-cron/
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { BaileysWebhookBridgeService } from './services/baileys-webhook-bridge/baileys-webhook-bridge.service';
 import { MessageDeduplicationService } from './services/message-deduplication/message-deduplication.service';
+import { ConversationControlService } from './services/conversation-control/conversation-control.service';
 
 @Module({
   imports: [HttpModule, WorkflowModule, AiAgentModule, LeadFunnelModule, PaymentReceiptModule, WhatsAppModule],
@@ -78,6 +79,7 @@ import { MessageDeduplicationService } from './services/message-deduplication/me
     WeeklyReportCronSchedulerService,
     BaileysWebhookBridgeService,
     MessageDeduplicationService,
+    ConversationControlService,
   ],
 })
 export class WebhookModule {}

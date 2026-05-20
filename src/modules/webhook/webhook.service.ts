@@ -21,8 +21,6 @@ import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { SessionTriggerService } from '../session-trigger/session-trigger.service';
 import {
   CreditValidationInput,
-  onAutoRepliesInterface,
-  stopOrResumeConversation,
   flags,
   getReactivateDate,
   UserWithPausar,
@@ -44,6 +42,7 @@ import { AutoAssignService } from './services/auto-assign/auto-assign.service';
 import { WhatsAppSenderFactory } from '../whatsapp/whatsapp-sender.factory';
 import { BaileysSenderAdapter } from '../whatsapp/adapters/baileys/baileys-sender.adapter';
 import { MessageDeduplicationService } from './services/message-deduplication/message-deduplication.service';
+import { ConversationControlService } from './services/conversation-control/conversation-control.service';
 
 @Injectable()
 export class WebhookService implements OnModuleInit {
@@ -79,6 +78,7 @@ export class WebhookService implements OnModuleInit {
     private readonly whatsAppSenderFactory: WhatsAppSenderFactory,
     private readonly baileysSender: BaileysSenderAdapter,
     private readonly messageDeduplication: MessageDeduplicationService,
+    private readonly conversationControl: ConversationControlService,
   ) { }
 
   onModuleInit(): void {
@@ -243,7 +243,7 @@ export class WebhookService implements OnModuleInit {
 
     /* Pausa / Reactivación solo si escribe el admin (fromMe) */
     if (this.messageDirectionService.isFromMe(fromMe)) {
-      await this.stopOrResumeConversation({
+      await this.conversationControl.stopOrResumeConversation({
         conversationMsg,
         remoteJid: canonicalRemoteJid,
         remoteJidAlt: canonicalAlt,
@@ -1104,321 +1104,4 @@ export class WebhookService implements OnModuleInit {
     return futureDate.toISOString();
   }
 
-  private async stopOrResumeConversation({
-    conversationMsg,
-    remoteJid,
-    remoteJidAlt,
-    instanceId,
-    sessionStatus,
-    userWithRelations,
-    instanceName,
-    apikey,
-    server_url,
-  }: stopOrResumeConversation) {
-    const logger = this.scopedLogger({
-      userId: userWithRelations?.id,
-      instanceName,
-      remoteJid,
-    });
-
-    const msg = (conversationMsg ?? '').trim().toLowerCase();
-
-    // logger.debug(`🟦 INICIO stopOrResumeConversation`);
-    // logger.debug(`Datos: remoteJid=${remoteJid} | alt=${remoteJidAlt ?? '-'} | instance=${instanceName} | sessionStatus=${sessionStatus ? 'ACTIVA' : 'PAUSADA'} | msg="${msg}"`);
-
-    // 1) Pausar sesión principal (si estaba activa)
-    // logger.debug(`1) Pausa sesión principal: ${sessionStatus ? 'ENTRA (estaba activa)' : 'NO entra (ya pausada)'}`);
-
-    if (sessionStatus) {
-      // logger.debug(`➡️ Llamando updateSessionStatus(false) para sesión principal...`);
-      await this.sessionService.updateSessionStatus(
-        remoteJid,
-        instanceName,
-        false,
-        userWithRelations.id,
-      );
-      // logger.debug(`✅ updateSessionStatus(false) sesión principal OK`);
-      logger.log(`Chat pausado para ${remoteJid}.`);
-    } else {
-      logger.log(`Chat ya estaba pausado para ${remoteJid}.`);
-    }
-
-    // 2) Pausar también el alternativo SOLO si existe sesión (y con false)
-    // logger.debug(`2) Pausa JID alternativo: ${remoteJidAlt && remoteJidAlt !== remoteJid ? 'ENTRA' : 'NO entra'}`);
-
-    if (remoteJidAlt && remoteJidAlt !== remoteJid) {
-      // logger.debug(`➡️ Consultando getSession() para alternativo: ${remoteJidAlt}...`);
-      const altSession = await this.sessionService.getSession(
-        remoteJidAlt,
-        instanceName,
-        userWithRelations.id,
-      );
-      // logger.debug(`✅ getSession() alternativo respondió: ${altSession ? 'HAY sesión' : 'NO hay sesión'}`);
-
-      if (altSession) {
-        // logger.debug(`➡️ Llamando updateSessionStatus(false) para alternativo...`);
-        await this.sessionService.updateSessionStatus(
-          remoteJidAlt,
-          instanceName,
-          false,
-          userWithRelations.id,
-        );
-        // logger.debug(`✅ updateSessionStatus(false) alternativo OK`);
-        logger.log(
-          `Chat pausado también para JID alternativo: ${remoteJidAlt}.`,
-        );
-      } else {
-        logger.log(
-          `JID alternativo no tiene sesión; se omite pausa: ${remoteJidAlt}.`,
-        );
-      }
-    }
-
-    // 3) Reactivar SOLO si estaba pausado y se escribe la frase correcta
-    // logger.debug(`3) Reactivación: validando usuario y frase...`);
-
-    if (!userWithRelations) {
-      logger.warn(
-        '❌ No se encontró el usuario para obtener la frase de reactivación.',
-      );
-      // logger.debug(`🟥 FIN (return: no userWithRelations)`);
-      return;
-    }
-
-    const dataPausar = userWithRelations.pausar ?? [];
-    const pausarItem = dataPausar.find((p) => p.tipo === 'abrir');
-
-    // logger.debug(`➡️ pausar configurado: ${dataPausar.length} items | abrir=${pausarItem ? 'SÍ' : 'NO'}`);
-
-    if (!pausarItem) {
-      logger.warn('❌ El usuario no tiene frase de reactivación configurada.');
-      // logger.debug(`🟥 FIN (return: no pausarItem abrir)`);
-      return;
-    }
-
-    const phraseToReactivateChat = (pausarItem.mensaje ?? '')
-      .trim()
-      .toLowerCase();
-    logger.log(`Frase de reactivación del usuario: "${pausarItem.mensaje}"`);
-    // logger.debug(`Comparación reactivación: msg="${msg}" vs frase="${phraseToReactivateChat}" => ${msg === phraseToReactivateChat ? 'COINCIDE' : 'NO coincide'}`);
-
-    if (msg === phraseToReactivateChat) {
-      // logger.debug(`✅ Entró a reactivación (frase correcta)`);
-      // logger.debug(`Estado de sesión antes: ${sessionStatus ? 'ACTIVA' : 'PAUSADA'}`);
-
-      if (!sessionStatus) {
-        logger.log('Frase correcta detectada. Reactivando chat...');
-
-        // logger.debug(`➡️ Llamando updateSessionStatus(true) para sesión principal...`);
-        await this.sessionService.updateSessionStatus(
-          remoteJid,
-          instanceName,
-          true,
-          userWithRelations.id,
-        );
-        // logger.debug(`✅ updateSessionStatus(true) sesión principal OK`);
-
-        await this.sessionService.updateAgentDisabled(
-          remoteJid,
-          instanceName,
-          false,
-          userWithRelations.id,
-        );
-
-        // Reactivar alternativo SOLO si existe sesión
-        // logger.debug(`Reactivar alternativo: ${remoteJidAlt && remoteJidAlt !== remoteJid ? 'ENTRA' : 'NO entra'}`);
-
-        if (remoteJidAlt && remoteJidAlt !== remoteJid) {
-          // logger.debug(`➡️ Consultando getSession() para alternativo antes de reactivar...`);
-          const altSession = await this.sessionService.getSession(
-            remoteJidAlt,
-            instanceName,
-            userWithRelations.id,
-          );
-          // logger.debug(`✅ getSession() alternativo respondió: ${altSession ? 'HAY sesión' : 'NO hay sesión'}`);
-
-          if (altSession) {
-            // logger.debug(`➡️ Llamando updateSessionStatus(true) para alternativo...`);
-            await this.sessionService.updateSessionStatus(
-              remoteJidAlt,
-              instanceName,
-              true,
-              userWithRelations.id,
-            );
-            // logger.debug(`✅ updateSessionStatus(true) alternativo OK`);
-            logger.log(
-              `Chat reactivado también para JID alternativo: ${remoteJidAlt}.`,
-            );
-          } else {
-            logger.log(
-              `JID alternativo no tiene sesión; se omite reactivación: ${remoteJidAlt}.`,
-            );
-          }
-        }
-      } else {
-        logger.log(
-          'Frase de reactivación recibida, pero el chat ya estaba activo.',
-        );
-      }
-
-      // logger.debug(`🟥 FIN (return: rama reactivación)`);
-      return;
-    }
-
-    // 4) Eliminar seguimiento
-    const pharaseToDelSeguimiento = (userWithRelations.delSeguimiento ?? '')
-      .trim()
-      .toLowerCase();
-    // logger.debug(`4) Eliminar seguimiento: msg="${msg}" vs del="${pharaseToDelSeguimiento}" => ${msg === pharaseToDelSeguimiento ? 'COINCIDE' : 'NO coincide'}`);
-
-    if (msg === pharaseToDelSeguimiento) {
-      logger.log('Frase correcta detectada. Eliminando seguimiento...');
-      try {
-        // logger.debug(`➡️ Llamando deleteSeguimientosByRemoteJid(${remoteJid})...`);
-        const { count } =
-          await this.seguimientosService.deleteSeguimientosByRemoteJid(
-            remoteJid,
-            instanceName,
-          );
-        // logger.debug(`✅ deleteSeguimientosByRemoteJid respondió count=${count ?? 0}`);
-
-        if (count && count > 0) {
-          logger.log('Seguimiento eliminado con exito.');
-        } else {
-          logger.log('No se encontró un seguimiento relacionado.');
-        }
-      } catch (error) {
-        logger.error('ERROR_SEGUIMIENTOS', error);
-        // logger.debug(`🟥 FIN (return: error eliminando seguimiento)`);
-      }
-
-      try {
-        const { count: crmCount } =
-          await this.crmFollowUpRunnerService.deletePendingByRemoteJid({
-            remoteJid,
-            instanceId,
-          });
-        if (crmCount > 0) {
-          logger.log(`CRM follow-ups eliminados: ${crmCount}`);
-        } else {
-          logger.log('No se encontraron CRM follow-ups pendientes.');
-        }
-      } catch (error) {
-        logger.error('ERROR_CRM_FOLLOW_UPS', error);
-      }
-
-      await this.sessionService.updateAgentDisabled(
-        remoteJid,
-        instanceName,
-        true,
-        userWithRelations.id,
-      );
-
-      // logger.debug(`🟥 FIN (return: rama eliminar seguimiento)`);
-      return;
-    }
-
-    // 5) AutoReplies
-    // logger.debug(`5) Ninguna condición coincidió → llama onAutoReplies`);
-    // logger.debug(`➡️ Ejecutando onAutoReplies...`);
-
-    await this.onAutoReplies({
-      userId: userWithRelations.id.toString(),
-      conversationMsg,
-      server_url,
-      apikey,
-      instanceName,
-      remoteJid,
-    });
-
-    // logger.debug(`✅ onAutoReplies terminó`);
-    // logger.debug(`🟩 FIN stopOrResumeConversation`);
-  }
-
-  private async onAutoReplies({
-    userId,
-    conversationMsg,
-    server_url,
-    apikey,
-    instanceName,
-    remoteJid,
-  }: onAutoRepliesInterface): Promise<void> {
-    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
-
-    const userWithRelations = (await this.userService.getUserWithPausar(
-      userId,
-    )) as UserWithPausar;
-
-    const aiConfig = await this.userService.getUserDefaultAiConfig(userId);
-    const { defaultModel, defaultProvider, defaultApiKey } = aiConfig || {};
-
-    const model = defaultModel?.name || 'gpt-4o-mini';
-    const provider = defaultProvider?.name || 'openai';
-
-    try {
-      const autoReplies =
-        await this.autoRepliesService.getAutoRepliesByUserId(userId);
-      if (!autoReplies || autoReplies.length === 0) return;
-
-      const matchedReply = autoReplies.find(
-        (reply) => reply.mensaje?.trim().toLowerCase() === conversationMsg,
-      );
-
-      if (matchedReply) {
-        logger.log(`Respuesta rápida encontrada: ${matchedReply.mensaje}`);
-        if (!matchedReply.workflowId) return;
-        const workflow = await this.workflowService.getWorkflowByWorkflowId(
-          matchedReply.workflowId,
-        );
-        if (!workflow) return;
-
-        await this.sessionService.clearInactividadAfterAgentReply(
-          userId,
-          remoteJid,
-          instanceName,
-        );
-
-        const sessionHistoryId = buildChatHistorySessionId(
-          instanceName,
-          remoteJid,
-        );
-        const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
-
-        await executeWorkflow({
-          workflowService: this.workflowService,
-          nodeSenderService: this.nodeSenderService,
-          chatHistoryService: this.chatHistoryService,
-          aiAgentService: this.aiAgentService,
-          logger,
-
-          workflowName: workflow?.name ?? '',
-          server_url,
-          apikey,
-          instanceName,
-          remoteJid,
-          userId,
-
-          sessionHistoryId,
-          apiMsgUrl,
-
-          apikeyOpenAi: defaultApiKey ?? '',
-          model,
-          provider,
-
-          muteAgentResponses: !!userWithRelations.muteAgentResponses,
-          sendTextFn: this.makeSendTextFn(instanceName, server_url, apikey),
-        });
-
-        /* Deja la session con status en true siempre despues de ejecutar  una respuesta rapida  */
-        await this.sessionService.updateSessionStatus(
-          remoteJid,
-          instanceName,
-          true,
-          userWithRelations.id,
-        );
-      }
-    } catch (error) {
-      logger.error('Error al procesar autoReplies', error);
-    }
-  }
 }

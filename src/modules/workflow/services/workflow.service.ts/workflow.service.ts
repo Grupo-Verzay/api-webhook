@@ -29,7 +29,7 @@ type NodeExecCtx = {
 };
 
 type RunNodeOptions = {
-  timeoutLabel: string; // "nodo" | "nodo bÃ¡sico"
+  timeoutLabel: string; // "nodo" | "nodo básico"
   logPauseDiagnostics?: boolean; // logs extra del pause (pro=true, basic=false)
   warnMissingSessionForSeguimiento?: boolean; // pro=true, basic=false
 };
@@ -108,11 +108,11 @@ export class WorkflowService implements OnModuleInit {
       throw new NotFoundException('Workflow no encontrado');
     }
 
-    // obtener sesiÃ³n para sessionId (estado por conversaciÃ³n)
+    // obtener sesión para sessionId (estado por conversación)
     const session = await this.getSession({ remoteJid, instanceName, userId });
     if (!session) {
       this.logger.warn(
-        `No se encontrÃ³ sesiÃ³n para ejecutar workflow (${remoteJid}).`,
+        `No se encontró sesión para ejecutar workflow (${remoteJid}).`,
         'WorkflowService',
       );
       return { message: 'No session', workflow: result.name, totalNodes: 0 };
@@ -175,7 +175,7 @@ export class WorkflowService implements OnModuleInit {
       }
 
       // =========================
-      // PRO: estado por sesiÃ³n + workflow
+      // PRO: estado por sesión + workflow
       // =========================
       let state = await this.getOrCreateSessionWorkflowState(
         session.id,
@@ -186,7 +186,7 @@ export class WorkflowService implements OnModuleInit {
         result.id,
       );
       if (!startNodeId) {
-        throw new NotFoundException('Workflow invÃ¡lido: no hay nodo inicial');
+        throw new NotFoundException('Workflow inválido: no hay nodo inicial');
       }
 
       let currentId: string | undefined =
@@ -206,7 +206,7 @@ export class WorkflowService implements OnModuleInit {
         );
 
         // ===========================
-        // NODO INTENTION (PAUSA/ITERACIÃ“N)
+        // NODO INTENTION (PAUSA/ITERACIÓN)
         // ===========================
         if (node.tipo === 'intention') {
           const intentionPrompt = ((node as any).intentionPrompt ?? '').trim();
@@ -260,7 +260,7 @@ export class WorkflowService implements OnModuleInit {
           }
 
           const prevData = (state.intentionData as any) ?? {};
-          //TODO: Se quema maxAttempts para no traer todo el historial, pero ideal serÃ­a marcar de alguna forma los mensajes relacionados a la intenciÃ³n (ej: con metadata) para traer solo esos.
+          //TODO: Se quema maxAttempts para no traer todo el historial, pero ideal sería marcar de alguna forma los mensajes relacionados a la intención (ej: con metadata) para traer solo esos.
           const recentUserTexts = await this.getRecentUserTextsForIntention(
             instanceName,
             remoteJid,
@@ -399,7 +399,7 @@ export class WorkflowService implements OnModuleInit {
       }
 
       this.logger.log(
-        `Workflow "${result.name}" ejecutado con Ã©xito.`,
+        `Workflow "${result.name}" ejecutado con éxito.`,
         'WorkflowService',
       );
 
@@ -515,7 +515,7 @@ export class WorkflowService implements OnModuleInit {
 
     if (node.tipo === 'node_pause') {
       this.logger.log(
-        `Nodo pause: pausando sesiÃ³n para ${remoteJid} en instancia ${instanceName}`,
+        `Nodo pause: pausando sesión para ${remoteJid} en instancia ${instanceName}`,
         'WorkflowService',
       );
 
@@ -540,7 +540,7 @@ export class WorkflowService implements OnModuleInit {
           );
         } else if (opts.logPauseDiagnostics) {
           this.logger.log(
-            `Nodo pause con IA desactivada y sin sesiÃ³n disponible. No hay trigger para limpiar (${remoteJid}).`,
+            `Nodo pause con IA desactivada y sin sesión disponible. No hay trigger para limpiar (${remoteJid}).`,
             'WorkflowService',
           );
         }
@@ -574,12 +574,12 @@ export class WorkflowService implements OnModuleInit {
         if (s) {
           await this.clearSessionTriggerIfExists(
             s.id,
-            `Nodo pause con delay invÃ¡lido "${rawDelay}". Se elimina SessionTrigger previo si existe.`,
+            `Nodo pause con delay inválido "${rawDelay}". Se elimina SessionTrigger previo si existe.`,
           );
         }
         if (opts.logPauseDiagnostics) {
           this.logger.warn(
-            `Nodo pause con delay invÃ¡lido "${rawDelay}". No se crea SessionTrigger.`,
+            `Nodo pause con delay inválido "${rawDelay}". No se crea SessionTrigger.`,
             'WorkflowService',
           );
         }
@@ -595,7 +595,7 @@ export class WorkflowService implements OnModuleInit {
         }
         if (opts.logPauseDiagnostics) {
           this.logger.log(
-            `Nodo pause con delay 0. Solo se pausa la sesiÃ³n, sin SessionTrigger.`,
+            `Nodo pause con delay 0. Solo se pausa la sesión, sin SessionTrigger.`,
             'WorkflowService',
           );
         }
@@ -605,7 +605,7 @@ export class WorkflowService implements OnModuleInit {
       if (!s) {
         if (opts.logPauseDiagnostics) {
           this.logger.warn(
-            `Nodo pause: no se encontrÃ³ sesiÃ³n para crear SessionTrigger (${remoteJid}).`,
+            `Nodo pause: no se encontró sesión para crear SessionTrigger (${remoteJid}).`,
             'WorkflowService',
           );
         }
@@ -631,7 +631,7 @@ export class WorkflowService implements OnModuleInit {
 
         if (opts.logPauseDiagnostics) {
           this.logger.log(
-            `SessionTrigger configurado para sesiÃ³n ${s.id} con fecha ${reactivationDate} (delay=${rawDelay}, aiEnabled=${aiEnabled}).`,
+            `SessionTrigger configurado para sesión ${s.id} con fecha ${reactivationDate} (delay=${rawDelay}, aiEnabled=${aiEnabled}).`,
             'WorkflowService',
           );
         }
@@ -845,7 +845,7 @@ export class WorkflowService implements OnModuleInit {
 
     if (!nodes.length) {
       return {
-        message: 'Workflow bÃ¡sico sin nodos',
+        message: 'Workflow básico sin nodos',
         workflow: workflow.name,
         totalNodes: 0,
       };
@@ -854,17 +854,17 @@ export class WorkflowService implements OnModuleInit {
     let executedCount = 0;
 
     for (const node of nodes) {
-      // En bÃ¡sico no existe intention. Si aparece, lo ignoramos.
+      // En básico no existe intention. Si aparece, lo ignoramos.
       if (node.tipo === 'intention') {
         this.logger.warn(
-          `Workflow bÃ¡sico: nodo intention ignorado (ID: ${node.id})`,
+          `Workflow básico: nodo intention ignorado (ID: ${node.id})`,
           'WorkflowService',
         );
         continue;
       }
 
       this.logger.log(
-        `Procesando nodo bÃ¡sico (ID: ${node.id}, tipo: ${node.tipo}, order: ${node.order})`,
+        `Procesando nodo básico (ID: ${node.id}, tipo: ${node.tipo}, order: ${node.order})`,
         'WorkflowService',
       );
 
@@ -872,7 +872,7 @@ export class WorkflowService implements OnModuleInit {
         node,
         { urlevo, apikey, instanceName, remoteJid, userId },
         {
-          timeoutLabel: 'nodo bÃ¡sico',
+          timeoutLabel: 'nodo básico',
           logPauseDiagnostics: false,
           warnMissingSessionForSeguimiento: false,
         },
@@ -887,12 +887,12 @@ export class WorkflowService implements OnModuleInit {
     }
 
     this.logger.log(
-      `Workflow bÃ¡sico "${workflow.name}" ejecutado con Ã©xito.`,
+      `Workflow básico "${workflow.name}" ejecutado con éxito.`,
       'WorkflowService',
     );
 
     return {
-      message: 'Workflow bÃ¡sico ejecutado',
+      message: 'Workflow básico ejecutado',
       workflow: workflow.name,
       totalNodes: executedCount,
     };
@@ -921,7 +921,7 @@ export class WorkflowService implements OnModuleInit {
     intentionPrompt: string; // prompt del modelo (interno)
     messageToUser: string; // lo que el usuario vio (node.message)
     userText: string; // respuesta actual
-    recentUserTexts: string[]; // Ãºltimos N mensajes del usuario
+    recentUserTexts: string[]; // últimos N mensajes del usuario
   }): Promise<boolean> {
     const {
       userId,
@@ -1207,7 +1207,7 @@ export class WorkflowService implements OnModuleInit {
     seguimientos: string,
   ): Promise<void> {
     this.logger.log(
-      `Almacenando nuevo ID de seguimiento: ${id} en sesiÃ³n ${remoteJid}`,
+      `Almacenando nuevo ID de seguimiento: ${id} en sesión ${remoteJid}`,
       'WorkflowService',
     );
     try {
@@ -1218,12 +1218,12 @@ export class WorkflowService implements OnModuleInit {
         userId,
       );
       this.logger.log(
-        `ID de seguimiento ${id} almacenado exitosamente en sesiÃ³n ${remoteJid}`,
+        `ID de seguimiento ${id} almacenado exitosamente en sesión ${remoteJid}`,
         'WorkflowService',
       );
     } catch (error) {
       this.logger.error(
-        `Error almacenando ID de seguimiento ${id} en sesiÃ³n ${remoteJid}: ${(error as any)?.message || String(error)}`,
+        `Error almacenando ID de seguimiento ${id} en sesión ${remoteJid}: ${(error as any)?.message || String(error)}`,
         'WorkflowService',
       );
     }
@@ -1248,7 +1248,7 @@ export class WorkflowService implements OnModuleInit {
       return session;
     } catch (error) {
       this.logger.error(
-        `Error obteniendo la sesiÃ³n de ${remoteJid} en la instancia ${instanceName}`,
+        `Error obteniendo la sesión de ${remoteJid} en la instancia ${instanceName}`,
         (error as any)?.message || String(error),
         'WorkflowService',
       );
@@ -1264,11 +1264,11 @@ export class WorkflowService implements OnModuleInit {
     current: string;
   }): string {
     if (!seguimientos || seguimientos.trim() === '') {
-      // No habÃ­a seguimientos anteriores, retornamos solo el nuevo
+      // No había seguimientos anteriores, retornamos solo el nuevo
       return current;
     }
 
-    // Si ya habÃ­a seguimientos, concatenamos el nuevo al final
+    // Si ya había seguimientos, concatenamos el nuevo al final
     return `${seguimientos}-${current}`;
   }
 
@@ -1334,7 +1334,7 @@ export class WorkflowService implements OnModuleInit {
 
       if (keywords.length === 0) {
         this.logger.warn(
-          `parseDescriptionConfig: no se encontraron keywords en descripciÃ³n: ${description}`,
+          `parseDescriptionConfig: no se encontraron keywords en descripción: ${description}`,
           'WorkflowService',
         );
         return null;
@@ -1346,7 +1346,7 @@ export class WorkflowService implements OnModuleInit {
       };
     } catch (error) {
       this.logger.warn(
-        `DescripciÃ³n de workflow no es un JSON vÃ¡lido: ${description}`,
+        `Descripción de workflow no es un JSON válido: ${description}`,
         'WorkflowService',
       );
       return null;
@@ -1381,7 +1381,7 @@ export class WorkflowService implements OnModuleInit {
         let match = false;
 
         if (config.matchType === 'Exacta') {
-          // Coincidencia exacta (ignorando mayÃºsculas/minÃºsculas y espacios)
+          // Coincidencia exacta (ignorando mayúsculas/minúsculas y espacios)
           match = cleanText === keyword;
         } else {
           // Contiene: si el texto incluye alguna de las palabras clave
@@ -1390,7 +1390,7 @@ export class WorkflowService implements OnModuleInit {
 
         if (match) {
           this.logger.log(
-            `Workflow por descripciÃ³n encontrado: "${wf.name}" (matchType=${config.matchType}, keyword="${kw}")`,
+            `Workflow por descripción encontrado: "${wf.name}" (matchType=${config.matchType}, keyword="${kw}")`,
             'WorkflowService',
           );
           return wf;
@@ -1399,7 +1399,7 @@ export class WorkflowService implements OnModuleInit {
     }
 
     this.logger.log(
-      `No se encontrÃ³ workflow por descripciÃ³n para el texto: "${cleanText}"`,
+      `No se encontró workflow por descripción para el texto: "${cleanText}"`,
       'WorkflowService',
     );
     return null;

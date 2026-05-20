@@ -1,4 +1,4 @@
-﻿import { Body, Injectable } from '@nestjs/common';
+﻿import { Injectable } from '@nestjs/common';
 
 import { AiAgentService } from '../ai-agent/ai-agent.service';
 
@@ -111,7 +111,7 @@ export class WebhookService {
   /**
    * Procesa un webhook recibido de Evolution API.
    */
-  async processWebhook(@Body() body: WebhookBodyDto): Promise<void> {
+  async processWebhook(body: WebhookBodyDto): Promise<void> {
     const { instance: instanceName, server_url, apikey, data } = body;
 
     const msgId = this.messageDeduplication.getMessageId(data);

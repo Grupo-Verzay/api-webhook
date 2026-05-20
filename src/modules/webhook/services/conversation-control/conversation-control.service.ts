@@ -38,7 +38,7 @@ export class ConversationControlService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    const { AiAgentService } = require('src/modules/ai-agent/ai-agent.service');
+    const { AiAgentService } = require('../../../ai-agent/ai-agent.service');
     this.aiAgentService = this.moduleRef.get(AiAgentService, { strict: false });
   }
 

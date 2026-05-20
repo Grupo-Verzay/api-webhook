@@ -39,6 +39,7 @@ import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { BaileysWebhookBridgeService } from './services/baileys-webhook-bridge/baileys-webhook-bridge.service';
 import { MessageDeduplicationService } from './services/message-deduplication/message-deduplication.service';
 import { ConversationControlService } from './services/conversation-control/conversation-control.service';
+import { SessionOrchestrationService } from './services/session-orchestration/session-orchestration.service';
 
 @Module({
   imports: [HttpModule, WorkflowModule, AiAgentModule, LeadFunnelModule, PaymentReceiptModule, WhatsAppModule],
@@ -80,6 +81,7 @@ import { ConversationControlService } from './services/conversation-control/conv
     BaileysWebhookBridgeService,
     MessageDeduplicationService,
     ConversationControlService,
+    SessionOrchestrationService,
   ],
 })
 export class WebhookModule {}

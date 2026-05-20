@@ -18,11 +18,9 @@ import { SeguimientosService } from '../seguimientos/seguimientos.service';
 import { AutoRepliesService } from '../auto-replies/auto-replies.service';
 import { WorkflowService } from '../workflow/services/workflow.service.ts/workflow.service';
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
-import { SessionTriggerService } from '../session-trigger/session-trigger.service';
 import {
   CreditValidationInput,
   flags,
-  getReactivateDate,
   UserWithPausar,
 } from 'src/types/open-ai';
 import { AntifloodService } from './services/antiflood/antiflood.service';
@@ -38,11 +36,11 @@ import { buildChatHistorySessionId } from '../chat-history/chat-history-session.
 import { FollowUpRunnerService } from './services/follow-up-runner/follow-up-runner.service';
 import { PaymentReceiptProcessorService } from 'src/modules/payment-receipt/services/payment-receipt-processor.service';
 import { TtsService } from '../ai-agent/services/tts/tts.service';
-import { AutoAssignService } from './services/auto-assign/auto-assign.service';
 import { WhatsAppSenderFactory } from '../whatsapp/whatsapp-sender.factory';
 import { BaileysSenderAdapter } from '../whatsapp/adapters/baileys/baileys-sender.adapter';
 import { MessageDeduplicationService } from './services/message-deduplication/message-deduplication.service';
 import { ConversationControlService } from './services/conversation-control/conversation-control.service';
+import { SessionOrchestrationService } from './services/session-orchestration/session-orchestration.service';
 
 @Injectable()
 export class WebhookService implements OnModuleInit {
@@ -67,18 +65,17 @@ export class WebhookService implements OnModuleInit {
     private readonly autoRepliesService: AutoRepliesService,
     private readonly workflowService: WorkflowService,
     private readonly aiCreditsService: AiCreditsService,
-    private readonly sessionTriggerService: SessionTriggerService,
     private readonly antifloodService: AntifloodService,
     private readonly leadFunnelService: LeadFunnelService,
     private readonly followUpRunnerService: FollowUpRunnerService,
     private readonly crmFollowUpRunnerService: CrmFollowUpRunnerService,
     private readonly paymentReceiptProcessor: PaymentReceiptProcessorService,
     private readonly ttsService: TtsService,
-    private readonly autoAssignService: AutoAssignService,
     private readonly whatsAppSenderFactory: WhatsAppSenderFactory,
     private readonly baileysSender: BaileysSenderAdapter,
     private readonly messageDeduplication: MessageDeduplicationService,
     private readonly conversationControl: ConversationControlService,
+    private readonly sessionOrchestration: SessionOrchestrationService,
   ) { }
 
   onModuleInit(): void {
@@ -217,7 +214,7 @@ export class WebhookService implements OnModuleInit {
     const messageType = data?.messageType ?? '';
 
     //Check de sesión + normalización entre @lid y @s.whatsapp.net
-    const sessionRes = await this.checkOrRegisterSession(
+    const sessionRes = await this.sessionOrchestration.checkOrRegisterSession(
       remoteJid,
       instanceName,
       userId,
@@ -957,151 +954,6 @@ export class WebhookService implements OnModuleInit {
     }
   }
 
-  /**
-   * Normaliza la sesión entre @lid y @s.whatsapp.net y devuelve el estado (activa o no).
-   */
-  async checkOrRegisterSession(
-    remoteJid: string,
-    instanceName: string,
-    userId: string,
-    pushName: string,
-    userWithRelations: UserWithPausar,
-    remoteJidAlt?: string,
-    senderPn?: string,
-  ): Promise<{ status: boolean; canonicalRemoteJid: string }> {
-    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
-    // 1) Intentar con el JID principal (prioriza @s.whatsapp.net)
-    let session = await this.sessionService.getSession(
-      remoteJid,
-      instanceName,
-      userId,
-    );
-
-    // 2) Si no existe y hay alternativo (ej: @lid), intentar con él
-    if (!session && remoteJidAlt && remoteJidAlt !== remoteJid) {
-      const sessionAlt = await this.sessionService.getSession(
-        remoteJidAlt,
-        instanceName,
-        userId,
-      );
-
-      if (sessionAlt) {
-        logger.log(
-          `[SESSION] Usuario ya registrado con JID alternativo: ${remoteJidAlt}`,
-        );
-
-        // Normalizar: actualizamos remoteJid en BD al canon
-        if (sessionAlt.remoteJid !== remoteJid) {
-          try {
-            await this.sessionService.updateSessionRemoteJid(
-              sessionAlt.id,
-              remoteJid,
-            );
-            logger.log(
-              `[SESSION] remoteJid actualizado de ${sessionAlt.remoteJid} → ${remoteJid}`,
-            );
-            sessionAlt.remoteJid = remoteJid;
-          } catch (error) {
-            logger.error('Error actualizando remoteJid de la sesión', error);
-          }
-        }
-
-        session = sessionAlt;
-      }
-    }
-
-    if (session) {
-      if (
-        session.remoteJid !== remoteJid ||
-        ((session.remoteJidAlt ?? '') !== (remoteJidAlt ?? '') &&
-          Boolean(remoteJidAlt))
-      ) {
-        try {
-          session = await this.sessionService.registerSession(
-            userId,
-            remoteJid,
-            pushName,
-            instanceName,
-            remoteJidAlt,
-            senderPn,
-          );
-        } catch (error) {
-          logger.error('Error normalizando la sesión existente.', error);
-        }
-      }
-
-      logger.log(`[SESSION] Usuario ya registrado: ${session.remoteJid}`);
-
-      const hasTrigger = await this.sessionTriggerService.findBySessionId(
-        session.id.toString(),
-      );
-      const dateReactivate = await this.getReactivateDate({
-        userWithRelations,
-      });
-
-      if (!hasTrigger) {
-        if (dateReactivate) {
-          await this.sessionTriggerService.create(
-            session.id.toString(),
-            dateReactivate,
-          );
-          logger.log(
-            `[TRIGGER] Reactivación programada para: ${dateReactivate}`,
-          );
-        }
-      } else {
-        if (dateReactivate) {
-          await this.sessionTriggerService.updateTimeBySessionId(
-            session.id.toString(),
-            dateReactivate,
-          );
-          logger.log(`[TRIGGER] Fecha actualizada a: ${dateReactivate}`);
-        }
-      }
-
-      return { status: session.status, canonicalRemoteJid: session.remoteJid };
-    }
-
-    // 3) Registrar usando el canon
-    const newSession = await this.sessionService.registerSession(
-      userId,
-      remoteJid,
-      pushName,
-      instanceName,
-      remoteJidAlt,
-      senderPn,
-    );
-    logger.log(`✅ Registro exitoso para ${remoteJid}`);
-
-    // Auto-assign advisor if owner has it enabled (fire-and-forget, non-blocking)
-    void this.autoAssignService.tryAssign(newSession.id, userId);
-
-    return { status: true, canonicalRemoteJid: remoteJid };
-  }
-
-  private async getReactivateDate({
-    userWithRelations,
-  }: getReactivateDate): Promise<string | null> {
-    const logger = this.scopedLogger({ userId: userWithRelations?.id });
-    if (!userWithRelations) {
-      logger.error('Se esperaba el userWithRelations para reactivar el chat.');
-      return null;
-    }
-
-    const minutesToReactivate = parseInt(
-      userWithRelations.autoReactivate ?? '',
-    );
-    if (isNaN(minutesToReactivate)) {
-      logger.error(
-        `Valor inválido para autoReactivate: "${userWithRelations.autoReactivate}"`,
-      );
-      return null;
-    }
-
-    const MILLISECONDS_PER_MINUTE = 60000;
-    const futureDate = new Date(Date.now() + minutesToReactivate * MILLISECONDS_PER_MINUTE);
-    return futureDate.toISOString();
-  }
 
 }

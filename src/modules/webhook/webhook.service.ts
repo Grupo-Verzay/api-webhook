@@ -1,4 +1,4 @@
-import { Body, Injectable, OnModuleInit } from '@nestjs/common';
+﻿import { Body, Injectable, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 
 import type { AiAgentService } from '../ai-agent/ai-agent.service';
@@ -14,8 +14,6 @@ import { isGroupChat } from './utils/is-group-chat';
 import { MessageBufferService } from './services/message-buffer/message-buffer.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
 import { NodeSenderService } from '../workflow/services/node-sender.service.ts/node-sender.service';
-import { SeguimientosService } from '../seguimientos/seguimientos.service';
-import { AutoRepliesService } from '../auto-replies/auto-replies.service';
 import { WorkflowService } from '../workflow/services/workflow.service.ts/workflow.service';
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import {
@@ -31,7 +29,6 @@ import {
   pickPreferredWhatsAppRemoteJid,
 } from 'src/utils/whatsapp-jid.util';
 import { LeadFunnelService } from '../lead-funnel/services/lead-funnel/lead-funnel.service';
-import { CrmFollowUpRunnerService } from '../lead-funnel/services/crm-follow-up-runner.service';
 import { buildChatHistorySessionId } from '../chat-history/chat-history-session.helper';
 import { FollowUpRunnerService } from './services/follow-up-runner/follow-up-runner.service';
 import { PaymentReceiptProcessorService } from 'src/modules/payment-receipt/services/payment-receipt-processor.service';
@@ -61,14 +58,11 @@ export class WebhookService implements OnModuleInit {
     private readonly messageBufferService: MessageBufferService,
     private readonly chatHistoryService: ChatHistoryService,
     private readonly nodeSenderService: NodeSenderService,
-    private readonly seguimientosService: SeguimientosService,
-    private readonly autoRepliesService: AutoRepliesService,
     private readonly workflowService: WorkflowService,
     private readonly aiCreditsService: AiCreditsService,
     private readonly antifloodService: AntifloodService,
     private readonly leadFunnelService: LeadFunnelService,
     private readonly followUpRunnerService: FollowUpRunnerService,
-    private readonly crmFollowUpRunnerService: CrmFollowUpRunnerService,
     private readonly paymentReceiptProcessor: PaymentReceiptProcessorService,
     private readonly ttsService: TtsService,
     private readonly whatsAppSenderFactory: WhatsAppSenderFactory,
@@ -467,408 +461,13 @@ export class WebhookService implements OnModuleInit {
         }
         this.processingContacts.add(canonicalRemoteJid);
         try {
-          const mergedTextStr = mergedText.toString();
-
-          // Guard: verificar agentDisabled ANTES de cualquier modificación de estado
-          const agentDisabled = await this.sessionService.getAgentDisabled(
-            canonicalRemoteJid,
-            instanceName,
-            userId,
-          );
-
-          if (agentDisabled) {
-            this.logger.warn(
-              `[WEBHOOK] agentDisabled=true → flujo detenido. userId=${userId} instance=${instanceName} remoteJid=${canonicalRemoteJid}`,
-            );
-            return;
-          }
-
-          // Guardamos el mensaje completo que se acumuló en el buffer.
-          // Para imágenes añadimos el marcador [IMAGEN] para que la IA
-          // tenga contexto claro en turnos futuros.
-          const msgToSave = messageType === 'imageMessage'
-            ? `[IMAGEN]: ${mergedTextStr}`
-            : mergedTextStr;
-          await this.chatHistoryService.saveMessage(
-            sessionHistoryId,
-            msgToSave,
-            'human',
-          );
-
-          const cancelledFollowUps =
-            await this.followUpRunnerService.cancelPendingFollowUpsOnReply({
-              userId,
-              remoteJid: canonicalRemoteJid,
-              instanceName,
-            });
-          if (cancelledFollowUps.count > 0) {
-            logger.log(
-              `Follow-ups cancelados por respuesta del lead: ${cancelledFollowUps.count}`,
-              'WebhookService',
-            );
-          }
-
-          // Limpiar inactividad solo cuando el agente va a responder
-          await this.sessionService.clearInactividadAfterAgentReply(
-            userId,
-            canonicalRemoteJid,
-            instanceName,
-          );
-
-          // Una sola query de historial reutilizada por el sintetizador y la lógica de bienvenida
-          const chatHistory =
-            await this.chatHistoryService.getChatHistory(sessionHistoryId);
-
-          //Lead Funnel (bucket/sintetizador)
-          if (canonicalSession?.id && userWithRelations.enabledSynthesizer) {
-            this.logger.debug(
-              `Entrando a sintetizador... instanceID=${instanceId} userId=${userId} remoteJid=${canonicalRemoteJid}`,
-            );
-
-            const funnelRes = await this.leadFunnelService.processIncomingText({
-              userId,
-              instanceId,
-              remoteJid: canonicalRemoteJid,
-              pushName,
-              enabledLeadStatusClassifier:
-                !!userWithRelations.enabledLeadStatusClassifier,
-              enabledCrmFollowUps: !!userWithRelations.enabledCrmFollowUps,
-              sessionDbId: canonicalSession.id,
-              text: mergedTextStr,
-              history: chatHistory,
-            });
-
-            this.logger.debug(
-              `[LEAD_FUNNEL] result=${JSON.stringify(funnelRes)}`,
-            );
-          }
-
-          // Auto-ejecutar flujo BIENVENIDA en primera conexión
-          const historyForBienvenida = chatHistory;
-          logger.log(
-            `[BIENVENIDA] historyLength=${historyForBienvenida.length} sessionHistoryId=${sessionHistoryId} userId=${userId}`,
-            'WebhookService',
-          );
-          if (historyForBienvenida.length === 1) {
-            const bienvenidaWorkflow =
-              await this.workflowService.findWelcomeWorkflow(
-                userId,
-                this.aiAgentService.initWorkflowName,
-              );
-            logger.log(
-              `[BIENVENIDA] workflow encontrado: ${bienvenidaWorkflow ? bienvenidaWorkflow.name : 'null'}`,
-              'WebhookService',
-            );
-            if (bienvenidaWorkflow) {
-              logger.log(
-                `[BIENVENIDA] Primera conexión → ejecutando flujo "${bienvenidaWorkflow.name}"`,
-                'WebhookService',
-              );
-              await this.chatHistoryService.registerExecutedIntention(
-                sessionHistoryId,
-                bienvenidaWorkflow.name,
-                'intention',
-              );
-              await this.sessionService.registerWorkflow(
-                { id: bienvenidaWorkflow.id, name: bienvenidaWorkflow.name },
-                canonicalRemoteJid,
-                instanceName,
-                userId,
-              );
-              await executeWorkflow({
-                workflowService: this.workflowService,
-                nodeSenderService: this.nodeSenderService,
-                chatHistoryService: this.chatHistoryService,
-                aiAgentService: this.aiAgentService,
-                logger,
-                workflowName: bienvenidaWorkflow.name,
-                server_url,
-                apikey,
-                instanceName,
-                remoteJid: canonicalRemoteJid,
-                userId,
-                sessionHistoryId,
-                apiMsgUrl,
-                apikeyOpenAi: defaultApiKey ?? '',
-                model,
-                provider,
-                muteAgentResponses: userWithRelations.muteAgentResponses,
-                sendTextFn,
-              });
-              // Sin return: la IA continúa y envía la pregunta del Paso 1
-            }
-          }
-
-          // Auto-ejecutar pasos de embudo en secuencia (nunca en el primer mensaje)
-          const funnelFlows = historyForBienvenida.length > 1
-            ? await this.workflowService.getFunnelFlows(userId)
-            : [];
-          if (funnelFlows.length > 0) {
-            const welcomeFlow = await this.workflowService.findWelcomeWorkflow(userId, this.aiAgentService.initWorkflowName);
-            const welcomeDone = welcomeFlow
-              ? await this.chatHistoryService.hasIntentionBeenExecuted(sessionHistoryId, welcomeFlow.name)
-              : true;
-
-            if (welcomeDone) {
-              for (let i = 0; i < funnelFlows.length; i++) {
-                const funnelFlow = funnelFlows[i];
-                const alreadyDone = await this.chatHistoryService.hasIntentionBeenExecuted(sessionHistoryId, funnelFlow.name);
-                if (alreadyDone) continue;
-
-                const prevDone = i === 0
-                  ? true
-                  : await this.chatHistoryService.hasIntentionBeenExecuted(sessionHistoryId, funnelFlows[i - 1].name);
-
-                if (prevDone) {
-                  logger.log(`[EMBUDO] Ejecutando paso ${i + 1}: "${funnelFlow.name}"`, 'WebhookService');
-                  await this.chatHistoryService.registerExecutedIntention(sessionHistoryId, funnelFlow.name, 'intention');
-                  await this.sessionService.registerWorkflow(
-                    { id: funnelFlow.id, name: funnelFlow.name },
-                    canonicalRemoteJid, instanceName, userId,
-                  );
-                  await executeWorkflow({
-                    workflowService: this.workflowService,
-                    nodeSenderService: this.nodeSenderService,
-                    chatHistoryService: this.chatHistoryService,
-                    aiAgentService: this.aiAgentService,
-                    logger,
-                    workflowName: funnelFlow.name,
-                    server_url, apikey, instanceName,
-                    remoteJid: canonicalRemoteJid,
-                    userId, sessionHistoryId, apiMsgUrl,
-                    apikeyOpenAi: defaultApiKey ?? '',
-                    model, provider,
-                    muteAgentResponses: userWithRelations.muteAgentResponses,
-                    sendTextFn,
-                  });
-                  // Notificar a la IA que este paso ya fue ejecutado para que avance su estado interno
-                  await this.chatHistoryService.saveMessage(
-                    sessionHistoryId,
-                    `[SISTEMA]: El flujo "${funnelFlow.name}" fue ejecutado automáticamente. Ya completaste este paso. NO lo repitas ni emitas su contenido. Avanza al siguiente paso en tu estado interno.`,
-                    'ai',
-                  );
-                }
-                break; // solo un paso por turno
-              }
-            }
-          }
-
-          // Las imágenes también pueden reanudar flujos pausados (ej: paso que pide comprobante).
-          // continuePausedWorkflow solo actúa si hay un estado 'waiting' activo → seguro para imágenes.
-          logger.log(
-            `[WORKFLOW_RESUME] Verificando flujo pausado. messageType=${messageType} remoteJid=${canonicalRemoteJid}`,
-            'WebhookService',
-          );
-          const resumed = await this.workflowService.continuePausedWorkflow(
-              server_url,
-              apikey,
-              instanceName,
-              canonicalRemoteJid,
-              userId,
-              mergedTextStr,
-            );
-          logger.log(
-            `[WORKFLOW_RESUME] continuePausedWorkflow resultado: resumed=${resumed}`,
-            'WebhookService',
-          );
-
-          if (resumed) {
-            logger.log(
-              'Continuación de workflow pausado (intention) ejecutada. No se usa IA.',
-              'WebhookService',
-            );
-            return;
-          }
-
-          // 2) luego sí: intentar disparar workflow por descripción
-          // Las imágenes (imageMessage) siempre van al LLM — Vision API describe el contenido
-          // con texto que puede contener keywords de workflows (ej: "pago", "comprobante"),
-          // provocando un match falso que dispara el script en lugar de llamar a la IA.
-          const matchedWorkflow = messageType === 'imageMessage'
-            ? null
-            : await this.workflowService.findWorkflowByDescriptionMatch(
-                userId,
-                mergedTextStr,
-              );
-
-          if (matchedWorkflow) {
-            logger.log(
-              `Workflow por descripción encontrado (via buffer): ${matchedWorkflow.name} → ejecutando sin IA.`,
-              'WebhookService',
-            );
-
-            //  Evita doble ejecución si luego entra la IA / tool Ejecutar_Flujos
-            await this.chatHistoryService.registerExecutedIntention(
-              sessionHistoryId,
-              matchedWorkflow.name,
-              'intention',
-            );
-
-            // (Opcional pero recomendado si tú llevas tracking en Session)
-            await this.sessionService.registerWorkflow(
-              { id: matchedWorkflow.id, name: matchedWorkflow.name },
-              canonicalRemoteJid,
-              instanceName,
-              userId,
-            );
-
-            await executeWorkflow({
-              workflowService: this.workflowService,
-              nodeSenderService: this.nodeSenderService,
-              chatHistoryService: this.chatHistoryService,
-              aiAgentService: this.aiAgentService,
-              logger,
-
-              workflowName: matchedWorkflow.name,
-              server_url,
-              apikey,
-              instanceName,
-              remoteJid: canonicalRemoteJid,
-              userId,
-
-              sessionHistoryId,
-              apiMsgUrl,
-
-              apikeyOpenAi: defaultApiKey ?? '',
-              model,
-              provider,
-
-              muteAgentResponses: userWithRelations.muteAgentResponses,
-              sendTextFn,
-            });
-
-            return;
-          }
-
-          // 2) Si el agente está muteado → solo dejamos funcionar flujos (que ya revisamos)
-          if (userWithRelations.muteAgentResponses) {
-            logger.warn(
-              '🔇 Agente muteado: no se usará IA (solo flujos/chatbot).',
-              'muteAgentResponses',
-            );
-            return;
-          }
-
-          // 3) Si no hay flujo y no está muteado → ahora sí usamos IA
-          // Para imágenes: usamos el marcador [IMAGEN] en el input para que la IA
-          // entienda que viene de una imagen (ya guardado así en el historial).
-          const aiInput = messageType === 'imageMessage'
-            ? `[IMAGEN]: ${mergedTextStr}`
-            : mergedTextStr;
-
-          const dataProccessInput = {
-            input: aiInput,
-            userId,
-            apikeyOpenAi: defaultApiKey ?? '',
-            defaultModel: model,
-            defaultProvider: provider,
-            sessionId: sessionHistoryId,
-            server_url,
-            apikey,
-            instanceName,
-            remoteJid: canonicalRemoteJid,
-            pushName,
-          };
-
-          const aiResponseRaw =
-            await this.aiAgentService.processInput(dataProccessInput);
-
-          // Cuando el agente no produce respuesta para una imagen (finalTextRaw vacío),
-          // el agente retorna el fallback genérico. Sustituimos ese fallback por un
-          // mensaje más apropiado para el contexto de imagen.
-          const AI_GENERIC_FALLBACK = 'No pude procesar tu solicitud correctamente. ¿Puedes reformular tu mensaje?';
-          const aiResponse = (messageType === 'imageMessage' && aiResponseRaw === AI_GENERIC_FALLBACK)
-            ? 'Gracias por enviar la imagen. La hemos recibido y la revisaremos. ¿Hay algo más en lo que pueda ayudarte?'
-            : aiResponseRaw;
-
-          if (!aiResponse || aiResponse === '') return;
-
-          // Deduplicación de respuesta saliente: evita reenviar el mismo
-          // contenido al mismo contacto en menos de OUTGOING_DEDUPE_TTL_MS.
-          if (
-            this.messageDeduplication.isDuplicateOutgoingResponse(
-              instanceName,
-              canonicalRemoteJid,
-              aiResponse,
-            )
-          ) {
-            logger.warn(
-              `[OUTGOING_DEDUPE] Respuesta idéntica detectada para ${canonicalRemoteJid} → omitida para evitar loop.`,
-            );
-            return;
-          }
-
-          await this.chatHistoryService.saveMessage(
-            sessionHistoryId,
-            aiResponse,
-            'ia',
-          );
-
-          const msgBlocks = aiResponse
-            .split('\n\n')
-            .map((b) => b.trim())
-            .filter((b) => b.length > 0);
-
-          if (msgBlocks.length === 0) {
-            logger.warn(
-              `El mensaje está vacío después de procesar bloques.`,
-              'NodeSenderService',
-            );
-            return;
-          }
-
-          const isBaileysInstance = !server_url;
-          const voiceEnabled = !!(userWithRelations as any).enableVoiceResponses && !!defaultApiKey;
-
-          if (voiceEnabled) {
-            const fullText = msgBlocks.join('\n\n');
-            const ttsProvider = (userWithRelations as any).ttsProvider || 'openai';
-            const voiceId = (userWithRelations as any).voiceId || 'nova';
-            const voiceModel = (userWithRelations as any).voiceModel || 'gpt-4o-mini-tts';
-            const voiceInstructions = (userWithRelations as any).voiceInstructions || undefined;
-            const elApiKey = (userWithRelations as any).elevenLabsApiKey;
-            const elVoiceId = (userWithRelations as any).elevenLabsVoiceId;
-
-            logger.log(`🎙️ Generando nota de voz (provider=${ttsProvider}, voice=${ttsProvider === 'elevenlabs' ? elVoiceId : voiceId}, baileys=${isBaileysInstance})`, 'TtsService');
-
-            let audioBase64: string | null = null;
-            if (ttsProvider === 'elevenlabs' && elApiKey && elVoiceId) {
-              audioBase64 = await this.ttsService.generateVoiceElevenLabs(fullText, elApiKey, elVoiceId);
-            } else {
-              audioBase64 = await this.ttsService.generateVoiceBase64(fullText, defaultApiKey, voiceId, voiceModel, voiceInstructions);
-            }
-            let audioSent = false;
-            if (audioBase64) {
-              if (isBaileysInstance) {
-                audioSent = await this.baileysSender.sendAudioBase64(instanceName, canonicalRemoteJid, audioBase64);
-              } else {
-                const audioUrl = `${server_url}/message/sendWhatsAppAudio/${instanceName}`;
-                audioSent = await this.nodeSenderService.sendAudioNode(audioUrl, apikey, canonicalRemoteJid, audioBase64);
-              }
-              if (audioSent) {
-                logger.log(`✅ Nota de voz enviada a ${canonicalRemoteJid}`, 'TtsService');
-              } else {
-                logger.warn(`sendAudio falló, enviando como texto`, 'TtsService');
-              }
-            } else {
-              logger.warn(`TTS falló, enviando como texto`, 'TtsService');
-            }
-            if (!audioSent) {
-              for (const msgBlock of msgBlocks) {
-                await sendTextFn(canonicalRemoteJid, msgBlock);
-                await new Promise((res) => setTimeout(res, 300));
-              }
-            }
-          } else {
-            for (const [index, msgBlock] of msgBlocks.entries()) {
-              logger.log(
-                `📤 Enviando bloque ${index + 1}/${msgBlocks.length}`,
-                'NodeSenderService',
-              );
-              await sendTextFn(canonicalRemoteJid, msgBlock);
-              await new Promise((res) => setTimeout(res, 300));
-            }
-          }
+          await this.processBufferedMessage({
+            mergedText: mergedText.toString(),
+            canonicalRemoteJid, canonicalSession, instanceName, instanceId,
+            userId, pushName, server_url, apikey, defaultApiKey,
+            model, provider, messageType, userWithRelations,
+            sessionHistoryId, apiMsgUrl, sendTextFn, logger,
+          });
         } catch (err: any) {
           logger.error(
             'Error en callback de messageBufferService.handleIncomingMessage (se evita crash global).',
@@ -956,4 +555,435 @@ export class WebhookService implements OnModuleInit {
 
 
 
+
+  private async processBufferedMessage(params: {
+    mergedText: string;
+    canonicalRemoteJid: string;
+    canonicalSession: any;
+    instanceName: string;
+    instanceId: string;
+    userId: string;
+    pushName: string;
+    server_url: string;
+    apikey: string;
+    defaultApiKey: string | null | undefined;
+    model: string;
+    provider: string;
+    messageType: string;
+    userWithRelations: UserWithPausar;
+    sessionHistoryId: string;
+    apiMsgUrl: string;
+    sendTextFn: (remoteJid: string, text: string) => Promise<void>;
+    logger: ReturnType<WebhookService['scopedLogger']>;
+  }): Promise<void> {
+    const {
+      mergedText, canonicalRemoteJid, canonicalSession, instanceName, instanceId,
+      userId, pushName, server_url, apikey, defaultApiKey,
+      model, provider, messageType, userWithRelations,
+      sessionHistoryId, apiMsgUrl, sendTextFn, logger,
+    } = params;
+
+    const mergedTextStr = mergedText;
+
+    // Guard: verificar agentDisabled ANTES de cualquier modificación de estado
+    const agentDisabled = await this.sessionService.getAgentDisabled(
+      canonicalRemoteJid,
+      instanceName,
+      userId,
+    );
+
+    if (agentDisabled) {
+      this.logger.warn(
+        `[WEBHOOK] agentDisabled=true → flujo detenido. userId=${userId} instance=${instanceName} remoteJid=${canonicalRemoteJid}`,
+      );
+      return;
+    }
+
+    // Guardamos el mensaje completo que se acumuló en el buffer.
+    // Para imágenes añadimos el marcador [IMAGEN] para que la IA
+    // tenga contexto claro en turnos futuros.
+    const msgToSave = messageType === 'imageMessage'
+      ? `[IMAGEN]: ${mergedTextStr}`
+      : mergedTextStr;
+    await this.chatHistoryService.saveMessage(
+      sessionHistoryId,
+      msgToSave,
+      'human',
+    );
+
+    const cancelledFollowUps =
+      await this.followUpRunnerService.cancelPendingFollowUpsOnReply({
+        userId,
+        remoteJid: canonicalRemoteJid,
+        instanceName,
+      });
+    if (cancelledFollowUps.count > 0) {
+      logger.log(
+        `Follow-ups cancelados por respuesta del lead: ${cancelledFollowUps.count}`,
+        'WebhookService',
+      );
+    }
+
+    // Limpiar inactividad solo cuando el agente va a responder
+    await this.sessionService.clearInactividadAfterAgentReply(
+      userId,
+      canonicalRemoteJid,
+      instanceName,
+    );
+
+    // Una sola query de historial reutilizada por el sintetizador y la lógica de bienvenida
+    const chatHistory =
+      await this.chatHistoryService.getChatHistory(sessionHistoryId);
+
+    //Lead Funnel (bucket/sintetizador)
+    if (canonicalSession?.id && userWithRelations.enabledSynthesizer) {
+      this.logger.debug(
+        `Entrando a sintetizador... instanceID=${instanceId} userId=${userId} remoteJid=${canonicalRemoteJid}`,
+      );
+
+      const funnelRes = await this.leadFunnelService.processIncomingText({
+        userId,
+        instanceId,
+        remoteJid: canonicalRemoteJid,
+        pushName,
+        enabledLeadStatusClassifier:
+          !!userWithRelations.enabledLeadStatusClassifier,
+        enabledCrmFollowUps: !!userWithRelations.enabledCrmFollowUps,
+        sessionDbId: canonicalSession.id,
+        text: mergedTextStr,
+        history: chatHistory,
+      });
+
+      this.logger.debug(
+        `[LEAD_FUNNEL] result=${JSON.stringify(funnelRes)}`,
+      );
+    }
+
+    // Auto-ejecutar flujo BIENVENIDA en primera conexión
+    const historyForBienvenida = chatHistory;
+    logger.log(
+      `[BIENVENIDA] historyLength=${historyForBienvenida.length} sessionHistoryId=${sessionHistoryId} userId=${userId}`,
+      'WebhookService',
+    );
+    if (historyForBienvenida.length === 1) {
+      const bienvenidaWorkflow =
+        await this.workflowService.findWelcomeWorkflow(
+          userId,
+          this.aiAgentService.initWorkflowName,
+        );
+      logger.log(
+        `[BIENVENIDA] workflow encontrado: ${bienvenidaWorkflow ? bienvenidaWorkflow.name : 'null'}`,
+        'WebhookService',
+      );
+      if (bienvenidaWorkflow) {
+        logger.log(
+          `[BIENVENIDA] Primera conexión → ejecutando flujo "${bienvenidaWorkflow.name}"`,
+          'WebhookService',
+        );
+        await this.chatHistoryService.registerExecutedIntention(
+          sessionHistoryId,
+          bienvenidaWorkflow.name,
+          'intention',
+        );
+        await this.sessionService.registerWorkflow(
+          { id: bienvenidaWorkflow.id, name: bienvenidaWorkflow.name },
+          canonicalRemoteJid,
+          instanceName,
+          userId,
+        );
+        await executeWorkflow({
+          workflowService: this.workflowService,
+          nodeSenderService: this.nodeSenderService,
+          chatHistoryService: this.chatHistoryService,
+          aiAgentService: this.aiAgentService,
+          logger,
+          workflowName: bienvenidaWorkflow.name,
+          server_url,
+          apikey,
+          instanceName,
+          remoteJid: canonicalRemoteJid,
+          userId,
+          sessionHistoryId,
+          apiMsgUrl,
+          apikeyOpenAi: defaultApiKey ?? '',
+          model,
+          provider,
+          muteAgentResponses: userWithRelations.muteAgentResponses,
+          sendTextFn,
+        });
+        // Sin return: la IA continúa y envía la pregunta del Paso 1
+      }
+    }
+
+    // Auto-ejecutar pasos de embudo en secuencia (nunca en el primer mensaje)
+    const funnelFlows = historyForBienvenida.length > 1
+      ? await this.workflowService.getFunnelFlows(userId)
+      : [];
+    if (funnelFlows.length > 0) {
+      const welcomeFlow = await this.workflowService.findWelcomeWorkflow(userId, this.aiAgentService.initWorkflowName);
+      const welcomeDone = welcomeFlow
+        ? await this.chatHistoryService.hasIntentionBeenExecuted(sessionHistoryId, welcomeFlow.name)
+        : true;
+
+      if (welcomeDone) {
+        for (let i = 0; i < funnelFlows.length; i++) {
+          const funnelFlow = funnelFlows[i];
+          const alreadyDone = await this.chatHistoryService.hasIntentionBeenExecuted(sessionHistoryId, funnelFlow.name);
+          if (alreadyDone) continue;
+
+          const prevDone = i === 0
+            ? true
+            : await this.chatHistoryService.hasIntentionBeenExecuted(sessionHistoryId, funnelFlows[i - 1].name);
+
+          if (prevDone) {
+            logger.log(`[EMBUDO] Ejecutando paso ${i + 1}: "${funnelFlow.name}"`, 'WebhookService');
+            await this.chatHistoryService.registerExecutedIntention(sessionHistoryId, funnelFlow.name, 'intention');
+            await this.sessionService.registerWorkflow(
+              { id: funnelFlow.id, name: funnelFlow.name },
+              canonicalRemoteJid, instanceName, userId,
+            );
+            await executeWorkflow({
+              workflowService: this.workflowService,
+              nodeSenderService: this.nodeSenderService,
+              chatHistoryService: this.chatHistoryService,
+              aiAgentService: this.aiAgentService,
+              logger,
+              workflowName: funnelFlow.name,
+              server_url, apikey, instanceName,
+              remoteJid: canonicalRemoteJid,
+              userId, sessionHistoryId, apiMsgUrl,
+              apikeyOpenAi: defaultApiKey ?? '',
+              model, provider,
+              muteAgentResponses: userWithRelations.muteAgentResponses,
+              sendTextFn,
+            });
+            // Notificar a la IA que este paso ya fue ejecutado para que avance su estado interno
+            await this.chatHistoryService.saveMessage(
+              sessionHistoryId,
+              `[SISTEMA]: El flujo "${funnelFlow.name}" fue ejecutado automáticamente. Ya completaste este paso. NO lo repitas ni emitas su contenido. Avanza al siguiente paso en tu estado interno.`,
+              'ai',
+            );
+          }
+          break; // solo un paso por turno
+        }
+      }
+    }
+
+    // Las imágenes también pueden reanudar flujos pausados (ej: paso que pide comprobante).
+    // continuePausedWorkflow solo actúa si hay un estado 'waiting' activo → seguro para imágenes.
+    logger.log(
+      `[WORKFLOW_RESUME] Verificando flujo pausado. messageType=${messageType} remoteJid=${canonicalRemoteJid}`,
+      'WebhookService',
+    );
+    const resumed = await this.workflowService.continuePausedWorkflow(
+        server_url,
+        apikey,
+        instanceName,
+        canonicalRemoteJid,
+        userId,
+        mergedTextStr,
+      );
+    logger.log(
+      `[WORKFLOW_RESUME] continuePausedWorkflow resultado: resumed=${resumed}`,
+      'WebhookService',
+    );
+
+    if (resumed) {
+      logger.log(
+        'Continuación de workflow pausado (intention) ejecutada. No se usa IA.',
+        'WebhookService',
+      );
+      return;
+    }
+
+    // 2) luego sí: intentar disparar workflow por descripción
+    // Las imágenes (imageMessage) siempre van al LLM — Vision API describe el contenido
+    // con texto que puede contener keywords de workflows (ej: "pago", "comprobante"),
+    // provocando un match falso que dispara el script en lugar de llamar a la IA.
+    const matchedWorkflow = messageType === 'imageMessage'
+      ? null
+      : await this.workflowService.findWorkflowByDescriptionMatch(
+          userId,
+          mergedTextStr,
+        );
+
+    if (matchedWorkflow) {
+      logger.log(
+        `Workflow por descripción encontrado (via buffer): ${matchedWorkflow.name} → ejecutando sin IA.`,
+        'WebhookService',
+      );
+
+      //  Evita doble ejecución si luego entra la IA / tool Ejecutar_Flujos
+      await this.chatHistoryService.registerExecutedIntention(
+        sessionHistoryId,
+        matchedWorkflow.name,
+        'intention',
+      );
+
+      // (Opcional pero recomendado si tú llevas tracking en Session)
+      await this.sessionService.registerWorkflow(
+        { id: matchedWorkflow.id, name: matchedWorkflow.name },
+        canonicalRemoteJid,
+        instanceName,
+        userId,
+      );
+
+      await executeWorkflow({
+        workflowService: this.workflowService,
+        nodeSenderService: this.nodeSenderService,
+        chatHistoryService: this.chatHistoryService,
+        aiAgentService: this.aiAgentService,
+        logger,
+
+        workflowName: matchedWorkflow.name,
+        server_url,
+        apikey,
+        instanceName,
+        remoteJid: canonicalRemoteJid,
+        userId,
+
+        sessionHistoryId,
+        apiMsgUrl,
+
+        apikeyOpenAi: defaultApiKey ?? '',
+        model,
+        provider,
+
+        muteAgentResponses: userWithRelations.muteAgentResponses,
+        sendTextFn,
+      });
+
+      return;
+    }
+
+    // 2) Si el agente está muteado → solo dejamos funcionar flujos (que ya revisamos)
+    if (userWithRelations.muteAgentResponses) {
+      logger.warn(
+        '🔇 Agente muteado: no se usará IA (solo flujos/chatbot).',
+        'muteAgentResponses',
+      );
+      return;
+    }
+
+    // 3) Si no hay flujo y no está muteado → ahora sí usamos IA
+    // Para imágenes: usamos el marcador [IMAGEN] en el input para que la IA
+    // entienda que viene de una imagen (ya guardado así en el historial).
+    const aiInput = messageType === 'imageMessage'
+      ? `[IMAGEN]: ${mergedTextStr}`
+      : mergedTextStr;
+
+    const dataProccessInput = {
+      input: aiInput,
+      userId,
+      apikeyOpenAi: defaultApiKey ?? '',
+      defaultModel: model,
+      defaultProvider: provider,
+      sessionId: sessionHistoryId,
+      server_url,
+      apikey,
+      instanceName,
+      remoteJid: canonicalRemoteJid,
+      pushName,
+    };
+
+    const aiResponseRaw =
+      await this.aiAgentService.processInput(dataProccessInput);
+
+    // Cuando el agente no produce respuesta para una imagen (finalTextRaw vacío),
+    // el agente retorna el fallback genérico. Sustituimos ese fallback por un
+    // mensaje más apropiado para el contexto de imagen.
+    const AI_GENERIC_FALLBACK = 'No pude procesar tu solicitud correctamente. ¿Puedes reformular tu mensaje?';
+    const aiResponse = (messageType === 'imageMessage' && aiResponseRaw === AI_GENERIC_FALLBACK)
+      ? 'Gracias por enviar la imagen. La hemos recibido y la revisaremos. ¿Hay algo más en lo que pueda ayudarte?'
+      : aiResponseRaw;
+
+    if (!aiResponse || aiResponse === '') return;
+
+    // Deduplicación de respuesta saliente: evita reenviar el mismo
+    // contenido al mismo contacto en menos de OUTGOING_DEDUPE_TTL_MS.
+    if (
+      this.messageDeduplication.isDuplicateOutgoingResponse(
+        instanceName,
+        canonicalRemoteJid,
+        aiResponse,
+      )
+    ) {
+      logger.warn(
+        `[OUTGOING_DEDUPE] Respuesta idéntica detectada para ${canonicalRemoteJid} → omitida para evitar loop.`,
+      );
+      return;
+    }
+
+    await this.chatHistoryService.saveMessage(
+      sessionHistoryId,
+      aiResponse,
+      'ia',
+    );
+
+    const msgBlocks = aiResponse
+      .split('\n\n')
+      .map((b) => b.trim())
+      .filter((b) => b.length > 0);
+
+    if (msgBlocks.length === 0) {
+      logger.warn(
+        `El mensaje está vacío después de procesar bloques.`,
+        'NodeSenderService',
+      );
+      return;
+    }
+
+    const isBaileysInstance = !server_url;
+    const voiceEnabled = !!(userWithRelations as any).enableVoiceResponses && !!defaultApiKey;
+
+    if (voiceEnabled) {
+      const fullText = msgBlocks.join('\n\n');
+      const ttsProvider = (userWithRelations as any).ttsProvider || 'openai';
+      const voiceId = (userWithRelations as any).voiceId || 'nova';
+      const voiceModel = (userWithRelations as any).voiceModel || 'gpt-4o-mini-tts';
+      const voiceInstructions = (userWithRelations as any).voiceInstructions || undefined;
+      const elApiKey = (userWithRelations as any).elevenLabsApiKey;
+      const elVoiceId = (userWithRelations as any).elevenLabsVoiceId;
+
+      logger.log(`🎙️ Generando nota de voz (provider=${ttsProvider}, voice=${ttsProvider === 'elevenlabs' ? elVoiceId : voiceId}, baileys=${isBaileysInstance})`, 'TtsService');
+
+      let audioBase64: string | null = null;
+      if (ttsProvider === 'elevenlabs' && elApiKey && elVoiceId) {
+        audioBase64 = await this.ttsService.generateVoiceElevenLabs(fullText, elApiKey, elVoiceId);
+      } else {
+        audioBase64 = await this.ttsService.generateVoiceBase64(fullText, defaultApiKey, voiceId, voiceModel, voiceInstructions);
+      }
+      let audioSent = false;
+      if (audioBase64) {
+        if (isBaileysInstance) {
+          audioSent = await this.baileysSender.sendAudioBase64(instanceName, canonicalRemoteJid, audioBase64);
+        } else {
+          const audioUrl = `${server_url}/message/sendWhatsAppAudio/${instanceName}`;
+          audioSent = await this.nodeSenderService.sendAudioNode(audioUrl, apikey, canonicalRemoteJid, audioBase64);
+        }
+        if (audioSent) {
+          logger.log(`✅ Nota de voz enviada a ${canonicalRemoteJid}`, 'TtsService');
+        } else {
+          logger.warn(`sendAudio falló, enviando como texto`, 'TtsService');
+        }
+      } else {
+        logger.warn(`TTS falló, enviando como texto`, 'TtsService');
+      }
+      if (!audioSent) {
+        for (const msgBlock of msgBlocks) {
+          await sendTextFn(canonicalRemoteJid, msgBlock);
+          await new Promise((res) => setTimeout(res, 300));
+        }
+      }
+    } else {
+      for (const [index, msgBlock] of msgBlocks.entries()) {
+        logger.log(
+          `📤 Enviando bloque ${index + 1}/${msgBlocks.length}`,
+          'NodeSenderService',
+        );
+        await sendTextFn(canonicalRemoteJid, msgBlock);
+        await new Promise((res) => setTimeout(res, 300));
+      }
+    }
+  }
 }

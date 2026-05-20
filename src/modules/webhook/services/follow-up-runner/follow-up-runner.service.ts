@@ -119,7 +119,12 @@ export class FollowUpRunnerService {
     return new Date(`${year}-${month}-${day}T${hours}:${minutes}:00${this.timezoneOffset}`);
   }
 
-  private isDue(seguimiento: Pick<Seguimiento, 'createdAt' | 'time'>) {
+  private isDue(seguimiento: Pick<Seguimiento, 'createdAt' | 'time' | 'followUpAttempt' | 'updatedAt'>) {
+    // Si ya fue intentado, aplicar cooldown de 15 min basado en updatedAt
+    if ((seguimiento.followUpAttempt ?? 0) > 0) {
+      const retryAt = seguimiento.updatedAt.getTime() + 15 * 60 * 1000;
+      if (retryAt > Date.now()) return false;
+    }
     const timeStr = (seguimiento.time ?? '').trim();
     const scheduled = this.parseScheduledTime(timeStr);
     if (scheduled) {
@@ -131,7 +136,7 @@ export class FollowUpRunnerService {
   }
 
   // Recordatorio creado después de su hora programada — nunca tuvo sentido enviarlo.
-  private isBornDead(seguimiento: Pick<Seguimiento, 'createdAt' | 'time'>): boolean {
+  private isBornDead(seguimiento: Pick<Seguimiento, 'createdAt' | 'time' | 'followUpAttempt' | 'updatedAt'>): boolean {
     const scheduled = this.parseScheduledTime((seguimiento.time ?? '').trim());
     if (!scheduled) return false;
     return seguimiento.createdAt.getTime() >= scheduled.getTime();

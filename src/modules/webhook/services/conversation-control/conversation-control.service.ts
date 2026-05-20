@@ -1,6 +1,5 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
-import type { AiAgentService } from 'src/modules/ai-agent/ai-agent.service';
+import { Injectable } from '@nestjs/common';
+import { AiAgentService } from 'src/modules/ai-agent/ai-agent.service';
 import { LoggerService } from 'src/core/logger/logger.service';
 import { SessionService } from 'src/modules/session/session.service';
 import { SeguimientosService } from 'src/modules/seguimientos/seguimientos.service';
@@ -20,11 +19,9 @@ import { buildChatHistorySessionId } from 'src/modules/chat-history/chat-history
 import { executeWorkflow } from 'src/utils/execute-workflow';
 
 @Injectable()
-export class ConversationControlService implements OnModuleInit {
-  private aiAgentService!: AiAgentService;
-
+export class ConversationControlService {
   constructor(
-    private readonly moduleRef: ModuleRef,
+    private readonly aiAgentService: AiAgentService,
     private readonly logger: LoggerService,
     private readonly sessionService: SessionService,
     private readonly seguimientosService: SeguimientosService,
@@ -36,11 +33,6 @@ export class ConversationControlService implements OnModuleInit {
     private readonly chatHistoryService: ChatHistoryService,
     private readonly whatsAppSenderFactory: WhatsAppSenderFactory,
   ) {}
-
-  onModuleInit(): void {
-    const { AiAgentService } = require('../../../ai-agent/ai-agent.service');
-    this.aiAgentService = this.moduleRef.get(AiAgentService, { strict: false });
-  }
 
   private scopedLogger(ctx: {
     userId?: string;

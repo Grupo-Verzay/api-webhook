@@ -1,7 +1,6 @@
-﻿import { Body, Injectable, OnModuleInit } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
+﻿import { Body, Injectable } from '@nestjs/common';
 
-import type { AiAgentService } from '../ai-agent/ai-agent.service';
+import { AiAgentService } from '../ai-agent/ai-agent.service';
 
 import { SessionService } from '../session/session.service';
 import { LoggerService } from 'src/core/logger/logger.service';
@@ -40,16 +39,15 @@ import { ConversationControlService } from './services/conversation-control/conv
 import { SessionOrchestrationService } from './services/session-orchestration/session-orchestration.service';
 
 @Injectable()
-export class WebhookService implements OnModuleInit {
+export class WebhookService {
   public static readonly DELAYCONVERSATION = 10000;
 
-  private aiAgentService!: AiAgentService;
   /** Contactos con un callback de buffer actualmente en ejecución */
   private readonly processingContacts = new Set<string>();
 
   constructor(
-    private readonly moduleRef: ModuleRef,
     private readonly logger: LoggerService,
+    private readonly aiAgentService: AiAgentService,
     private readonly sessionService: SessionService,
     private readonly userService: UserService,
     private readonly instancesService: InstancesService,
@@ -71,11 +69,6 @@ export class WebhookService implements OnModuleInit {
     private readonly conversationControl: ConversationControlService,
     private readonly sessionOrchestration: SessionOrchestrationService,
   ) { }
-
-  onModuleInit(): void {
-    const { AiAgentService } = require('../ai-agent/ai-agent.service');
-    this.aiAgentService = this.moduleRef.get(AiAgentService, { strict: false });
-  }
 
   /**
    * Crea un logger con contexto fijo para prefijar todos los mensajes.

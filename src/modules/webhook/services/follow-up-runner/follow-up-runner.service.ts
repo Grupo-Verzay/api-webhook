@@ -120,9 +120,9 @@ export class FollowUpRunnerService {
   }
 
   private isDue(seguimiento: Pick<Seguimiento, 'createdAt' | 'time' | 'followUpAttempt' | 'updatedAt'>) {
-    // Si ya fue intentado, aplicar cooldown de 15 min basado en updatedAt
+    // Si ya fue intentado, aplicar cooldown de 5 min basado en updatedAt
     if ((seguimiento.followUpAttempt ?? 0) > 0) {
-      const retryAt = seguimiento.updatedAt.getTime() + 15 * 60 * 1000;
+      const retryAt = seguimiento.updatedAt.getTime() + 5 * 60 * 1000;
       if (retryAt > Date.now()) return false;
     }
     const timeStr = (seguimiento.time ?? '').trim();

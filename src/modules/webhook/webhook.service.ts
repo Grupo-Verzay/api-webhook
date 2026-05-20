@@ -576,8 +576,6 @@ export class WebhookService {
       sessionHistoryId, apiMsgUrl, sendTextFn, logger,
     } = params;
 
-    const mergedTextStr = mergedText;
-
     // Guard: verificar agentDisabled ANTES de cualquier modificación de estado
     const agentDisabled = await this.sessionService.getAgentDisabled(
       canonicalRemoteJid,
@@ -596,8 +594,8 @@ export class WebhookService {
     // Para imágenes añadimos el marcador [IMAGEN] para que la IA
     // tenga contexto claro en turnos futuros.
     const msgToSave = messageType === 'imageMessage'
-      ? `[IMAGEN]: ${mergedTextStr}`
-      : mergedTextStr;
+      ? `[IMAGEN]: ${mergedText}`
+      : mergedText;
     await this.chatHistoryService.saveMessage(
       sessionHistoryId,
       msgToSave,
@@ -643,7 +641,7 @@ export class WebhookService {
           !!userWithRelations.enabledLeadStatusClassifier,
         enabledCrmFollowUps: !!userWithRelations.enabledCrmFollowUps,
         sessionDbId: canonicalSession.id,
-        text: mergedTextStr,
+        text: mergedText,
         history: chatHistory,
       });
 
@@ -774,7 +772,7 @@ export class WebhookService {
         instanceName,
         canonicalRemoteJid,
         userId,
-        mergedTextStr,
+        mergedText,
       );
     logger.log(
       `[WORKFLOW_RESUME] continuePausedWorkflow resultado: resumed=${resumed}`,
@@ -797,7 +795,7 @@ export class WebhookService {
       ? null
       : await this.workflowService.findWorkflowByDescriptionMatch(
           userId,
-          mergedTextStr,
+          mergedText,
         );
 
     if (matchedWorkflow) {
@@ -862,8 +860,8 @@ export class WebhookService {
     // Para imágenes: usamos el marcador [IMAGEN] en el input para que la IA
     // entienda que viene de una imagen (ya guardado así en el historial).
     const aiInput = messageType === 'imageMessage'
-      ? `[IMAGEN]: ${mergedTextStr}`
-      : mergedTextStr;
+      ? `[IMAGEN]: ${mergedText}`
+      : mergedText;
 
     const dataProccessInput = {
       input: aiInput,
@@ -927,16 +925,16 @@ export class WebhookService {
     }
 
     const isBaileysInstance = !server_url;
-    const voiceEnabled = !!(userWithRelations as any).enableVoiceResponses && !!defaultApiKey;
+    const voiceEnabled = !!userWithRelations.enableVoiceResponses && !!defaultApiKey;
 
     if (voiceEnabled) {
       const fullText = msgBlocks.join('\n\n');
-      const ttsProvider = (userWithRelations as any).ttsProvider || 'openai';
-      const voiceId = (userWithRelations as any).voiceId || 'nova';
-      const voiceModel = (userWithRelations as any).voiceModel || 'gpt-4o-mini-tts';
-      const voiceInstructions = (userWithRelations as any).voiceInstructions || undefined;
-      const elApiKey = (userWithRelations as any).elevenLabsApiKey;
-      const elVoiceId = (userWithRelations as any).elevenLabsVoiceId;
+      const ttsProvider = userWithRelations.ttsProvider || 'openai';
+      const voiceId = userWithRelations.voiceId || 'nova';
+      const voiceModel = userWithRelations.voiceModel || 'gpt-4o-mini-tts';
+      const voiceInstructions = userWithRelations.voiceInstructions || undefined;
+      const elApiKey = userWithRelations.elevenLabsApiKey;
+      const elVoiceId = userWithRelations.elevenLabsVoiceId;
 
       logger.log(`🎙️ Generando nota de voz (provider=${ttsProvider}, voice=${ttsProvider === 'elevenlabs' ? elVoiceId : voiceId}, baileys=${isBaileysInstance})`, 'TtsService');
 

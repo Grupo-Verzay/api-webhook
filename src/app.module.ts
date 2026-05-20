@@ -10,8 +10,10 @@ import { LeadFunnelModule } from './modules/lead-funnel/lead-funnel.module';
 import { RegistrosModule } from './modules/registros/registros.module';
 import { ChatHistoryModule } from './modules/chat-history/chat-history.module';
 import { GoogleSheetsModule } from './modules/google-sheets/google-sheets.module';
+import { HealthController } from './health/health.controller';
 
 @Module({
+  controllers: [HealthController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true, // Así puedes usar ConfigService en cualquier parte

@@ -54,42 +54,6 @@ export class NodeSenderService {
     }
   }
 
-  // async sendTextNode(url: string, apikey: string, remoteJid: string, text: string) {
-  //   try {
-  //     const bloques = text
-  //       .split('\n\n')
-  //       .map((b) => b.trim())
-  //       .filter((b) => b.length > 0);
-
-  //     if (bloques.length === 0) {
-  //       this.logger.warn(`El mensaje está vacío después de procesar bloques para ${remoteJid}`, 'NodeSenderService');
-  //       return;
-  //     }
-
-  //     for (const [index, bloque] of bloques.entries()) {
-  //       const body = {
-  //         number: remoteJid,
-  //         delay: 1200,
-  //         text: bloque,
-  //       };
-
-  //       this.logger.log(`Enviando bloque ${index + 1}/${bloques.length} a ${remoteJid}: "${bloque}"`, 'NodeSenderService');
-
-  //       const response = await firstValueFrom(
-  //         this.http.post(url, body, {
-  //           headers: { 'Content-Type': 'application/json', apikey },
-  //         }),
-  //       );
-
-  //       this.logger.log(`Respuesta bloque ${index + 1}: ${JSON.stringify(response.data)}`, 'NodeSenderService');
-
-  //       await new Promise((res) => setTimeout(res, 1200)); // delay entre mensajes
-  //     }
-  //   } catch (error) {
-  //     this.logger.error(`Error enviando texto a ${remoteJid}`, error?.response?.data || error.message, 'NodeSenderService');
-  //   }
-  // }
-
   /**
    * Envía un nodo multimedia (imagen, video o documento) y registra la respuesta.
    */

@@ -3,6 +3,7 @@ import * as cheerio from 'cheerio';
 
 import { Readable } from 'stream';
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import { CrmFollowUpStatus, LeadStatus } from '@prisma/client';
 import { LoggerService } from 'src/core/logger/logger.service';
 import { PromptService } from '../prompt/prompt.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
@@ -63,7 +64,7 @@ const COUNTRY_TZ_MAP: [string, string][] = [
 @Injectable()
 export class AiAgentService {
   // Cliente LLM (LangChain / OpenAI envuelto)
-  private aiClient: any = null;
+  private aiClient: BaseChatModel | null = null;
 
   // Nombre del flujo de bienvenida inicial
   readonly initWorkflowName: string = 'BIENVENIDA';
@@ -178,13 +179,6 @@ export class AiAgentService {
       apikeyOpenAi.startsWith('sk-') &&
       apikeyOpenAi.length >= 40
     );
-  }
-
-  /**
-   * Ejemplo tonto de función auxiliar (no usada).
-   */
-  private async getWeather(location: string): Promise<string> {
-    return `Soleado y 25°C en ${location}`;
   }
 
   /**
@@ -1458,7 +1452,7 @@ export class AiAgentService {
         await this.prisma.session.update({
           where: { id: sessionIdNum },
           data: {
-            leadStatus: 'DESCARTADO' as any,
+            leadStatus: LeadStatus.DESCARTADO,
             leadStatusReason: motivo.slice(0, 500),
             leadStatusUpdatedAt: new Date(),
             agentDisabled: true,
@@ -1467,12 +1461,12 @@ export class AiAgentService {
 
         // 2. Cancelar follow-ups IA (CrmFollowUp)
         const cancelledCrm = await this.prisma.crmFollowUp.updateMany({
-          where: { sessionId: sessionIdNum, status: 'PENDING' as any },
-          data: { status: 'CANCELLED' as any, cancelledAt: new Date() },
+          where: { sessionId: sessionIdNum, status: CrmFollowUpStatus.PENDING },
+          data: { status: CrmFollowUpStatus.CANCELLED, cancelledAt: new Date() },
         });
 
         // 3. Cancelar seguimientos de flujos (Seguimiento) por remoteJid
-        const cancelledSeg = await (this.prisma as any).seguimiento.updateMany({
+        const cancelledSeg = await this.prisma.seguimiento.updateMany({
           where: { remoteJid, followUpStatus: 'pending' },
           data: { followUpStatus: 'cancelled' },
         });

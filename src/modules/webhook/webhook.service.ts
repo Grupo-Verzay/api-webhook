@@ -43,25 +43,15 @@ import { TtsService } from '../ai-agent/services/tts/tts.service';
 import { AutoAssignService } from './services/auto-assign/auto-assign.service';
 import { WhatsAppSenderFactory } from '../whatsapp/whatsapp-sender.factory';
 import { BaileysSenderAdapter } from '../whatsapp/adapters/baileys/baileys-sender.adapter';
+import { MessageDeduplicationService } from './services/message-deduplication/message-deduplication.service';
 
 @Injectable()
 export class WebhookService implements OnModuleInit {
   public static readonly DELAYCONVERSATION = 10000;
 
   private aiAgentService!: AiAgentService;
-  private readonly processedMsgIds = new Map<string, number>();
   /** Contactos con un callback de buffer actualmente en ejecución */
   private readonly processingContacts = new Set<string>();
-  /**
-   * Deduplicación de respuestas salientes: evita enviar el mismo contenido
-   * al mismo contacto en menos de OUTGOING_DEDUPE_TTL_MS milisegundos.
-   * Clave: `${instanceName}:${remoteJid}` → hash simple del último texto enviado + timestamp.
-   */
-  private readonly outgoingResponseCache = new Map<
-    string,
-    { hash: string; ts: number }
-  >();
-  private static readonly OUTGOING_DEDUPE_TTL_MS = 10 * 60_000; // 10 min
 
   constructor(
     private readonly moduleRef: ModuleRef,
@@ -88,75 +78,12 @@ export class WebhookService implements OnModuleInit {
     private readonly autoAssignService: AutoAssignService,
     private readonly whatsAppSenderFactory: WhatsAppSenderFactory,
     private readonly baileysSender: BaileysSenderAdapter,
+    private readonly messageDeduplication: MessageDeduplicationService,
   ) { }
 
   onModuleInit(): void {
     const { AiAgentService } = require('../ai-agent/ai-agent.service');
     this.aiAgentService = this.moduleRef.get(AiAgentService, { strict: false });
-  }
-
-  /**
-   * Genera un hash liviano (no criptográfico) de un string para comparar contenido.
-   */
-  private simpleHash(text: string): string {
-    let h = 0;
-    for (let i = 0; i < text.length; i++) {
-      h = (Math.imul(31, h) + text.charCodeAt(i)) | 0;
-    }
-    return h.toString(36);
-  }
-
-  /**
-   * Verifica si ya enviamos esta respuesta (o una igual) a este contacto recientemente.
-   * Devuelve true si debe omitirse (duplicado), false si es nueva y la registra.
-   */
-  private isDuplicateOutgoingResponse(
-    instanceName: string,
-    remoteJid: string,
-    responseText: string,
-  ): boolean {
-    const key = `${instanceName}:${remoteJid}`;
-    const hash = this.simpleHash(responseText.trim());
-    const now = Date.now();
-    const ttl = WebhookService.OUTGOING_DEDUPE_TTL_MS;
-
-    // Limpiar entradas expiradas
-    for (const [k, v] of this.outgoingResponseCache.entries()) {
-      if (now - v.ts > ttl) this.outgoingResponseCache.delete(k);
-    }
-
-    const cached = this.outgoingResponseCache.get(key);
-    if (cached && cached.hash === hash && now - cached.ts < ttl) {
-      return true;
-    }
-
-    this.outgoingResponseCache.set(key, { hash, ts: now });
-    return false;
-  }
-
-  private isDuplicateMessage(key: string, ttlMs = 120000): boolean {
-    const now = Date.now();
-
-    // cleanup simple
-    for (const [k, ts] of this.processedMsgIds.entries()) {
-      if (now - ts > ttlMs) this.processedMsgIds.delete(k);
-    }
-
-    const last = this.processedMsgIds.get(key);
-    if (last && now - last < ttlMs) return true;
-
-    this.processedMsgIds.set(key, now);
-    return false;
-  }
-
-  private getMessageId(data: any): string {
-    return (
-      data?.key?.id ??
-      data?.key?.msgId ?? // puede venir en runtime aunque el type no lo tenga
-      data?.messageId ??
-      data?.message?.messageId ??
-      ''
-    );
   }
 
   /**
@@ -203,10 +130,10 @@ export class WebhookService implements OnModuleInit {
   async processWebhook(@Body() body: WebhookBodyDto): Promise<void> {
     const { instance: instanceName, server_url, apikey, data } = body;
 
-    const msgId = this.getMessageId(data);
+    const msgId = this.messageDeduplication.getMessageId(data);
     if (msgId) {
       const dedupeKey = `${instanceName}:${msgId}`;
-      if (this.isDuplicateMessage(dedupeKey)) {
+      if (this.messageDeduplication.isDuplicateMessage(dedupeKey)) {
         this.logger.warn(
           `[WEBHOOK] DEDUPE: mensaje duplicado ignorado. key=${dedupeKey}`,
         );
@@ -862,7 +789,7 @@ export class WebhookService implements OnModuleInit {
           // Deduplicación de respuesta saliente: evita reenviar el mismo
           // contenido al mismo contacto en menos de OUTGOING_DEDUPE_TTL_MS.
           if (
-            this.isDuplicateOutgoingResponse(
+            this.messageDeduplication.isDuplicateOutgoingResponse(
               instanceName,
               canonicalRemoteJid,
               aiResponse,

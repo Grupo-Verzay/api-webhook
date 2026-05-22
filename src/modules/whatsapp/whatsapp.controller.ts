@@ -105,71 +105,16 @@ export class WhatsAppController {
     return { message: `Sesión "${instanceName}" detenida.` };
   }
 
-  /** POST /whatsapp/baileys/run-workflow/:instanceName
-   *  Ejecuta un flujo (workflow) enviando sus nodos via Baileys. */
-  @Post('run-workflow/:instanceName')
-  async runWorkflow(
-    @Param('instanceName') instanceName: string,
-    @Body() body: { remoteJid: string; workflowId: string },
-    @Headers() headers: Record<string, string>,
-  ) {
-    this.authorize(headers);
-    const { remoteJid, workflowId } = body;
-    if (!remoteJid || !workflowId) throw new BadRequestException('remoteJid y workflowId son requeridos.');
-
-    const nodes = await this.prisma.workflowNode.findMany({
-      where: { workflowId },
-      orderBy: { order: 'asc' },
-    });
-
-    let sent = 0;
-    for (const node of nodes) {
-      const tipo = (node.tipo ?? '').trim().toLowerCase();
-
-      if (tipo === 'text') {
-        const text = (node.message ?? '').trim();
-        if (text) {
-          await this.sender.sendText(instanceName, remoteJid, text);
-          sent++;
-        }
-      } else if (tipo === 'audio') {
-        const url = (node.url as string | null)?.trim();
-        if (url) {
-          await this.sender.sendAudio(instanceName, remoteJid, url);
-          sent++;
-        }
-      } else if (['image', 'video', 'document'].includes(tipo)) {
-        const url = (node.url as string | null)?.trim();
-        if (url) {
-          await this.sender.sendMedia(instanceName, remoteJid, tipo, (node.message ?? '').trim(), url);
-          sent++;
-        }
-      }
-      // Otros tipos (delay, intention, seguimiento, etc.) se omiten en envío manual
-    }
-
-    return { ok: true, sent };
-  }
-
   /** POST /whatsapp/baileys/send/:instanceName
-   *  Envía texto o audio desde la UI del chat.
-   *  Body: { remoteJid, text } para texto  |  { remoteJid, audioUrl } para audio */
+   *  Envía un mensaje de texto desde la UI del chat. */
   @Post('send/:instanceName')
   async sendMessage(
     @Param('instanceName') instanceName: string,
-    @Body() body: { remoteJid: string; text?: string; audioUrl?: string },
+    @Body() body: { remoteJid: string; text: string },
     @Headers() headers: Record<string, string>,
   ) {
     this.authorize(headers);
-    if (!body?.remoteJid) throw new BadRequestException('remoteJid es requerido.');
-
-    if (body.audioUrl) {
-      const ok = await this.sender.sendAudio(instanceName, body.remoteJid, body.audioUrl);
-      if (!ok) throw new BadRequestException(`Sin sesión activa para "${instanceName}".`);
-      return { ok: true };
-    }
-
-    if (!body.text) throw new BadRequestException('text o audioUrl son requeridos.');
+    if (!body?.remoteJid || !body?.text) throw new BadRequestException('remoteJid y text son requeridos.');
     const ok = await this.sender.sendText(instanceName, body.remoteJid, body.text);
     if (!ok) throw new BadRequestException(`Sin sesión activa para "${instanceName}".`);
     return { ok: true };

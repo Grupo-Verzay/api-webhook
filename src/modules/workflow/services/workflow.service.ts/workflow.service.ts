@@ -458,7 +458,15 @@ export class WorkflowService implements OnModuleInit {
   }
 
   private resolveNodeText(text: string | null | undefined, pushName?: string): string {
-    return (text ?? '').replace(/\{nombre\}/gi, pushName ?? '');
+    if (!text) return '';
+    const name = (pushName ?? '').trim();
+    const isValidName = name && name.toLowerCase() !== 'desconocido';
+    if (isValidName) {
+      return text.replace(/\{nombre\}/gi, name);
+    }
+    // Sin nombre: eliminar {nombre} + coma/espacio que le siguen y capitalizar
+    const cleaned = text.replace(/\{nombre\}[,\s]*/gi, '').trim();
+    return cleaned.length > 0 ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1) : cleaned;
   }
 
   private async sendNodeCommon(

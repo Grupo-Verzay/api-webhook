@@ -119,7 +119,7 @@ export class WhatsAppController {
 
     const nodes = await this.prisma.workflowNode.findMany({
       where: { workflowId },
-      orderBy: { orden: 'asc' },
+      orderBy: { order: 'asc' },
     });
 
     let sent = 0;

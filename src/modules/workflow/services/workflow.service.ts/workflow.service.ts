@@ -1297,6 +1297,13 @@ export class WorkflowService implements OnModuleInit {
     }
   }
 
+  async getWorkflowNodes(workflowId: string) {
+    return this.prisma.workflowNode.findMany({
+      where: { workflowId },
+      orderBy: { order: 'asc' },
+    });
+  }
+
   private parseDescriptionConfig(
     description: string | null,
   ): { matchType: 'Contiene' | 'Exacta'; keywords: string[] } | null {

@@ -273,33 +273,53 @@ export class ConversationControlService {
           instanceName,
         );
 
-        const sessionHistoryId = buildChatHistorySessionId(instanceName, remoteJid);
-        const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
+        if (!server_url) {
+          // Baileys: enviar nodos directamente sin Evolution API
+          const sender = this.whatsAppSenderFactory.getSenderSync('baileys');
+          const nodes = await this.workflowService.getWorkflowNodes(matchedReply.workflowId);
+          for (const node of nodes) {
+            const tipo = (node.tipo ?? '').trim().toLowerCase();
+            if (tipo === 'text') {
+              const text = (node.message ?? '').trim();
+              if (text) await sender.sendText(instanceName, remoteJid, text).catch(() => {});
+            } else if (tipo === 'audio') {
+              const url = (node.url ?? '').trim();
+              if (url) await sender.sendAudio(instanceName, remoteJid, url).catch(() => {});
+            } else if (['image', 'video', 'document'].includes(tipo)) {
+              const url = (node.url ?? '').trim();
+              if (url) await sender.sendMedia(instanceName, remoteJid, tipo, (node.message ?? '').trim(), url).catch(() => {});
+            }
+          }
+          logger.log(`Flujo Baileys ejecutado: ${workflow.name} (${nodes.length} nodos)`);
+        } else {
+          const sessionHistoryId = buildChatHistorySessionId(instanceName, remoteJid);
+          const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
 
-        await executeWorkflow({
-          workflowService: this.workflowService,
-          nodeSenderService: this.nodeSenderService,
-          chatHistoryService: this.chatHistoryService,
-          aiAgentService: this.aiAgentService,
-          logger,
+          await executeWorkflow({
+            workflowService: this.workflowService,
+            nodeSenderService: this.nodeSenderService,
+            chatHistoryService: this.chatHistoryService,
+            aiAgentService: this.aiAgentService,
+            logger,
 
-          workflowName: workflow?.name ?? '',
-          server_url,
-          apikey,
-          instanceName,
-          remoteJid,
-          userId,
+            workflowName: workflow?.name ?? '',
+            server_url,
+            apikey,
+            instanceName,
+            remoteJid,
+            userId,
 
-          sessionHistoryId,
-          apiMsgUrl,
+            sessionHistoryId,
+            apiMsgUrl,
 
-          apikeyOpenAi: defaultApiKey ?? '',
-          model,
-          provider,
+            apikeyOpenAi: defaultApiKey ?? '',
+            model,
+            provider,
 
-          muteAgentResponses: !!userWithRelations.muteAgentResponses,
-          sendTextFn: this.makeSendTextFn(instanceName, server_url, apikey),
-        });
+            muteAgentResponses: !!userWithRelations.muteAgentResponses,
+            sendTextFn: this.makeSendTextFn(instanceName, server_url, apikey),
+          });
+        }
 
         await this.sessionService.updateSessionStatus(
           remoteJid,

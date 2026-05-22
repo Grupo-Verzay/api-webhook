@@ -2661,7 +2661,7 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
 
     // Unir bloques y cortar línea a línea antes de cualquier instrucción interna (*ETIQUETA:)
     const lines = reglaBlocks.join('\n\n').split('\n');
-    const cutAt = lines.findIndex(l => /^\*[A-ZÁÉÍÓÚÜÑ][^*\n]*:/.test(l.trim()));
+    const cutAt = lines.findIndex(l => /^\*[A-ZÁÉÍÓÚÜÑ][^*\n]*:/.test(l.replace(/^>\s*/, '').trim()));
     const sendable = (cutAt >= 0 ? lines.slice(0, cutAt) : lines).join('\n').trim();
     return sendable || null;
   }

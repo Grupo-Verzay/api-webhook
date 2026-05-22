@@ -672,21 +672,7 @@ export class WebhookService {
             sessionHistoryId,
             bienvenidaWorkflow.name,
           );
-
-        // Segundo guard: si el flujo fue enviado vía quick reply, registerWorkflow
-        // guarda en session.flujos pero NO en n8nChatHistory (hasIntentionBeenExecuted=false).
-        // Revisamos session.flujos como respaldo para evitar re-ejecución.
-        let bienvenidaInSession = false;
-        try {
-          const flujos: { id: string; name: string }[] = JSON.parse(
-            canonicalSession?.flujos ?? '[]',
-          );
-          bienvenidaInSession = Array.isArray(flujos) && flujos.some(
-            (f) => f.name?.toLowerCase() === bienvenidaWorkflow.name.toLowerCase(),
-          );
-        } catch { /* flujos malformado → ignorar */ }
-
-        if (alreadyExecuted || bienvenidaInSession) {
+        if (alreadyExecuted) {
           logger.log(
             `[BIENVENIDA] Flujo "${bienvenidaWorkflow.name}" ya ejecutado previamente → omitiendo re-ejecución.`,
             'WebhookService',

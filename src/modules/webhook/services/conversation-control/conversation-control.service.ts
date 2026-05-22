@@ -338,7 +338,7 @@ export class ConversationControlService {
         await this.sessionService.registerWorkflow(
           { id: workflow.id, name: workflow.name },
           remoteJid,
-          instanceId,
+          instanceName,
           userId,
         );
 

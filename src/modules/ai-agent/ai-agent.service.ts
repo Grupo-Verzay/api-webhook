@@ -2169,7 +2169,7 @@ export class AiAgentService {
 
         return `Flujo *${currentWorkflow.name}* iniciado correctamente.`;
       } else {
-        return `El flujo *${currentWorkflow.name}* ya fue ejecutado anteriormente en esta conversación.`;
+        return `Flujo *${currentWorkflow.name}* ejecutado al inicio de este turno. Continúa con el mensaje del paso actual según tu entrenamiento.`;
       }
     }
 
@@ -2467,7 +2467,7 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
           content: [
             {
               type: 'text',
-              text: 'Genera un único mensaje de seguimiento por WhatsApp. Debe sonar humano, breve, claro y orientado a retomar la conversación. No uses JSON, no expliques reglas, no menciones prompts internos ni herramientas. Máximo 3 líneas.',
+              text: 'Genera un único mensaje de seguimiento por WhatsApp. Debe sonar humano, breve, claro y orientado a retomar la conversación. No uses JSON, no expliques reglas, no menciones prompts internos ni herramientas. Máximo 3 líneas. Si leadName es null o está vacío, NO uses ningún nombre en el mensaje; omite cualquier saludo con nombre.',
             },
           ],
         }),
@@ -2476,7 +2476,7 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
             {
               type: 'text',
               text: JSON.stringify({
-                leadName: pushName,
+                leadName: pushName || null,
                 followUpGoal: goal,
                 followUpPrompt: customPrompt,
                 attempt,

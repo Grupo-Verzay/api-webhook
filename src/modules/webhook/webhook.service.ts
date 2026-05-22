@@ -667,42 +667,61 @@ export class WebhookService {
         'WebhookService',
       );
       if (bienvenidaWorkflow) {
-        logger.log(
-          `[BIENVENIDA] Primera conexión → ejecutando flujo "${bienvenidaWorkflow.name}"`,
-          'WebhookService',
-        );
-        await this.chatHistoryService.registerExecutedIntention(
-          sessionHistoryId,
-          bienvenidaWorkflow.name,
-          'intention',
-        );
-        await this.sessionService.registerWorkflow(
-          { id: bienvenidaWorkflow.id, name: bienvenidaWorkflow.name },
-          canonicalRemoteJid,
-          instanceName,
-          userId,
-        );
-        await executeWorkflow({
-          workflowService: this.workflowService,
-          nodeSenderService: this.nodeSenderService,
-          chatHistoryService: this.chatHistoryService,
-          aiAgentService: this.aiAgentService,
-          logger,
-          workflowName: bienvenidaWorkflow.name,
-          server_url,
-          apikey,
-          instanceName,
-          remoteJid: canonicalRemoteJid,
-          userId,
-          sessionHistoryId,
-          apiMsgUrl,
-          apikeyOpenAi: defaultApiKey ?? '',
-          model,
-          provider,
-          muteAgentResponses: userWithRelations.muteAgentResponses,
-          sendTextFn,
-        });
-        // Sin return: la IA continúa y envía la pregunta del Paso 1
+        const alreadyExecuted =
+          await this.chatHistoryService.hasIntentionBeenExecuted(
+            sessionHistoryId,
+            bienvenidaWorkflow.name,
+          );
+        if (alreadyExecuted) {
+          logger.log(
+            `[BIENVENIDA] Flujo "${bienvenidaWorkflow.name}" ya ejecutado previamente → omitiendo re-ejecución.`,
+            'WebhookService',
+          );
+          // Inyectamos contexto para que el modelo de IA no reinicie desde el Paso 1.
+          // Sin esto el AI vería history.length=1 y asumiría current_step=1 (GATE abierto).
+          await this.chatHistoryService.saveMessage(
+            sessionHistoryId,
+            '[SISTEMA]: Este usuario ya completó el flujo de bienvenida en una conversación previa. Continúa la conversación en el punto donde se quedó, sin repetir presentaciones ni preguntar datos ya recopilados.',
+            'ai',
+          );
+        } else {
+          logger.log(
+            `[BIENVENIDA] Primera conexión → ejecutando flujo "${bienvenidaWorkflow.name}"`,
+            'WebhookService',
+          );
+          await this.chatHistoryService.registerExecutedIntention(
+            sessionHistoryId,
+            bienvenidaWorkflow.name,
+            'intention',
+          );
+          await this.sessionService.registerWorkflow(
+            { id: bienvenidaWorkflow.id, name: bienvenidaWorkflow.name },
+            canonicalRemoteJid,
+            instanceName,
+            userId,
+          );
+          await executeWorkflow({
+            workflowService: this.workflowService,
+            nodeSenderService: this.nodeSenderService,
+            chatHistoryService: this.chatHistoryService,
+            aiAgentService: this.aiAgentService,
+            logger,
+            workflowName: bienvenidaWorkflow.name,
+            server_url,
+            apikey,
+            instanceName,
+            remoteJid: canonicalRemoteJid,
+            userId,
+            sessionHistoryId,
+            apiMsgUrl,
+            apikeyOpenAi: defaultApiKey ?? '',
+            model,
+            provider,
+            muteAgentResponses: userWithRelations.muteAgentResponses,
+            sendTextFn,
+          });
+          // Sin return: la IA continúa y envía la pregunta del Paso 1
+        }
       }
     }
 

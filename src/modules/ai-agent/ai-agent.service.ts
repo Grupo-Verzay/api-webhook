@@ -2620,8 +2620,16 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
 
   /**
    * Extrae el texto de REGLA/PARÁMETRO del paso que contiene "Ejecuta el flujo 'flowName'".
-   * Busca la línea de Ejecutar Flujo en el prompt completo y luego busca hacia adelante
-   * la REGLA/PARÁMETRO más cercana, acotada al mismo paso (antes del siguiente flujo).
+   *
+   * El formato real del prompt (generado por markdownBuilder.ts) es:
+   *   > **Función**: Ejecuta el flujo 'FLOWNAME'
+   *   \n\n
+   *   * **Comportamiento obligatorio:** ...(flowBehaviorText)
+   *   \n\n
+   *   [texto raw de REGLA configurado por el usuario]
+   *
+   * Los pasos están separados por "\n\n---\n\n".
+   * El texto de REGLA es el bloque que viene DESPUÉS del flowBehaviorText ("* **Comportamiento…").
    */
   private extractReglaFromPrompt(prompt: string, flowName: string): string | null {
     const escaped = flowName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -2631,22 +2639,26 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
 
     const afterFlow = prompt.slice(flowMatch.index + flowMatch[0].length);
 
-    // Acota la búsqueda: no pasar al siguiente "Ejecuta el flujo" (otro paso)
-    const nextFlowIdx = afterFlow.search(/Ejecuta el flujo ['"]?\w/i);
-    const searchIn = nextFlowIdx > 0 ? afterFlow.slice(0, nextFlowIdx) : afterFlow;
+    // Acotar al paso actual: termina en el próximo separador "\n\n---\n\n" o encabezado "## "
+    const stepSepIdx = afterFlow.indexOf('\n\n---\n\n');
+    const sectionHeadIdx = afterFlow.search(/\n#{1,3}\s/);
+    let endIdx = afterFlow.length;
+    if (stepSepIdx > 0) endIdx = Math.min(endIdx, stepSepIdx);
+    if (sectionHeadIdx > 0) endIdx = Math.min(endIdx, sectionHeadIdx);
+    const searchIn = afterFlow.slice(0, endIdx);
 
-    // Busca REGLA/PARÁMETRO hacia adelante (con o sin acento)
-    const reglaRegex = /\*\*REGLA\/PAR[AÁ]METRO:\*\*\s+([\s\S]+?)(?=\n-\s*\(|\n#{1,6}|\s*$)/;
-    const match = reglaRegex.exec(searchIn);
-    if (match?.[1]) return match[1].trim();
+    // Dividir en bloques separados por líneas en blanco
+    const blocks = searchIn.split(/\n\n+/).map(b => b.trim()).filter(Boolean);
 
-    // También busca hacia atrás (si el usuario puso la REGLA antes del flujo en el mismo paso)
-    const beforeFlow = prompt.slice(0, flowMatch.index);
-    const prevFlowIdx = beforeFlow.search(/Ejecuta el flujo ['"]?\w/i);
-    const searchBefore = prevFlowIdx >= 0 ? beforeFlow.slice(prevFlowIdx) : beforeFlow;
-    const matchBefore = reglaRegex.exec(searchBefore);
-    if (matchBefore?.[1]) return matchBefore[1].trim();
+    // El flowBehaviorText empieza con "* **Comportamiento"
+    // La REGLA está en los bloques que siguen a ese bloque
+    const behaviorIdx = blocks.findIndex(b => b.startsWith('* **Comportamiento'));
+    const startIdx = behaviorIdx >= 0 ? behaviorIdx + 1 : 0;
+    const reglaBlocks = blocks.slice(startIdx).filter(
+      b => !b.startsWith('#') && !b.startsWith('* **'),
+    );
 
+    if (reglaBlocks.length > 0) return reglaBlocks.join('\n\n');
     return null;
   }
 

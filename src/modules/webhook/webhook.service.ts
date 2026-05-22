@@ -724,19 +724,15 @@ export class WebhookService {
             // sin postPromptBuilder → executeWorkflow no llama a la IA
           });
 
-          // Enviar REGLA/PARÁMETRO directamente sin pasar por la IA
+          // Inyectar contexto para que la IA responda con la REGLA/PARÁMETRO del paso
           if (!userWithRelations.muteAgentResponses) {
-            const regla = await this.aiAgentService.getReglaForFlow(userId, bienvenidaWorkflow.name);
-            logger.log(
-              `[BIENVENIDA] REGLA extraída: "${regla?.substring(0, 80) ?? 'null'}"`,
-              'WebhookService',
+            await this.chatHistoryService.saveMessage(
+              sessionHistoryId,
+              `[SISTEMA]: El flujo "${bienvenidaWorkflow.name}" acaba de ejecutarse. Responde únicamente con el mensaje de Regla/parámetro del paso correspondiente, sin texto adicional.`,
+              'ai',
             );
-            if (regla) {
-              await this.chatHistoryService.saveMessage(sessionHistoryId, regla, 'ia');
-              await sendTextFn(canonicalRemoteJid, regla);
-            }
           }
-          return; // BIENVENIDA + su REGLA ya fueron manejados; no ejecutar IA normal ni embudo este turno
+          // bienvenidaJustExecuted=true ya bloquea el embudo; la IA corre abajo y envía la REGLA
         }
       }
     }
@@ -788,17 +784,13 @@ export class WebhookService {
               // sin postPromptBuilder → executeWorkflow no llama a la IA
             });
 
-            // Enviar REGLA/PARÁMETRO directamente sin IA ni [SISTEMA] en historial
+            // Inyectar contexto para que la IA responda con la REGLA/PARÁMETRO del paso
             if (!userWithRelations.muteAgentResponses) {
-              const regla = await this.aiAgentService.getReglaForFlow(userId, funnelFlow.name);
-              logger.log(
-                `[EMBUDO] REGLA extraída para "${funnelFlow.name}": "${regla?.substring(0, 80) ?? 'null'}"`,
-                'WebhookService',
+              await this.chatHistoryService.saveMessage(
+                sessionHistoryId,
+                `[SISTEMA]: El flujo "${funnelFlow.name}" acaba de ejecutarse. Responde únicamente con el mensaje de Regla/parámetro del paso correspondiente, sin texto adicional.`,
+                'ai',
               );
-              if (regla) {
-                await this.chatHistoryService.saveMessage(sessionHistoryId, regla, 'ia');
-                await sendTextFn(canonicalRemoteJid, regla);
-              }
             }
             funnelStepExecuted = true;
           }
@@ -807,9 +799,7 @@ export class WebhookService {
       }
     }
 
-    if (funnelStepExecuted) {
-      return; // Embudo + REGLA manejados; no ejecutar IA normal este turno
-    }
+    // funnelStepExecuted: la IA corre igualmente para responder con la REGLA/PARÁMETRO del paso
 
     // Las imágenes también pueden reanudar flujos pausados (ej: paso que pide comprobante).
     // continuePausedWorkflow solo actúa si hay un estado 'waiting' activo → seguro para imágenes.

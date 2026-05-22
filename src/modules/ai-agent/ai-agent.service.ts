@@ -2654,11 +2654,23 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
     // La REGLA está en los bloques que siguen a ese bloque
     const behaviorIdx = blocks.findIndex(b => b.startsWith('* **Comportamiento'));
     const startIdx = behaviorIdx >= 0 ? behaviorIdx + 1 : 0;
-    const reglaBlocks = blocks.slice(startIdx).filter(
+    const rawBlocks = blocks.slice(startIdx).filter(
       b => !b.startsWith('#') && !b.startsWith('* **'),
     );
 
-    if (reglaBlocks.length > 0) return reglaBlocks.join('\n\n');
+    // Cortar antes del primer bloque de control (no emitir al usuario)
+    const sendableBlocks: string[] = [];
+    for (const b of rawBlocks) {
+      if (
+        b.startsWith('*NOTA') ||
+        b.startsWith('*TRANSICIÓN') ||
+        b.startsWith('*Transición') ||
+        b.includes('NO EMITIR')
+      ) break;
+      sendableBlocks.push(b);
+    }
+
+    if (sendableBlocks.length > 0) return sendableBlocks.join('\n\n');
     return null;
   }
 

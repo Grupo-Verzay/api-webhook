@@ -84,4 +84,84 @@ export class GoogleSheetsService implements OnModuleInit {
       return { success: false, error: msg };
     }
   }
+
+  async updateRow(
+    spreadsheetId: string,
+    sheetName: string,
+    searchField: string,
+    searchValue: string,
+    updates: Record<string, string>,
+  ): Promise<{ success: boolean; updatedRow?: number; error?: string }> {
+    if (!this.sheets) {
+      return { success: false, error: 'Google Sheets no inicializado. Revisa GOOGLE_SHEETS_CREDENTIALS.' };
+    }
+
+    try {
+      // 1. Leer encabezados
+      const headersRes = await this.sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${sheetName}!1:1`,
+      });
+      const headers: string[] = headersRes.data.values?.[0] ?? [];
+      if (!headers.length) {
+        return { success: false, error: `No se encontraron encabezados en la hoja "${sheetName}".` };
+      }
+
+      const headersUpper = headers.map((h) => h.toUpperCase());
+      const searchColIdx = headersUpper.indexOf(searchField.toUpperCase());
+      if (searchColIdx === -1) {
+        return { success: false, error: `Columna "${searchField}" no encontrada en la hoja.` };
+      }
+
+      // 2. Leer todas las filas para encontrar la que coincide
+      const dataRes = await this.sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${sheetName}!A:Z`,
+      });
+      const rows: string[][] = dataRes.data.values ?? [];
+
+      const rowIdx = rows.findIndex(
+        (row, i) => i > 0 && (row[searchColIdx] ?? '').toString().trim().toLowerCase() === searchValue.trim().toLowerCase(),
+      );
+
+      if (rowIdx === -1) {
+        return { success: false, error: `No se encontró ninguna fila donde ${searchField} = "${searchValue}".` };
+      }
+
+      // 3. Construir actualizaciones por celda
+      const sheetRowNumber = rowIdx + 1; // 1-indexed
+      const requests: Promise<any>[] = [];
+
+      for (const [field, value] of Object.entries(updates)) {
+        const colIdx = headersUpper.indexOf(field.toUpperCase());
+        if (colIdx === -1) continue;
+        const colLetter = String.fromCharCode(65 + colIdx);
+        requests.push(
+          this.sheets.spreadsheets.values.update({
+            spreadsheetId,
+            range: `${sheetName}!${colLetter}${sheetRowNumber}`,
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: [[value]] },
+          }),
+        );
+      }
+
+      if (!requests.length) {
+        return { success: false, error: 'Ningún campo de actualización coincide con los encabezados de la hoja.' };
+      }
+
+      await Promise.all(requests);
+
+      this.logger.log(
+        `[GoogleSheets] Fila ${sheetRowNumber} actualizada en "${sheetName}": ${JSON.stringify(updates)}`,
+        'GoogleSheetsService',
+      );
+
+      return { success: true, updatedRow: sheetRowNumber };
+    } catch (err: unknown) {
+      const msg = (err as any)?.message ?? String(err);
+      this.logger.error(`[GoogleSheets] Error al actualizar fila: ${msg}`, 'GoogleSheetsService');
+      return { success: false, error: msg };
+    }
+  }
 }

@@ -395,6 +395,8 @@ export class AiAgentService {
         return this.buildLeerGoogleSheetsTool(cfg, params);
       case 'escribir_google_sheets':
         return this.buildEscribirGoogleSheetsTool(cfg, params);
+      case 'editar_google_sheets':
+        return this.buildEditarGoogleSheetsTool(cfg, params);
       case 'scrape_web':
         return this.buildScrapeWebTool(cfg, params);
       default:
@@ -1315,6 +1317,72 @@ export class AiAgentService {
         description: cfg.toolDescription,
         schema: z.object({
           datos: z.record(z.string()).describe('Objeto con los datos a guardar. Las claves deben coincidir con los encabezados de la hoja. Ejemplo: {"NOMBRE": "Juan", "BANCO": "BCR", "MONTO": "18500"}'),
+          spreadsheetId: z.string().optional().describe('ID del Google Sheets (opcional, se toma de la configuración por defecto).'),
+          sheetName: z.string().optional().describe('Nombre de la hoja (opcional, se toma de la configuración por defecto).'),
+        }),
+      },
+    );
+  }
+
+  private buildEditarGoogleSheetsTool(
+    cfg: { toolKey: string; toolDescription: string; promptTemplate?: string | null },
+    params: { userId: string; instanceName: string; remoteJid: string },
+  ): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    const parseSheetParams = (rawUrl: string): { spreadsheetId: string; sheetName: string } => {
+      try {
+        const u = new URL(rawUrl);
+        return {
+          spreadsheetId: u.searchParams.get('spreadsheetId') ?? '',
+          sheetName: u.searchParams.get('sheet') ?? 'Hoja1',
+        };
+      } catch {
+        return { spreadsheetId: '', sheetName: 'Hoja1' };
+      }
+    };
+
+    // @ts-ignore
+    return tool(
+      async ({ campoBusqueda, valorBusqueda, actualizaciones, spreadsheetId: sidOverride, sheetName: sheetOverride }: {
+        campoBusqueda: string;
+        valorBusqueda: string;
+        actualizaciones: Record<string, string>;
+        spreadsheetId?: string;
+        sheetName?: string;
+      }) => {
+        const configUrl = cfg.promptTemplate ?? '';
+        const { spreadsheetId: sidFromUrl, sheetName: sheetFromUrl } = parseSheetParams(configUrl);
+        const spreadsheetId = sidOverride || sidFromUrl;
+        const sheetName = sheetOverride || sheetFromUrl;
+
+        logger.log(`Tool "${cfg.toolKey}" (editar_google_sheets): buscar ${campoBusqueda}="${valorBusqueda}" actualizaciones=${JSON.stringify(actualizaciones)}`);
+
+        if (!spreadsheetId) {
+          return 'No se proporcionó spreadsheetId. Configura la URL en la herramienta con ?spreadsheetId=...';
+        }
+
+        const result = await this.googleSheetsService.updateRow(
+          spreadsheetId,
+          sheetName,
+          campoBusqueda,
+          valorBusqueda,
+          actualizaciones,
+        );
+
+        if (result.success) {
+          return `✅ Fila ${result.updatedRow} actualizada correctamente en Google Sheets (hoja: ${sheetName}).`;
+        }
+        return `Error al editar en Google Sheets: ${result.error ?? 'error desconocido'}`;
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({
+          campoBusqueda: z.string().describe('Nombre del encabezado de columna por el que buscar la fila. Ejemplo: "CODIGO", "EMAIL", "ID".'),
+          valorBusqueda: z.string().describe('Valor a buscar en la columna indicada. Ejemplo: "SAD005".'),
+          actualizaciones: z.record(z.string()).describe('Objeto con los campos a actualizar. Las claves deben coincidir con los encabezados. Ejemplo: {"PRECIO": "60000", "STOCK": "10"}.'),
           spreadsheetId: z.string().optional().describe('ID del Google Sheets (opcional, se toma de la configuración por defecto).'),
           sheetName: z.string().optional().describe('Nombre de la hoja (opcional, se toma de la configuración por defecto).'),
         }),

@@ -769,6 +769,7 @@ export class WebhookService {
               model, provider,
               muteAgentResponses: userWithRelations.muteAgentResponses,
               sendTextFn,
+              pushName: pushName || '',
             });
             // Notificar a la IA que este paso ya fue ejecutado sin decirle que avance
             await this.chatHistoryService.saveMessage(

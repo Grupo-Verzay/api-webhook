@@ -83,6 +83,9 @@ export async function executeWorkflow(params: {
 
   // override de envío: cuando se provee, reemplaza nodeSenderService.sendTextNode
   sendTextFn?: (remoteJid: string, text: string) => Promise<any>;
+
+  // nombre del cliente para sustituir {nombre} en nodos de texto
+  pushName?: string;
 }) {
   const {
     workflowService,
@@ -112,6 +115,7 @@ export async function executeWorkflow(params: {
 
     postPromptBuilder,
     sendTextFn,
+    pushName,
   } = params;
 
   const context = 'WorkflowHelper';
@@ -132,6 +136,8 @@ export async function executeWorkflow(params: {
     instanceName,
     remoteJid,
     userId,
+    undefined,
+    pushName,
   );
 
   // 2) Si está muteado o no hay prompt personalizado → salir sin llamar a la IA.

@@ -26,6 +26,7 @@ type NodeExecCtx = {
   instanceName: string;
   remoteJid: string;
   userId: string;
+  pushName?: string;
 };
 
 type RunNodeOptions = {
@@ -101,6 +102,7 @@ export class WorkflowService implements OnModuleInit {
     remoteJid: string,
     userId: string,
     incomingText?: string,
+    pushName?: string,
   ) {
     const result = await this.prisma.workflow.findFirst({
       where: { name: name_flujo, userId },
@@ -178,6 +180,7 @@ export class WorkflowService implements OnModuleInit {
           remoteJid,
           userId,
           session,
+          pushName,
         );
       }
 
@@ -454,13 +457,17 @@ export class WorkflowService implements OnModuleInit {
     }
   }
 
+  private resolveNodeText(text: string | null | undefined, pushName?: string): string {
+    return (text ?? '').replace(/\{nombre\}/gi, pushName ?? '');
+  }
+
   private async sendNodeCommon(
     node: WorkflowNode,
     ctx: NodeExecCtx,
     opts: RunNodeOptions,
     session?: Session | null,
   ) {
-    const { urlevo, apikey, instanceName, remoteJid, userId } = ctx;
+    const { urlevo, apikey, instanceName, remoteJid, userId, pushName } = ctx;
 
     if (node.tipo === 'delay') {
       const delayTime = node?.delay || 15000;
@@ -476,7 +483,7 @@ export class WorkflowService implements OnModuleInit {
     if (!urlevo && this.whatsAppSenderFactory) {
       const sender = this.whatsAppSenderFactory.getSenderSync('baileys');
       if (node.tipo === 'text') {
-        const text = (node.message ?? '').trim();
+        const text = this.resolveNodeText(node.message, pushName).trim();
         if (text) await sender.sendText(instanceName, remoteJid, text).catch(() => {});
         return;
       }
@@ -487,7 +494,8 @@ export class WorkflowService implements OnModuleInit {
       }
       if (['image', 'video', 'document'].includes(node.tipo)) {
         const url = (node.url ?? '').trim();
-        if (url) await sender.sendMedia(instanceName, remoteJid, node.tipo, (node.message ?? '').trim(), url).catch(() => {});
+        const caption = this.resolveNodeText(node.message, pushName).trim();
+        if (url) await sender.sendMedia(instanceName, remoteJid, node.tipo, caption, url).catch(() => {});
         return;
       }
     }
@@ -498,7 +506,7 @@ export class WorkflowService implements OnModuleInit {
         url,
         apikey,
         remoteJid,
-        node.message,
+        this.resolveNodeText(node.message, pushName),
       );
       return;
     }
@@ -510,7 +518,7 @@ export class WorkflowService implements OnModuleInit {
         apikey,
         remoteJid,
         node.tipo,
-        node.message,
+        this.resolveNodeText(node.message, pushName),
         node.url as string,
       );
       return;
@@ -864,6 +872,7 @@ export class WorkflowService implements OnModuleInit {
     remoteJid: string,
     userId: string,
     session: Session,
+    pushName?: string,
   ) {
     const nodes = await this.prisma.workflowNode.findMany({
       where: { workflowId: workflow.id },
@@ -897,7 +906,7 @@ export class WorkflowService implements OnModuleInit {
 
       await this.runNodeWithTimeout(
         node,
-        { urlevo, apikey, instanceName, remoteJid, userId },
+        { urlevo, apikey, instanceName, remoteJid, userId, pushName },
         {
           timeoutLabel: 'nodo básico',
           logPauseDiagnostics: false,

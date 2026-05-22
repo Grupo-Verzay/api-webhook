@@ -725,8 +725,8 @@ export class WebhookService {
       }
     }
 
-    // Auto-ejecutar pasos de embudo en secuencia (nunca en el primer mensaje)
-    const funnelFlows = historyForBienvenida.length > 1
+    // Auto-ejecutar pasos de embudo en secuencia (desde el primer mensaje real del cliente)
+    const funnelFlows = historyForBienvenida.length >= 1
       ? await this.workflowService.getFunnelFlows(userId)
       : [];
     if (funnelFlows.length > 0) {

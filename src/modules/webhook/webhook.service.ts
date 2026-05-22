@@ -767,10 +767,10 @@ export class WebhookService {
               muteAgentResponses: userWithRelations.muteAgentResponses,
               sendTextFn,
             });
-            // Notificar a la IA que este paso ya fue ejecutado para que avance su estado interno
+            // Notificar a la IA que este paso ya fue ejecutado sin decirle que avance
             await this.chatHistoryService.saveMessage(
               sessionHistoryId,
-              `[SISTEMA]: El flujo "${funnelFlow.name}" fue ejecutado automáticamente. Ya completaste este paso. NO lo repitas ni emitas su contenido. Avanza al siguiente paso en tu estado interno.`,
+              `[SISTEMA]: El flujo "${funnelFlow.name}" fue ejecutado automáticamente. NO repitas su contenido en tu respuesta. Responde únicamente al mensaje actual del cliente.`,
               'ai',
             );
           }

@@ -42,6 +42,7 @@ interface getSessionInterface {
 @Injectable()
 export class WorkflowService implements OnModuleInit {
   private aiAgentService!: AiAgentService;
+  private whatsAppSenderFactory!: any;
 
   constructor(
     private prisma: PrismaService,
@@ -57,6 +58,12 @@ export class WorkflowService implements OnModuleInit {
   onModuleInit() {
     const { AiAgentService } = require('../../../ai-agent/ai-agent.service');
     this.aiAgentService = this.moduleRef.get(AiAgentService, { strict: false });
+    try {
+      const { WhatsAppSenderFactory } = require('../../../whatsapp/whatsapp-sender.factory');
+      this.whatsAppSenderFactory = this.moduleRef.get(WhatsAppSenderFactory, { strict: false });
+    } catch {
+      // WhatsApp module no disponible
+    }
   }
 
   private readonly NODE_TIMEOUT_MS = 15000;
@@ -219,13 +226,13 @@ export class WorkflowService implements OnModuleInit {
 
           if (!isWaitingHere) {
             if (messageToUser) {
-              const url = `${urlevo}/message/sendText/${instanceName}`;
-              await this.nodeSenderService.sendTextNode(
-                url,
-                apikey,
-                remoteJid,
-                messageToUser,
-              );
+              if (!urlevo && this.whatsAppSenderFactory) {
+                const sender = this.whatsAppSenderFactory.getSenderSync('baileys');
+                await sender.sendText(instanceName, remoteJid, messageToUser).catch(() => {});
+              } else {
+                const url = `${urlevo}/message/sendText/${instanceName}`;
+                await this.nodeSenderService.sendTextNode(url, apikey, remoteJid, messageToUser);
+              }
             }
 
             state = await this.prisma.sessionWorkflowState.update({
@@ -463,6 +470,26 @@ export class WorkflowService implements OnModuleInit {
       );
       await new Promise((res) => setTimeout(res, Number(delayTime)));
       return;
+    }
+
+    // Baileys: usar sender directo cuando no hay Evolution API URL
+    if (!urlevo && this.whatsAppSenderFactory) {
+      const sender = this.whatsAppSenderFactory.getSenderSync('baileys');
+      if (node.tipo === 'text') {
+        const text = (node.message ?? '').trim();
+        if (text) await sender.sendText(instanceName, remoteJid, text).catch(() => {});
+        return;
+      }
+      if (node.tipo === 'audio') {
+        const url = (node.url ?? '').trim();
+        if (url) await sender.sendAudio(instanceName, remoteJid, url).catch(() => {});
+        return;
+      }
+      if (['image', 'video', 'document'].includes(node.tipo)) {
+        const url = (node.url ?? '').trim();
+        if (url) await sender.sendMedia(instanceName, remoteJid, node.tipo, (node.message ?? '').trim(), url).catch(() => {});
+        return;
+      }
     }
 
     if (node.tipo === 'text') {

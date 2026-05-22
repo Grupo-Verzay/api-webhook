@@ -276,6 +276,8 @@ export class ConversationControlService {
           instanceName,
         );
 
+        const sessionHistoryId = buildChatHistorySessionId(instanceName, remoteJid);
+
         if (!server_url) {
           // Baileys: enviar nodos directamente sin Evolution API
           const sender = this.whatsAppSenderFactory.getSenderSync('baileys');
@@ -295,7 +297,6 @@ export class ConversationControlService {
           }
           logger.log(`Flujo Baileys ejecutado: ${workflow.name} (${nodes.length} nodos)`);
         } else {
-          const sessionHistoryId = buildChatHistorySessionId(instanceName, remoteJid);
           const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
 
           await executeWorkflow({
@@ -323,6 +324,13 @@ export class ConversationControlService {
             sendTextFn: this.makeSendTextFn(instanceName, server_url, apikey),
           });
         }
+
+        // Registrar intención para que el agente IA no re-ejecute el flujo
+        await this.chatHistoryService.registerExecutedIntention(
+          sessionHistoryId,
+          workflow.name,
+          workflow.name,
+        );
 
         await this.sessionService.updateSessionStatus(
           remoteJid,

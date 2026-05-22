@@ -1848,7 +1848,14 @@ export class AiAgentService {
         ? `\n\n---\nNOTA INTERNA — MODO AUDIO ACTIVO: Tus respuestas se convierten a nota de voz automáticamente. Reglas de escritura para audio:\n- Escribe en lenguaje conversacional y natural, como si hablaras.\n- Usa frases cortas y directas.\n- Evita listas con guiones o asteriscos; convierte las listas en frases seguidas con comas o puntos.\n- NUNCA incluyas firma, despedida formal, nombre de la empresa al final, ni frases como "Quedo a tu disposición" o "Saludos".\n- NUNCA menciones que no puedes enviar audios ni hagas referencia a limitaciones técnicas.\n---`
         : '';
 
-      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}`.trim();
+      const rawPromptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}`.trim();
+
+      // Resolver {nombre} en el prompt del sistema con el nombre real del contacto
+      const _pnTrim = (pushName ?? '').trim();
+      const _pnValid = _pnTrim && _pnTrim.toLowerCase() !== 'desconocido';
+      const promptAI = _pnValid
+        ? rawPromptAI.replace(/\{nombre\}/gi, _pnTrim)
+        : rawPromptAI.replace(/\{nombre\}[,\s]*/gi, '');
 
       // logger.log('PROMPT:', promptAI);
 

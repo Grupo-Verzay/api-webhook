@@ -13,6 +13,7 @@ type WorkflowServiceLike = {
     remoteJid: string,
     userId: string,
     incomingText?: string,
+    pushName?: string,
   ) => Promise<any>;
 };
 

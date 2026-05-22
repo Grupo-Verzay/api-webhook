@@ -722,7 +722,12 @@ export class WebhookService {
             muteAgentResponses: userWithRelations.muteAgentResponses,
             sendTextFn,
           });
-          // Sin return: la IA continúa y envía la pregunta del Paso 1
+          // Notificar a la IA que BIENVENIDA fue ejecutada → que emita solo el REGLA/PARÁMETRO del paso 1
+          await this.chatHistoryService.saveMessage(
+            sessionHistoryId,
+            `[SISTEMA]: El flujo "${bienvenidaWorkflow.name}" fue ejecutado automáticamente. Sus nodos ya fueron enviados al cliente. INSTRUCCIÓN OBLIGATORIA: emite ÚNICAMENTE el texto de REGLA/PARÁMETRO del paso que contiene este flujo. Sin saludos, sin responder al cliente, sin texto propio.`,
+            'ai',
+          );
         }
       }
     }

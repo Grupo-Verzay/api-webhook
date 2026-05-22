@@ -652,6 +652,7 @@ export class WebhookService {
 
     // Auto-ejecutar flujo BIENVENIDA en primera conexión
     const historyForBienvenida = chatHistory;
+    let bienvenidaJustExecuted = false; // evita que el embudo se dispare en el mismo turno
     logger.log(
       `[BIENVENIDA] historyLength=${historyForBienvenida.length} sessionHistoryId=${sessionHistoryId} userId=${userId}`,
       'WebhookService',
@@ -689,6 +690,7 @@ export class WebhookService {
             `[BIENVENIDA] Primera conexión → ejecutando flujo "${bienvenidaWorkflow.name}"`,
             'WebhookService',
           );
+          bienvenidaJustExecuted = true; // no ejecutar embudo en este mismo turno
           await this.chatHistoryService.registerExecutedIntention(
             sessionHistoryId,
             bienvenidaWorkflow.name,
@@ -725,8 +727,9 @@ export class WebhookService {
       }
     }
 
-    // Auto-ejecutar pasos de embudo en secuencia (desde el primer mensaje real del cliente)
-    const funnelFlows = historyForBienvenida.length >= 1
+    // Auto-ejecutar pasos de embudo en secuencia (desde el primer mensaje real del cliente,
+    // pero nunca en el mismo turno en que BIENVENIDA acaba de ejecutarse)
+    const funnelFlows = !bienvenidaJustExecuted && historyForBienvenida.length >= 1
       ? await this.workflowService.getFunnelFlows(userId)
       : [];
     if (funnelFlows.length > 0) {

@@ -2169,21 +2169,7 @@ export class AiAgentService {
 
         return `Flujo *${currentWorkflow.name}* iniciado correctamente.`;
       } else {
-        // Distinguir entre "backend ejecutó BIENVENIDA justo ahora" vs "usuario de retorno"
-        // Si hay un [SISTEMA] en el historial → usuario de retorno → no emitir REGLA/PARÁMETRO
-        // Si no hay [SISTEMA] → backend acaba de ejecutarlo este turno → fingir éxito para que
-        // la IA emita el REGLA/PARÁMETRO correctamente (sin caer en CAPA A / CAPA B)
-        const history = await this.chatHistoryService.getChatHistory(sessionId);
-        const hasReturningUserContext = (history as string[]).some(
-          (t) => typeof t === 'string' && t.startsWith('[SISTEMA]:'),
-        );
-
-        if (hasReturningUserContext) {
-          return `Flujo *${currentWorkflow.name}* ya completado en sesión anterior. Continúa desde el punto donde se quedó la conversación.`;
-        }
-
-        // Backend ejecutó el flujo en este turno: devolver éxito para que la IA emita REGLA/PARÁMETRO
-        return `Flujo *${currentWorkflow.name}* iniciado correctamente.`;
+        return `Flujo *${currentWorkflow.name}* ejecutado al inicio de este turno. Continúa con el mensaje del paso actual según tu entrenamiento.`;
       }
     }
 

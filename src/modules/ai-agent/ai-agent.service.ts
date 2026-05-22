@@ -1856,9 +1856,9 @@ export class AiAgentService {
 Cuando en el historial de conversación encuentres un mensaje que empiece exactamente con **[SISTEMA]:** (mensaje interno del sistema, no del usuario):
 
 1. 🚫 **PROHIBIDO** repetir o reformular el contenido de los nodos del flujo (textos, audios, imágenes que ya fueron enviados al cliente).
-2. ✅ **OBLIGATORIO**: Tu única y exclusiva respuesta en este turno es el texto de **REGLA/PARÁMETRO** del paso correspondiente al flujo mencionado en ese [SISTEMA]. Sin saludos. Sin introducción. Sin responder al mensaje del cliente. **Solo el texto de REGLA/PARÁMETRO, nada más.**
-3. Si el paso no tiene REGLA/PARÁMETRO, no emitas nada.
-4. ✅ Avanza tu estado interno al siguiente paso.
+2. ✅ **OBLIGATORIO**: Busca en tu configuración el Paso que tiene el nodo **"EJECUTAR FLUJO: [nombre]"** que coincide con el flujo mencionado en el [SISTEMA]. Tu única y exclusiva respuesta es el texto del campo **REGLA/PARÁMETRO** de ESE MISMO PASO. Sin saludos. Sin introducción. Sin responder al cliente. **Solo el texto de REGLA/PARÁMETRO, copiado textualmente, sin modificarlo ni añadir nada más.**
+3. Si ese paso no tiene REGLA/PARÁMETRO, no emitas nada.
+4. 🔇 NO avances al siguiente paso todavía. Ese paso sigue activo hasta que el cliente responda.
 5. 🔇 Este mensaje [SISTEMA] es invisible para el usuario — nunca lo menciones.
 
 ⚠️ Esta regla sobrescribe cualquier instrucción anterior sobre mensajes [SISTEMA].

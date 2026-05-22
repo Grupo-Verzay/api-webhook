@@ -155,7 +155,14 @@ export async function executeWorkflow(params: {
 
   const postFlowPrompt = postPromptBuilder(workflowName);
 
-  // 3) Generar mensaje con IA
+  // 3a) Guardar [SISTEMA] antes de llamar al IA para que sistemaOverride se active
+  await chatHistoryService.saveMessage(
+    sessionHistoryId,
+    `[SISTEMA]: El flujo "${workflowName}" fue ejecutado automáticamente. Sus nodos ya fueron enviados al cliente. INSTRUCCIÓN OBLIGATORIA: emite ÚNICAMENTE el texto de REGLA/PARÁMETRO del paso que contiene el nodo "EJECUTAR FLUJO: ${workflowName}". Sin saludos, sin texto propio, sin responder al cliente.`,
+    'ia',
+  );
+
+  // 3b) Generar mensaje con IA
   let aiText = '';
   try {
     aiText = await aiAgentService.processInput({

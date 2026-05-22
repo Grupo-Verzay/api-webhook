@@ -253,7 +253,10 @@ export class ConversationControlService {
 
     try {
       const autoReplies = await this.autoRepliesService.getAutoRepliesByUserId(userId);
+      logger.debug(`AutoReplies encontradas: ${autoReplies?.length ?? 0} para userId=${userId}`);
       if (!autoReplies || autoReplies.length === 0) return;
+
+      logger.debug(`Buscando coincidencia para msg="${conversationMsg}" entre ${autoReplies.map(r => `"${r.mensaje?.trim().toLowerCase()}"`).join(', ')}`);
 
       const matchedReply = autoReplies.find(
         (reply) => reply.mensaje?.trim().toLowerCase() === conversationMsg,

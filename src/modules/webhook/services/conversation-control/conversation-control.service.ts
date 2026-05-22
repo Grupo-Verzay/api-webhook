@@ -227,6 +227,7 @@ export class ConversationControlService {
       server_url,
       apikey,
       instanceName,
+      instanceId,
       remoteJid,
     });
   }
@@ -237,6 +238,7 @@ export class ConversationControlService {
     server_url,
     apikey,
     instanceName,
+    instanceId,
     remoteJid,
   }: onAutoRepliesInterface): Promise<void> {
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
@@ -330,6 +332,14 @@ export class ConversationControlService {
           sessionHistoryId,
           workflow.name,
           workflow.name,
+        );
+
+        // Registrar flujo en la sesión (columna Flujos del CRM)
+        await this.sessionService.registerWorkflow(
+          { id: workflow.id, name: workflow.name },
+          remoteJid,
+          instanceId,
+          userId,
         );
 
         await this.sessionService.updateSessionStatus(

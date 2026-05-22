@@ -96,6 +96,7 @@ export interface onAutoRepliesInterface {
   server_url: string;
   apikey: string;
   instanceName: string;
+  instanceId: string;
   remoteJid: string;
 }
 

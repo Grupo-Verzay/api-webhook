@@ -2620,25 +2620,32 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
 
   /**
    * Extrae el texto de REGLA/PARÁMETRO del paso que contiene "Ejecuta el flujo 'flowName'".
-   * El formato del prompt almacenado es:
-   *   - (k) **Función**: Ejecuta el flujo 'NOMBRE'
-   *   ...
-   *   - (k) **REGLA/PARÁMETRO:** texto aquí
-   *   ---
+   * Busca la línea de Ejecutar Flujo en el prompt completo y luego busca hacia adelante
+   * la REGLA/PARÁMETRO más cercana, acotada al mismo paso (antes del siguiente flujo).
    */
   private extractReglaFromPrompt(prompt: string, flowName: string): string | null {
     const escaped = flowName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const segments = prompt.split('---');
+    const flowRegex = new RegExp(`Ejecuta el flujo ['"]?${escaped}['"]?`, 'i');
+    const flowMatch = flowRegex.exec(prompt);
+    if (!flowMatch || flowMatch.index === undefined) return null;
 
-    for (const segment of segments) {
-      const flowRegex = new RegExp(`Ejecuta el flujo ['"]?${escaped}['"]?`, 'i');
-      if (!flowRegex.test(segment)) continue;
+    const afterFlow = prompt.slice(flowMatch.index + flowMatch[0].length);
 
-      // Busca **REGLA/PARÁMETRO:** en el mismo segmento (con o sin acento)
-      const reglaRegex = /\*\*REGLA\/PAR[AÁ]METRO:\*\*\s+([\s\S]+?)(?=\n-\s*\(|\n#{1,6}|\s*$)/;
-      const match = segment.match(reglaRegex);
-      if (match?.[1]) return match[1].trim();
-    }
+    // Acota la búsqueda: no pasar al siguiente "Ejecuta el flujo" (otro paso)
+    const nextFlowIdx = afterFlow.search(/Ejecuta el flujo ['"]?\w/i);
+    const searchIn = nextFlowIdx > 0 ? afterFlow.slice(0, nextFlowIdx) : afterFlow;
+
+    // Busca REGLA/PARÁMETRO hacia adelante (con o sin acento)
+    const reglaRegex = /\*\*REGLA\/PAR[AÁ]METRO:\*\*\s+([\s\S]+?)(?=\n-\s*\(|\n#{1,6}|\s*$)/;
+    const match = reglaRegex.exec(searchIn);
+    if (match?.[1]) return match[1].trim();
+
+    // También busca hacia atrás (si el usuario puso la REGLA antes del flujo en el mismo paso)
+    const beforeFlow = prompt.slice(0, flowMatch.index);
+    const prevFlowIdx = beforeFlow.search(/Ejecuta el flujo ['"]?\w/i);
+    const searchBefore = prevFlowIdx >= 0 ? beforeFlow.slice(prevFlowIdx) : beforeFlow;
+    const matchBefore = reglaRegex.exec(searchBefore);
+    if (matchBefore?.[1]) return matchBefore[1].trim();
 
     return null;
   }

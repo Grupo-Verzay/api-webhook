@@ -774,7 +774,7 @@ export class WebhookService {
             // Notificar a la IA que este paso ya fue ejecutado sin decirle que avance
             await this.chatHistoryService.saveMessage(
               sessionHistoryId,
-              `[SISTEMA]: El flujo "${funnelFlow.name}" fue ejecutado automáticamente (nodos ya enviados al cliente). NO repitas el contenido de los nodos del flujo. Emite ahora el texto de REGLA/PARÁMETRO de este paso si existe.`,
+              `[SISTEMA]: El flujo "${funnelFlow.name}" fue ejecutado automáticamente. Sus nodos ya fueron enviados al cliente. INSTRUCCIÓN OBLIGATORIA: emite ÚNICAMENTE el texto de REGLA/PARÁMETRO del paso que contiene este flujo. Sin saludos, sin responder al cliente, sin texto propio.`,
               'ai',
             );
           }

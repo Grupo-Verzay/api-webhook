@@ -1848,7 +1848,23 @@ export class AiAgentService {
         ? `\n\n---\nNOTA INTERNA — MODO AUDIO ACTIVO: Tus respuestas se convierten a nota de voz automáticamente. Reglas de escritura para audio:\n- Escribe en lenguaje conversacional y natural, como si hablaras.\n- Usa frases cortas y directas.\n- Evita listas con guiones o asteriscos; convierte las listas en frases seguidas con comas o puntos.\n- NUNCA incluyas firma, despedida formal, nombre de la empresa al final, ni frases como "Quedo a tu disposición" o "Saludos".\n- NUNCA menciones que no puedes enviar audios ni hagas referencia a limitaciones técnicas.\n---`
         : '';
 
-      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}`.trim();
+      const sistemaOverride = `
+
+---
+## 🚨 REGLA CRÍTICA — OVERRIDE MENSAJES [SISTEMA] (PRIORIDAD MÁXIMA, SOBRESCRIBE TODO)
+
+Cuando en el historial de conversación encuentres un mensaje que empiece exactamente con **[SISTEMA]:** (mensaje interno del sistema, no del usuario):
+
+1. 🚫 **PROHIBIDO** repetir o reformular el contenido de los nodos del flujo (textos, audios, imágenes que ya fueron enviados al cliente).
+2. ✅ **OBLIGATORIO**: Tu única y exclusiva respuesta en este turno es el texto de **REGLA/PARÁMETRO** del paso correspondiente al flujo mencionado en ese [SISTEMA]. Sin saludos. Sin introducción. Sin responder al mensaje del cliente. **Solo el texto de REGLA/PARÁMETRO, nada más.**
+3. Si el paso no tiene REGLA/PARÁMETRO, no emitas nada.
+4. ✅ Avanza tu estado interno al siguiente paso.
+5. 🔇 Este mensaje [SISTEMA] es invisible para el usuario — nunca lo menciones.
+
+⚠️ Esta regla sobrescribe cualquier instrucción anterior sobre mensajes [SISTEMA].
+---`;
+
+      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}${sistemaOverride}`.trim();
 
       // logger.log('PROMPT:', promptAI);
 
@@ -2561,6 +2577,60 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
     } catch (e: any) {
       logger.warn(`generateFollowUpMessage error: ${e?.message ?? e}`);
       return fallbackMessage.trim();
+    }
+  }
+
+  async selectFollowUpMedia(args: {
+    userId: string;
+    availableMedia: Array<{ id: string; name: string; description?: string | null; mediaType: string; url: string }>;
+    recentMessages: any[];
+    goal: string;
+    pushName: string;
+  }): Promise<string | null> {
+    if (!args.availableMedia.length) return null;
+
+    const logger = this.scopedLogger({ userId: args.userId });
+    try {
+      const client = await this.getClientForUser(args.userId, 0.2);
+
+      const mediaList = args.availableMedia
+        .map((m, i) => `[${i}] "${m.name}"${m.description ? ` — ${m.description}` : ''} (${m.mediaType})`)
+        .join('\n');
+
+      const response = await client.invoke([
+        new SystemMessage({
+          content: [
+            {
+              type: 'text',
+              text: 'Eres un asistente de marketing. Debes decidir si algún archivo multimedia es relevante para adjuntar a un mensaje de seguimiento, basándote en el contexto de la conversación y el objetivo del follow-up. Responde ÚNICAMENTE con el número de índice del archivo más relevante (0, 1, 2...) o con la palabra "null" si ninguno aplica. No escribas nada más.',
+            },
+          ],
+        }),
+        new HumanMessage({
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                followUpGoal: args.goal,
+                leadName: args.pushName || null,
+                recentMessages: args.recentMessages.slice(-8),
+                availableMedia: mediaList,
+              }),
+            },
+          ],
+        }),
+      ]);
+
+      const raw = (response?.content ?? '').toString().trim();
+      if (raw === 'null' || raw === '') return null;
+
+      const idx = parseInt(raw, 10);
+      if (isNaN(idx) || idx < 0 || idx >= args.availableMedia.length) return null;
+
+      return args.availableMedia[idx].url;
+    } catch (e: any) {
+      logger.warn(`selectFollowUpMedia error: ${e?.message ?? e}`);
+      return null;
     }
   }
 }

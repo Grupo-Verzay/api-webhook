@@ -2658,15 +2658,14 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
       b => !b.startsWith('#') && !b.startsWith('* **'),
     );
 
-    // Cortar antes del primer bloque de control (no emitir al usuario)
+    // Cortar antes del primer bloque de instrucción interna para la IA.
+    // Patrón: primera línea del bloque comienza con *ETIQUETA: (ej. *TRANSICIÓN:, *NOTA:, *FLUJO:...)
+    const isInternalBlock = (b: string): boolean =>
+      /^\*[A-ZÁÉÍÓÚÜÑ][^*\n]*:/.test(b.split('\n')[0].trim());
+
     const sendableBlocks: string[] = [];
     for (const b of rawBlocks) {
-      if (
-        b.startsWith('*NOTA') ||
-        b.startsWith('*TRANSICIÓN') ||
-        b.startsWith('*Transición') ||
-        b.includes('NO EMITIR')
-      ) break;
+      if (isInternalBlock(b)) break;
       sendableBlocks.push(b);
     }
 

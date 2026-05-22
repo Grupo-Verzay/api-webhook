@@ -2633,4 +2633,40 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
       return null;
     }
   }
+
+  /**
+   * Extrae el texto de REGLA/PARÁMETRO del paso que contiene "Ejecuta el flujo 'flowName'".
+   * El formato del prompt almacenado es:
+   *   - (k) **Función**: Ejecuta el flujo 'NOMBRE'
+   *   ...
+   *   - (k) **REGLA/PARÁMETRO:** texto aquí
+   *   ---
+   */
+  private extractReglaFromPrompt(prompt: string, flowName: string): string | null {
+    const escaped = flowName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const segments = prompt.split('---');
+
+    for (const segment of segments) {
+      const flowRegex = new RegExp(`Ejecuta el flujo ['"]?${escaped}['"]?`, 'i');
+      if (!flowRegex.test(segment)) continue;
+
+      // Busca **REGLA/PARÁMETRO:** en el mismo segmento (con o sin acento)
+      const reglaRegex = /\*\*REGLA\/PAR[AÁ]METRO:\*\*\s+([\s\S]+?)(?=\n-\s*\(|\n#{1,6}|\s*$)/;
+      const match = segment.match(reglaRegex);
+      if (match?.[1]) return match[1].trim();
+    }
+
+    return null;
+  }
+
+  async getReglaForFlow(userId: string, flowName: string): Promise<string | null> {
+    try {
+      const systemPrompt = await this.promptService
+        .getPromptUserId(userId, CRM_AGENT_PROMPT_IDS.systemPrompAI)
+        .catch(() => '');
+      return this.extractReglaFromPrompt(systemPrompt, flowName);
+    } catch {
+      return null;
+    }
+  }
 }

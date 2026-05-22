@@ -721,9 +721,21 @@ export class WebhookService {
             provider,
             muteAgentResponses: userWithRelations.muteAgentResponses,
             sendTextFn,
-            postPromptBuilder: (flowName) =>
-              `El flujo "${flowName}" acaba de ejecutarse (primer mensaje del cliente). Tu tarea ahora es emitir EXACTAMENTE y ÚNICAMENTE el texto del campo REGLA/PARÁMETRO del Paso 1 (el paso que tiene el nodo 'EJECUTAR FLUJO: ${flowName}'). Sin saludos, sin texto propio, sin responder al cliente. Solo el texto del REGLA/PARÁMETRO, tal cual está escrito, sin modificarlo.`,
+            // sin postPromptBuilder → executeWorkflow no llama a la IA
           });
+
+          // Enviar REGLA/PARÁMETRO directamente sin pasar por la IA
+          if (!userWithRelations.muteAgentResponses) {
+            const regla = await this.aiAgentService.getReglaForFlow(userId, bienvenidaWorkflow.name);
+            logger.log(
+              `[BIENVENIDA] REGLA extraída: "${regla?.substring(0, 80) ?? 'null'}"`,
+              'WebhookService',
+            );
+            if (regla) {
+              await this.chatHistoryService.saveMessage(sessionHistoryId, regla, 'ia');
+              await sendTextFn(canonicalRemoteJid, regla);
+            }
+          }
           return; // BIENVENIDA + su REGLA ya fueron manejados; no ejecutar IA normal ni embudo este turno
         }
       }

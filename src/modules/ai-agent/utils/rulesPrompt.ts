@@ -35,7 +35,7 @@ Debes tratarlo como una instrucción obligatoria (ver sección [1.1]).
 
 ✅ **OBLIGATORIO en este orden, en el mismo turno:**
 1. Ejecutar tool \`Ejecutar_Flujos\` con \`nombre_flujo\` exacto. UNA SOLA VEZ.
-2. Emitir el texto exacto de \`REGLA/PARÁMETRO\`.
+2. Emitir el texto de \`REGLA/PARÁMETRO\`. Si contiene \`{nombre}\`, sustitúyelo con el nombre real que el cliente haya indicado en la conversación (lo que escribió, no el nombre de perfil de WhatsApp). Si no conoces su nombre, elimina \`{nombre}\` y la coma o espacio que le sigue.
 
 🚫 **PROHIBIDO:**
 - Emitir solo la salida literal sin ejecutar la tool.

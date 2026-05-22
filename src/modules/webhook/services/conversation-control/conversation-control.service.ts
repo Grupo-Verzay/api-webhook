@@ -274,32 +274,54 @@ export class ConversationControlService {
         );
 
         const sessionHistoryId = buildChatHistorySessionId(instanceName, remoteJid);
-        const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
 
-        await executeWorkflow({
-          workflowService: this.workflowService,
-          nodeSenderService: this.nodeSenderService,
-          chatHistoryService: this.chatHistoryService,
-          aiAgentService: this.aiAgentService,
-          logger,
+        // Baileys: server_url vacío → enviar nodos directamente via Baileys sender
+        if (!server_url) {
+          const sender = this.whatsAppSenderFactory.getSenderSync('baileys');
+          const nodes = await this.workflowService['prisma'].workflowNode.findMany({
+            where: { workflowId: matchedReply.workflowId },
+            orderBy: { order: 'asc' },
+          });
+          for (const node of nodes) {
+            const tipo = (node.tipo ?? '').trim().toLowerCase();
+            if (tipo === 'text') {
+              const text = (node.message ?? '').trim();
+              if (text) await sender.sendText(instanceName, remoteJid, text).catch(() => {});
+            } else if (tipo === 'audio') {
+              const url = (node.url ?? '').trim();
+              if (url) await sender.sendAudio(instanceName, remoteJid, url).catch(() => {});
+            } else if (['image', 'video', 'document'].includes(tipo)) {
+              const url = (node.url ?? '').trim();
+              if (url) await sender.sendMedia(instanceName, remoteJid, tipo, (node.message ?? '').trim(), url).catch(() => {});
+            }
+          }
+        } else {
+          const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
+          await executeWorkflow({
+            workflowService: this.workflowService,
+            nodeSenderService: this.nodeSenderService,
+            chatHistoryService: this.chatHistoryService,
+            aiAgentService: this.aiAgentService,
+            logger,
 
-          workflowName: workflow?.name ?? '',
-          server_url,
-          apikey,
-          instanceName,
-          remoteJid,
-          userId,
+            workflowName: workflow?.name ?? '',
+            server_url,
+            apikey,
+            instanceName,
+            remoteJid,
+            userId,
 
-          sessionHistoryId,
-          apiMsgUrl,
+            sessionHistoryId,
+            apiMsgUrl,
 
-          apikeyOpenAi: defaultApiKey ?? '',
-          model,
-          provider,
+            apikeyOpenAi: defaultApiKey ?? '',
+            model,
+            provider,
 
-          muteAgentResponses: !!userWithRelations.muteAgentResponses,
-          sendTextFn: this.makeSendTextFn(instanceName, server_url, apikey),
-        });
+            muteAgentResponses: !!userWithRelations.muteAgentResponses,
+            sendTextFn: this.makeSendTextFn(instanceName, server_url, apikey),
+          });
+        }
 
         await this.sessionService.updateSessionStatus(
           remoteJid,

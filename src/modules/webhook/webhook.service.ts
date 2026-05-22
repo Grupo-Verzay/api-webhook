@@ -721,13 +721,10 @@ export class WebhookService {
             provider,
             muteAgentResponses: userWithRelations.muteAgentResponses,
             sendTextFn,
+            postPromptBuilder: (flowName) =>
+              `El flujo "${flowName}" acaba de ejecutarse (primer mensaje del cliente). Tu tarea ahora es emitir EXACTAMENTE y ÚNICAMENTE el texto del campo REGLA/PARÁMETRO del Paso 1 (el paso que tiene el nodo 'EJECUTAR FLUJO: ${flowName}'). Sin saludos, sin texto propio, sin responder al cliente. Solo el texto del REGLA/PARÁMETRO, tal cual está escrito, sin modificarlo.`,
           });
-          // Notificar a la IA que BIENVENIDA fue ejecutada → que emita solo el REGLA/PARÁMETRO del paso 1
-          await this.chatHistoryService.saveMessage(
-            sessionHistoryId,
-            `[SISTEMA]: El flujo "${bienvenidaWorkflow.name}" fue ejecutado automáticamente. Sus nodos ya fueron enviados al cliente. INSTRUCCIÓN OBLIGATORIA: emite ÚNICAMENTE el texto de REGLA/PARÁMETRO del paso que contiene este flujo. Sin saludos, sin responder al cliente, sin texto propio.`,
-            'ai',
-          );
+          return; // BIENVENIDA + su REGLA ya fueron manejados; no ejecutar IA normal ni embudo este turno
         }
       }
     }

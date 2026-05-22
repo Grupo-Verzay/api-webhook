@@ -152,15 +152,24 @@ export class WhatsAppController {
   }
 
   /** POST /whatsapp/baileys/send/:instanceName
-   *  Envía un mensaje de texto desde la UI del chat. */
+   *  Envía texto o audio desde la UI del chat.
+   *  Body: { remoteJid, text } para texto  |  { remoteJid, audioUrl } para audio */
   @Post('send/:instanceName')
   async sendMessage(
     @Param('instanceName') instanceName: string,
-    @Body() body: { remoteJid: string; text: string },
+    @Body() body: { remoteJid: string; text?: string; audioUrl?: string },
     @Headers() headers: Record<string, string>,
   ) {
     this.authorize(headers);
-    if (!body?.remoteJid || !body?.text) throw new BadRequestException('remoteJid y text son requeridos.');
+    if (!body?.remoteJid) throw new BadRequestException('remoteJid es requerido.');
+
+    if (body.audioUrl) {
+      const ok = await this.sender.sendAudio(instanceName, body.remoteJid, body.audioUrl);
+      if (!ok) throw new BadRequestException(`Sin sesión activa para "${instanceName}".`);
+      return { ok: true };
+    }
+
+    if (!body.text) throw new BadRequestException('text o audioUrl son requeridos.');
     const ok = await this.sender.sendText(instanceName, body.remoteJid, body.text);
     if (!ok) throw new BadRequestException(`Sin sesión activa para "${instanceName}".`);
     return { ok: true };

@@ -256,11 +256,14 @@ export class ConversationControlService {
       logger.debug(`AutoReplies encontradas: ${autoReplies?.length ?? 0} para userId=${userId}`);
       if (!autoReplies || autoReplies.length === 0) return;
 
-      logger.debug(`Buscando coincidencia para msg="${conversationMsg}" entre ${autoReplies.map(r => `"${r.mensaje?.trim().toLowerCase()}"`).join(', ')}`);
+      logger.debug(`Buscando coincidencia para msg="${conversationMsg}" entre ${autoReplies.map(r => `"${r.name ?? r.mensaje}"`).join(', ')}`);
 
-      const matchedReply = autoReplies.find(
-        (reply) => reply.mensaje?.trim().toLowerCase() === conversationMsg,
-      );
+      const matchedReply = autoReplies.find((reply) => {
+        const msgLower = (reply.mensaje ?? '').trim().toLowerCase();
+        if (msgLower && msgLower !== 'undefined' && msgLower === conversationMsg) return true;
+        const nameLower = (reply.name ?? '').replace(/^#+\s*/, '').trim().toLowerCase();
+        return nameLower === conversationMsg;
+      });
 
       if (matchedReply) {
         logger.log(`Respuesta rápida encontrada: ${matchedReply.mensaje}`);

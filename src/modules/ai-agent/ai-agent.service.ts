@@ -2635,42 +2635,35 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
     const escaped = flowName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const flowRegex = new RegExp(`Ejecuta el flujo ['"]?${escaped}['"]?`, 'i');
     const flowMatch = flowRegex.exec(prompt);
-    if (!flowMatch || flowMatch.index === undefined) return null;
+    if (!flowMatch) return null;
 
     const afterFlow = prompt.slice(flowMatch.index + flowMatch[0].length);
 
-    // Acotar al paso actual: termina en el próximo separador "\n\n---\n\n" o encabezado "## "
+    // Acotar al paso actual: termina en el próximo separador "\n\n---\n\n" o encabezado
     const stepSepIdx = afterFlow.indexOf('\n\n---\n\n');
     const sectionHeadIdx = afterFlow.search(/\n#{1,3}\s/);
     let endIdx = afterFlow.length;
     if (stepSepIdx > 0) endIdx = Math.min(endIdx, stepSepIdx);
     if (sectionHeadIdx > 0) endIdx = Math.min(endIdx, sectionHeadIdx);
-    const searchIn = afterFlow.slice(0, endIdx);
+    const stepSection = afterFlow.slice(0, endIdx);
 
-    // Dividir en bloques separados por líneas en blanco
-    const blocks = searchIn.split(/\n\n+/).map(b => b.trim()).filter(Boolean);
+    // Saltar el flowBehaviorText que empieza con "* **Comportamiento" y termina en el primer \n\n
+    const behStart = stepSection.indexOf('* **Comportamiento');
+    if (behStart < 0) return null;
+    const afterBeh = stepSection.slice(behStart);
+    const behEnd = afterBeh.indexOf('\n\n');
+    if (behEnd < 0) return null;
 
-    // El flowBehaviorText empieza con "* **Comportamiento"
-    // La REGLA está en los bloques que siguen a ese bloque
-    const behaviorIdx = blocks.findIndex(b => b.startsWith('* **Comportamiento'));
-    const startIdx = behaviorIdx >= 0 ? behaviorIdx + 1 : 0;
-    const rawBlocks = blocks.slice(startIdx).filter(
-      b => !b.startsWith('#') && !b.startsWith('* **'),
-    );
+    // El texto de REGLA es lo que sigue al bloque de comportamiento
+    const reglaRaw = afterBeh.slice(behEnd).trim();
+    if (!reglaRaw) return null;
 
-    // Cortar antes del primer bloque de instrucción interna para la IA.
-    // Patrón: primera línea del bloque comienza con *ETIQUETA: (ej. *TRANSICIÓN:, *NOTA:, *FLUJO:...)
-    const isInternalBlock = (b: string): boolean =>
-      /^\*[A-ZÁÉÍÓÚÜÑ][^*\n]*:/.test(b.split('\n')[0].trim());
-
-    const sendableBlocks: string[] = [];
-    for (const b of rawBlocks) {
-      if (isInternalBlock(b)) break;
-      sendableBlocks.push(b);
-    }
-
-    if (sendableBlocks.length > 0) return sendableBlocks.join('\n\n');
-    return null;
+    // Cortar línea a línea: parar en la primera línea que sea instrucción interna.
+    // Patrón: *ETIQUETA: → cubre *NOTA:, *TRANSICIÓN:, *FLUJO:, *INSTRUCCIÓN:, etc.
+    const lines = reglaRaw.split('\n');
+    const cutAt = lines.findIndex(l => /^\*[A-ZÁÉÍÓÚÜÑ][^*\n]*:/.test(l.trim()));
+    const sendable = (cutAt >= 0 ? lines.slice(0, cutAt) : lines).join('\n').trim();
+    return sendable || null;
   }
 
   async getReglaForFlow(userId: string, flowName: string): Promise<string | null> {

@@ -724,15 +724,17 @@ export class WebhookService {
             // sin postPromptBuilder → executeWorkflow no llama a la IA
           });
 
-          // Enviar REGLA/PARÁMETRO directamente sin pasar por la IA (se envía aunque esté muteado)
-          const regla = await this.aiAgentService.getReglaForFlow(userId, bienvenidaWorkflow.name);
-          logger.log(
-            `[BIENVENIDA] REGLA extraída: "${regla?.substring(0, 80) ?? 'null'}"`,
-            'WebhookService',
-          );
-          if (regla) {
-            await this.chatHistoryService.saveMessage(sessionHistoryId, regla, 'ia');
-            await sendTextFn(canonicalRemoteJid, regla);
+          // Enviar REGLA/PARÁMETRO directamente sin pasar por la IA
+          if (!userWithRelations.muteAgentResponses) {
+            const regla = await this.aiAgentService.getReglaForFlow(userId, bienvenidaWorkflow.name);
+            logger.log(
+              `[BIENVENIDA] REGLA extraída: "${regla?.substring(0, 80) ?? 'null'}"`,
+              'WebhookService',
+            );
+            if (regla) {
+              await this.chatHistoryService.saveMessage(sessionHistoryId, regla, 'ia');
+              await sendTextFn(canonicalRemoteJid, regla);
+            }
           }
           return; // BIENVENIDA + su REGLA ya fueron manejados; no ejecutar IA normal ni embudo este turno
         }
@@ -786,15 +788,17 @@ export class WebhookService {
               // sin postPromptBuilder → executeWorkflow no llama a la IA
             });
 
-            // Enviar REGLA/PARÁMETRO directamente sin IA (se envía aunque esté muteado)
-            const regla = await this.aiAgentService.getReglaForFlow(userId, funnelFlow.name);
-            logger.log(
-              `[EMBUDO] REGLA extraída para "${funnelFlow.name}": "${regla?.substring(0, 80) ?? 'null'}"`,
-              'WebhookService',
-            );
-            if (regla) {
-              await this.chatHistoryService.saveMessage(sessionHistoryId, regla, 'ia');
-              await sendTextFn(canonicalRemoteJid, regla);
+            // Enviar REGLA/PARÁMETRO directamente sin IA ni [SISTEMA] en historial
+            if (!userWithRelations.muteAgentResponses) {
+              const regla = await this.aiAgentService.getReglaForFlow(userId, funnelFlow.name);
+              logger.log(
+                `[EMBUDO] REGLA extraída para "${funnelFlow.name}": "${regla?.substring(0, 80) ?? 'null'}"`,
+                'WebhookService',
+              );
+              if (regla) {
+                await this.chatHistoryService.saveMessage(sessionHistoryId, regla, 'ia');
+                await sendTextFn(canonicalRemoteJid, regla);
+              }
             }
             funnelStepExecuted = true;
           }

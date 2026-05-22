@@ -300,21 +300,32 @@ export class CrmFollowUpRunnerService {
       }
 
       try {
-        const finalMessage = await this.aiAgentService.generateFollowUpMessage({
-          userId: followUp.userId,
-          sessionId: buildChatHistorySessionId(
-            followUp.instanceId,
-            followUp.session.remoteJid,
-          ),
-          goal: (followUp.goalSnapshot ?? currentRule.goal).trim(),
-          customPrompt: (followUp.promptSnapshot ?? currentRule.prompt).trim(),
-          attempt: (followUp.attemptCount ?? 0) + 1,
-          pushName: followUp.session.pushName ?? '',
-          registroResumen: followUp.summarySnapshot ?? '',
-          fallbackMessage: (
-            followUp.fallbackMessageSnapshot ?? currentRule.fallbackMessage
-          ).trim(),
-        });
+        const sessionId = buildChatHistorySessionId(
+          followUp.instanceId,
+          followUp.session.remoteJid,
+        );
+        const chatHistory = await this.chatHistoryService.getChatHistory(sessionId);
+        const recentMessages = chatHistory.slice(-12);
+
+        const [finalMessage, availableMedia] = await Promise.all([
+          this.aiAgentService.generateFollowUpMessage({
+            userId: followUp.userId,
+            sessionId,
+            goal: (followUp.goalSnapshot ?? currentRule.goal).trim(),
+            customPrompt: (followUp.promptSnapshot ?? currentRule.prompt).trim(),
+            attempt: (followUp.attemptCount ?? 0) + 1,
+            pushName: followUp.session.pushName ?? '',
+            registroResumen: followUp.summarySnapshot ?? '',
+            fallbackMessage: (
+              followUp.fallbackMessageSnapshot ?? currentRule.fallbackMessage
+            ).trim(),
+          }),
+          this.prisma.crmFollowUpMedia.findMany({
+            where: { userId: followUp.userId, leadStatus: followUp.leadStatusSnapshot },
+            select: { id: true, name: true, description: true, mediaType: true, url: true },
+            orderBy: { createdAt: 'asc' },
+          }),
+        ]);
 
         const safeMessage = finalMessage.trim();
         if (!safeMessage) {
@@ -334,14 +345,53 @@ export class CrmFollowUpRunnerService {
           throw new Error('Error enviando CRM follow-up por Evolution.');
         }
 
-        await this.chatHistoryService.saveMessage(
-          buildChatHistorySessionId(
-            followUp.instanceId,
-            followUp.session.remoteJid,
-          ),
-          safeMessage,
-          'ia',
-        );
+        // Intentar seleccionar y enviar media de remarketing (no bloquea el follow-up si falla)
+        if (availableMedia.length > 0) {
+          try {
+            const selectedUrl = await this.aiAgentService.selectFollowUpMedia({
+              userId: followUp.userId,
+              availableMedia,
+              recentMessages,
+              goal: (followUp.goalSnapshot ?? currentRule.goal).trim(),
+              pushName: followUp.session.pushName ?? '',
+            });
+
+            if (selectedUrl) {
+              const selectedItem = availableMedia.find((m) => m.url === selectedUrl);
+              const mediaType = selectedItem?.mediaType ?? 'image';
+
+              if (mediaType === 'audio') {
+                await this.nodeSenderService.sendAudioNode(
+                  `${serverUrl}/message/sendWhatsAppAudio/${followUp.instanceId}`,
+                  apiKey,
+                  followUp.session.remoteJid,
+                  selectedUrl,
+                );
+              } else {
+                await this.nodeSenderService.sendMediaNode(
+                  `${serverUrl}/message/sendMedia/${followUp.instanceId}`,
+                  apiKey,
+                  followUp.session.remoteJid,
+                  mediaType,
+                  '',
+                  selectedUrl,
+                );
+              }
+
+              this.logger.log(
+                `[CrmFollowUpRunner] Media enviada (${mediaType}) para follow-up id=${followUp.id}`,
+                'CrmFollowUpRunnerService',
+              );
+            }
+          } catch (mediaErr: any) {
+            this.logger.warn(
+              `[CrmFollowUpRunner] Error enviando media (no fatal) id=${followUp.id}: ${mediaErr?.message}`,
+              'CrmFollowUpRunnerService',
+            );
+          }
+        }
+
+        await this.chatHistoryService.saveMessage(sessionId, safeMessage, 'ia');
 
         await this.markSent(
           followUp.id,

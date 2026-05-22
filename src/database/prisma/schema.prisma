@@ -460,6 +460,7 @@ model User {
   notificationContacts               UserNotificationContact[]
   crmFollowUpRules                   CrmFollowUpRule[]
   crmFollowUps                       CrmFollowUp[]
+  crmFollowUpMedia                   CrmFollowUpMedia[]
   externalClientData                 ExternalClientData[]
   externalDataToolConfigs            ExternalDataToolConfig[]
   financeAccounts                    FinanceAccount[]
@@ -547,6 +548,21 @@ model CrmFollowUpRule {
   @@unique([userId, leadStatus], map: "crm_follow_up_rules_user_lead_status_uidx")
   @@index([userId], map: "crm_follow_up_rules_user_idx")
   @@map("crm_follow_up_rules")
+}
+
+model CrmFollowUpMedia {
+  id          String     @id @default(cuid())
+  userId      String
+  leadStatus  LeadStatus
+  name        String
+  description String?
+  url         String
+  mediaType   String
+  createdAt   DateTime   @default(now())
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, leadStatus])
+  @@map("crm_follow_up_media")
 }
 
 model UserAvailability {

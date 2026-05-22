@@ -746,6 +746,7 @@ export class WebhookService {
     const funnelFlows = !bienvenidaJustExecuted && historyForBienvenida.length >= 1
       ? await this.workflowService.getFunnelFlows(userId)
       : [];
+    let funnelStepExecuted = false;
     if (funnelFlows.length > 0) {
       const welcomeFlow = await this.workflowService.findWelcomeWorkflow(userId, this.aiAgentService.initWorkflowName);
       const welcomeDone = welcomeFlow
@@ -784,17 +785,30 @@ export class WebhookService {
               muteAgentResponses: userWithRelations.muteAgentResponses,
               sendTextFn,
               pushName: pushName || '',
+              // sin postPromptBuilder → executeWorkflow no llama a la IA
             });
-            // Notificar a la IA que este paso ya fue ejecutado sin decirle que avance
-            await this.chatHistoryService.saveMessage(
-              sessionHistoryId,
-              `[SISTEMA]: El flujo "${funnelFlow.name}" fue ejecutado automáticamente. Sus nodos ya fueron enviados al cliente. INSTRUCCIÓN OBLIGATORIA: emite ÚNICAMENTE el texto de REGLA/PARÁMETRO del paso que contiene este flujo. Sin saludos, sin responder al cliente, sin texto propio.`,
-              'ai',
-            );
+
+            // Enviar REGLA/PARÁMETRO directamente sin IA ni [SISTEMA] en historial
+            if (!userWithRelations.muteAgentResponses) {
+              const regla = await this.aiAgentService.getReglaForFlow(userId, funnelFlow.name);
+              logger.log(
+                `[EMBUDO] REGLA extraída para "${funnelFlow.name}": "${regla?.substring(0, 80) ?? 'null'}"`,
+                'WebhookService',
+              );
+              if (regla) {
+                await this.chatHistoryService.saveMessage(sessionHistoryId, regla, 'ia');
+                await sendTextFn(canonicalRemoteJid, regla);
+              }
+            }
+            funnelStepExecuted = true;
           }
           break; // solo un paso por turno
         }
       }
+    }
+
+    if (funnelStepExecuted) {
+      return; // Embudo + REGLA manejados; no ejecutar IA normal este turno
     }
 
     // Las imágenes también pueden reanudar flujos pausados (ej: paso que pide comprobante).

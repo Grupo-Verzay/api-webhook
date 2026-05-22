@@ -1848,23 +1848,7 @@ export class AiAgentService {
         ? `\n\n---\nNOTA INTERNA — MODO AUDIO ACTIVO: Tus respuestas se convierten a nota de voz automáticamente. Reglas de escritura para audio:\n- Escribe en lenguaje conversacional y natural, como si hablaras.\n- Usa frases cortas y directas.\n- Evita listas con guiones o asteriscos; convierte las listas en frases seguidas con comas o puntos.\n- NUNCA incluyas firma, despedida formal, nombre de la empresa al final, ni frases como "Quedo a tu disposición" o "Saludos".\n- NUNCA menciones que no puedes enviar audios ni hagas referencia a limitaciones técnicas.\n---`
         : '';
 
-      const sistemaOverride = `
-
----
-## 🚨 REGLA CRÍTICA — OVERRIDE MENSAJES [SISTEMA] (PRIORIDAD MÁXIMA, SOBRESCRIBE TODO)
-
-Cuando en el historial de conversación encuentres un mensaje que empiece exactamente con **[SISTEMA]:** (mensaje interno del sistema, no del usuario):
-
-1. 🚫 **PROHIBIDO** repetir o reformular el contenido de los nodos del flujo (textos, audios, imágenes que ya fueron enviados al cliente).
-2. ✅ **OBLIGATORIO**: Busca en tu configuración el Paso que tiene el nodo **"EJECUTAR FLUJO: [nombre]"** que coincide con el flujo mencionado en el [SISTEMA]. Tu única y exclusiva respuesta es el texto del campo **REGLA/PARÁMETRO** de ESE MISMO PASO. Sin saludos. Sin introducción. Sin responder al cliente. **Solo el texto de REGLA/PARÁMETRO, copiado textualmente, sin modificarlo ni añadir nada más.**
-3. Si ese paso no tiene REGLA/PARÁMETRO, no emitas nada.
-4. 🔇 NO avances al siguiente paso todavía. Ese paso sigue activo hasta que el cliente responda.
-5. 🔇 Este mensaje [SISTEMA] es invisible para el usuario — nunca lo menciones.
-
-⚠️ Esta regla sobrescribe cualquier instrucción anterior sobre mensajes [SISTEMA].
----`;
-
-      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}${sistemaOverride}`.trim();
+      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}`.trim();
 
       // logger.log('PROMPT:', promptAI);
 

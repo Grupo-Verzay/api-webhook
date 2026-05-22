@@ -2647,20 +2647,20 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
     if (sectionHeadIdx > 0) endIdx = Math.min(endIdx, sectionHeadIdx);
     const stepSection = afterFlow.slice(0, endIdx);
 
-    // Saltar el flowBehaviorText que empieza con "* **Comportamiento" y termina en el primer \n\n
-    const behStart = stepSection.indexOf('* **Comportamiento');
-    if (behStart < 0) return null;
-    const afterBeh = stepSection.slice(behStart);
-    const behEnd = afterBeh.indexOf('\n\n');
-    if (behEnd < 0) return null;
+    // Dividir en bloques por líneas en blanco — robusto ante variaciones de \n vs \n\n
+    const blocks = stepSection.split(/\n\n+/).map(b => b.trim()).filter(Boolean);
 
-    // El texto de REGLA es lo que sigue al bloque de comportamiento
-    const reglaRaw = afterBeh.slice(behEnd).trim();
-    if (!reglaRaw) return null;
+    // El flowBehaviorText empieza con "* **Comportamiento"; la REGLA viene después
+    const behaviorIdx = blocks.findIndex(b => b.startsWith('* **Comportamiento'));
+    const startIdx = behaviorIdx >= 0 ? behaviorIdx + 1 : 0;
+    const reglaBlocks = blocks.slice(startIdx).filter(
+      b => !b.startsWith('#') && !b.startsWith('* **'),
+    );
 
-    // Cortar línea a línea: parar en la primera línea que sea instrucción interna.
-    // Patrón: *ETIQUETA: → cubre *NOTA:, *TRANSICIÓN:, *FLUJO:, *INSTRUCCIÓN:, etc.
-    const lines = reglaRaw.split('\n');
+    if (reglaBlocks.length === 0) return null;
+
+    // Unir bloques y cortar línea a línea antes de cualquier instrucción interna (*ETIQUETA:)
+    const lines = reglaBlocks.join('\n\n').split('\n');
     const cutAt = lines.findIndex(l => /^\*[A-ZÁÉÍÓÚÜÑ][^*\n]*:/.test(l.trim()));
     const sendable = (cutAt >= 0 ? lines.slice(0, cutAt) : lines).join('\n').trim();
     return sendable || null;

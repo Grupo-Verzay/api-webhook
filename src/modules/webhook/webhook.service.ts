@@ -99,14 +99,13 @@ export class WebhookService {
     instanceName: string,
     server_url: string,
     apikey: string,
-    maxTypingDelay?: number,
   ): (remoteJid: string, text: string) => Promise<void> {
     if (!server_url) {
       const sender = this.whatsAppSenderFactory.getSenderSync('baileys');
       return (remoteJid, text) => sender.sendText(instanceName, remoteJid, text).then(() => {});
     }
     const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
-    return (remoteJid, text) => this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, remoteJid, text, maxTypingDelay);
+    return (remoteJid, text) => this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, remoteJid, text);
   }
 
   /**
@@ -284,7 +283,7 @@ export class WebhookService {
       canonicalRemoteJid,
     );
     const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
-    const sendTextFn = this.makeSendTextFn(instanceName, server_url, apikey, delayConversation);
+    const sendTextFn = this.makeSendTextFn(instanceName, server_url, apikey);
 
     // this.logger.debug(`[PAUSA] fromMe=${fromMe} | msg="${conversationMsg}"`);
 

@@ -270,10 +270,17 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
     let mediaUrl: string | null = null;
 
     const mediaKey = type as keyof typeof BaileysSessionManager.MEDIA_MIME;
-    if (mediaKey in BaileysSessionManager.MEDIA_MIME && !params.fromMe) {
+    if (mediaKey in BaileysSessionManager.MEDIA_MIME) {
       try {
         const { downloadContentFromMessage } = await import('@whiskeysockets/baileys');
-        const msgContent = message[type] ?? {};
+        // Unwrap container types (deviceSentMessage, ephemeralMessage, etc.) that nest the real content
+        const unwrapped: any =
+          message.deviceSentMessage?.message ??
+          message.ephemeralMessage?.message ??
+          message.viewOnceMessage?.message ??
+          message.documentWithCaptionMessage?.message ??
+          message;
+        const msgContent = unwrapped[type] ?? {};
 
         const mimetype: string = msgContent.mimetype ?? BaileysSessionManager.MEDIA_MIME[mediaKey];
 

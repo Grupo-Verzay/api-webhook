@@ -275,9 +275,13 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
         const { downloadContentFromMessage } = await import('@whiskeysockets/baileys');
         const msgContent = message[type] ?? {};
 
-        // Inferir mimetype real desde el mensaje si está disponible
         const mimetype: string = msgContent.mimetype ?? BaileysSessionManager.MEDIA_MIME[mediaKey];
-        const ext = BaileysSessionManager.MEDIA_EXT[mediaKey] ?? 'bin';
+
+        // Extensión: respetar el nombre original del archivo si existe; si no, derivar del mimetype
+        const fileName: string = msgContent.fileName ?? '';
+        const extFromFile = fileName.includes('.') ? fileName.split('.').pop()!.toLowerCase() : '';
+        const extFromMime = mimetype.split('/')[1]?.replace('jpeg', 'jpg').replace('ogg; codecs=opus', 'ogg') ?? 'bin';
+        const ext = extFromFile || extFromMime || BaileysSessionManager.MEDIA_EXT[mediaKey] ?? 'bin';
 
         const stream = await downloadContentFromMessage(msgContent, type.replace('Message', '') as any);
         const chunks: Buffer[] = [];

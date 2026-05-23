@@ -24,17 +24,17 @@ export class NodeSenderService {
     apikey: string,
     remoteJid: string,
     text: string,
+    maxTypingDelay = 6000,
   ) {
     try {
+      const typingDelay = Math.min(Math.max(text.length * 30, 1500), maxTypingDelay);
       const body = {
         number: remoteJid,
-        delay: 5000,
-        // options: { delay: 100, presence: 'composing' },
+        delay: typingDelay,
         text,
       };
 
-      // this.logger.log(`Enviando texto a ${remoteJid}: "${text}"`, 'NodeSenderService');
-      this.logger.log(`Enviando texto a ${remoteJid}`, 'NodeSenderService');
+      this.logger.log(`Enviando texto a ${remoteJid} | chars=${text.length} | typingDelay=${typingDelay}ms (max=${maxTypingDelay}ms)`, 'NodeSenderService');
 
       const response = await firstValueFrom(
         this.http.post(url, body, {

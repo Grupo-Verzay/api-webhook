@@ -399,6 +399,10 @@ export class AiAgentService {
         return this.buildEditarGoogleSheetsTool(cfg, params);
       case 'scrape_web':
         return this.buildScrapeWebTool(cfg, params);
+      case 'consultar_inventario':
+        return this.buildConsultarInventarioTool(cfg, params);
+      case 'crear_cotizacion':
+        return this.buildCrearCotizacionTool(cfg, params);
       default:
         return null;
     }
@@ -747,6 +751,90 @@ export class AiAgentService {
         name: cfg.toolKey,
         description: cfg.toolDescription,
         schema: z.object({}),
+      },
+    );
+  }
+
+  private buildConsultarInventarioTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    // @ts-ignore
+    return tool(
+      async ({ producto }: { producto?: string }) => {
+        logger.log(`Tool "${cfg.toolKey}" (consultar_inventario): producto="${producto ?? 'todos'}"`);
+        const where: any = { userId, isActive: true };
+        if (producto?.trim()) where.title = { contains: producto.trim(), mode: 'insensitive' };
+
+        const products = await this.prisma.product.findMany({ where, orderBy: { title: 'asc' } });
+        if (products.length === 0) return 'No se encontraron productos en el inventario.';
+
+        const lines = products.map((p) =>
+          `• ${p.title}${p.sku ? ` [SKU: ${p.sku}]` : ''} — Precio: $${Number(p.price).toLocaleString('es-CO')} — Stock: ${p.stock > 0 ? p.stock : '⚠️ Sin stock'}`,
+        );
+        return `Inventario (${products.length} producto${products.length !== 1 ? 's' : ''}):\n${lines.join('\n')}`;
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({
+          producto: z.string().optional().describe('Nombre o parte del nombre del producto a consultar. Si se omite, devuelve todo el inventario.'),
+        }),
+      },
+    );
+  }
+
+  private buildCrearCotizacionTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string; pushName: string;
+  }): any {
+    const { userId, instanceName, remoteJid, pushName } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    // @ts-ignore
+    return tool(
+      async ({ clientName, items }: { clientName: string; items: Array<{ titulo: string; cantidad: number; precioUnitario: number }> }) => {
+        logger.log(`Tool "${cfg.toolKey}" (crear_cotizacion): cliente="${clientName}" ítems=${items.length}`);
+        if (!clientName?.trim() || !Array.isArray(items) || items.length === 0) {
+          return 'Faltan datos para crear la cotización (clientName e items son requeridos).';
+        }
+
+        const cotizacionItems = items.map((i) => ({
+          title: i.titulo?.trim() ?? 'Ítem',
+          quantity: Math.max(1, Number(i.cantidad) || 1),
+          unitPrice: Math.max(0, Number(i.precioUnitario) || 0),
+          subtotal: Math.max(0, (Number(i.precioUnitario) || 0) * Math.max(1, Number(i.cantidad) || 1)),
+        }));
+
+        const total = cotizacionItems.reduce((s, i) => s + i.subtotal, 0);
+
+        await this.prisma.cotizacion.create({
+          data: {
+            userId,
+            clientName: clientName.trim(),
+            status: 'borrador',
+            total,
+            items: { create: cotizacionItems },
+          },
+        });
+
+        const resumen = cotizacionItems
+          .map((i) => `  • ${i.title} x${i.quantity} = $${i.subtotal.toLocaleString('es-CO')}`)
+          .join('\n');
+        return `Cotización creada para *${clientName.trim()}*:\n${resumen}\n*Total: $${total.toLocaleString('es-CO')}*\n\nPuedes verla en la sección Cotizaciones de la app.`;
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({
+          clientName: z.string().describe('Nombre del cliente para la cotización'),
+          items: z.array(z.object({
+            titulo: z.string().describe('Nombre o descripción del producto/servicio'),
+            cantidad: z.number().describe('Cantidad de unidades'),
+            precioUnitario: z.number().describe('Precio unitario'),
+          })).describe('Lista de productos/servicios a cotizar'),
+        }),
       },
     );
   }

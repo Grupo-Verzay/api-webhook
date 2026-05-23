@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import { LoggerService } from 'src/core/logger/logger.service';
 import { PrismaService } from 'src/database/prisma.service';
 import { BaileysMessageStore, extractMessageBody } from './baileys-message.store';
+import { MediaStorageService } from './media-storage.service';
 
 type WASocket = any;
 type ConnectionState = { connection: string; lastDisconnect?: { error?: any } };
@@ -34,6 +35,7 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly messageStore: BaileysMessageStore,
+    private readonly mediaStorage: MediaStorageService,
   ) {
     this.sessionsDir = this.config.get<string>('BAILEYS_SESSIONS_DIR') ?? path.join(process.cwd(), 'baileys-sessions');
   }
@@ -215,7 +217,6 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
     const remoteJid: string = key.remoteJid ?? '';
     if (!remoteJid || remoteJid.endsWith('@broadcast')) return;
 
-    // Ignorar mensajes cuyo remoteJid es el propio número del bot (Notas/Saved Messages)
     const ownInfo = this.userInfoMap.get(instanceName);
     if (ownInfo?.phone && remoteJid === `${ownInfo.phone}@s.whatsapp.net`) return;
 
@@ -224,7 +225,6 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
     const tsSeconds: number = msg.messageTimestamp ?? Math.floor(Date.now() / 1000);
     const timestamp = new Date(tsSeconds * 1000);
 
-    // Resolver número real: senderPn → key.remoteJidAlt (resuelto por Baileys desde auth state)
     let phoneNumber: string | null = null;
     const rawPn: string = msg.senderPn ?? key.senderPn ?? '';
     if (rawPn) {
@@ -236,17 +236,62 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    this.messageStore.saveMessage({
-      instanceName,
-      remoteJid,
-      messageId: key.id ?? '',
-      fromMe: key.fromMe ?? false,
-      body,
-      type,
-      timestamp,
-      pushName: msg.pushName ?? null,
-      phoneNumber,
+    const messageId = key.id ?? '';
+
+    this.persistMessageWithMedia(instanceName, msg, message, type, {
+      remoteJid, messageId, fromMe: key.fromMe ?? false,
+      body, timestamp, pushName: msg.pushName ?? null, phoneNumber,
     }).catch(() => {});
+  }
+
+  private static readonly MEDIA_MIME: Record<string, string> = {
+    imageMessage:    'image/jpeg',
+    videoMessage:    'video/mp4',
+    audioMessage:    'audio/ogg',
+    documentMessage: 'application/octet-stream',
+    stickerMessage:  'image/webp',
+  };
+
+  private static readonly MEDIA_EXT: Record<string, string> = {
+    imageMessage:    'jpg',
+    videoMessage:    'mp4',
+    audioMessage:    'ogg',
+    documentMessage: 'bin',
+    stickerMessage:  'webp',
+  };
+
+  private async persistMessageWithMedia(
+    instanceName: string,
+    msg: any,
+    message: any,
+    type: string,
+    params: { remoteJid: string; messageId: string; fromMe: boolean; body: string | null; timestamp: Date; pushName: string | null; phoneNumber: string | null },
+  ): Promise<void> {
+    let mediaUrl: string | null = null;
+
+    const mediaKey = type as keyof typeof BaileysSessionManager.MEDIA_MIME;
+    if (mediaKey in BaileysSessionManager.MEDIA_MIME && !params.fromMe) {
+      try {
+        const { downloadContentFromMessage } = await import('@whiskeysockets/baileys');
+        const msgContent = message[type] ?? {};
+
+        // Inferir mimetype real desde el mensaje si está disponible
+        const mimetype: string = msgContent.mimetype ?? BaileysSessionManager.MEDIA_MIME[mediaKey];
+        const ext = BaileysSessionManager.MEDIA_EXT[mediaKey] ?? 'bin';
+
+        const stream = await downloadContentFromMessage(msgContent, type.replace('Message', '') as any);
+        const chunks: Buffer[] = [];
+        for await (const chunk of stream) chunks.push(chunk);
+        const buffer = Buffer.concat(chunks);
+
+        const key = `baileys/${instanceName}/${params.remoteJid.replace(/[@:]/g, '_')}/${params.messageId}.${ext}`;
+        mediaUrl = await this.mediaStorage.uploadBuffer(buffer, key, mimetype);
+      } catch (err) {
+        this.logger.warn(`[BaileysMedia] No se pudo descargar media ${params.messageId}: ${err?.message}`, 'BaileysSessionManager');
+      }
+    }
+
+    await this.messageStore.saveMessage({ ...params, instanceName, type, mediaUrl });
   }
 
   private async persistContacts(instanceName: string, contacts: any[]): Promise<void> {

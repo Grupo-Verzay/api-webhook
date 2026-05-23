@@ -3,6 +3,7 @@ import { EvolutionApiSenderAdapter } from './adapters/evolution-api.adapter';
 import { BaileysSessionManager } from './adapters/baileys/baileys-session.manager';
 import { BaileysSenderAdapter } from './adapters/baileys/baileys-sender.adapter';
 import { BaileysMessageStore } from './adapters/baileys/baileys-message.store';
+import { MediaStorageService } from './adapters/baileys/media-storage.service';
 import { WhatsAppSenderFactory } from './whatsapp-sender.factory';
 import { WhatsAppController } from './whatsapp.controller';
 import { WorkflowModule } from 'src/modules/workflow/workflow.module';
@@ -15,6 +16,7 @@ import { WorkflowModule } from 'src/modules/workflow/workflow.module';
     BaileysSessionManager,
     BaileysSenderAdapter,
     BaileysMessageStore,
+    MediaStorageService,
     WhatsAppSenderFactory,
   ],
   exports: [WhatsAppSenderFactory, BaileysSessionManager, BaileysMessageStore, BaileysSenderAdapter],

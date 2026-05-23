@@ -5,6 +5,7 @@ import * as QRCode from 'qrcode';
 import { BaileysSessionManager } from './adapters/baileys/baileys-session.manager';
 import { BaileysMessageStore } from './adapters/baileys/baileys-message.store';
 import { BaileysSenderAdapter } from './adapters/baileys/baileys-sender.adapter';
+import { MediaStorageService } from './adapters/baileys/media-storage.service';
 import { PrismaService } from 'src/database/prisma.service';
 import { LoggerService } from 'src/core/logger/logger.service';
 
@@ -14,6 +15,7 @@ export class WhatsAppController {
     private readonly sessions: BaileysSessionManager,
     private readonly messageStore: BaileysMessageStore,
     private readonly sender: BaileysSenderAdapter,
+    private readonly mediaStorage: MediaStorageService,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly logger: LoggerService,
@@ -103,6 +105,60 @@ export class WhatsAppController {
     await this.sessions.stopSession(instanceName);
     this.logger.log(`[Baileys] Sesión detenida manualmente: ${instanceName}`, 'WhatsAppController');
     return { message: `Sesión "${instanceName}" detenida.` };
+  }
+
+  /** POST /whatsapp/baileys/send-media/:instanceName
+   *  Envía imagen, video, documento o audio desde la UI del chat. */
+  @Post('send-media/:instanceName')
+  async sendMedia(
+    @Param('instanceName') instanceName: string,
+    @Body() body: {
+      remoteJid: string;
+      mediatype: string;
+      mediaUrl: string;
+      mimetype?: string;
+      fileName?: string;
+      caption?: string;
+      ptt?: boolean;
+    },
+    @Headers() headers: Record<string, string>,
+  ) {
+    this.authorize(headers);
+    if (!body?.remoteJid || !body?.mediaUrl) throw new BadRequestException('remoteJid y mediaUrl son requeridos.');
+
+    // Para audio PTT: enviar base64 directo (sin subir a MinIO)
+    if (body.ptt) {
+      const base64Pure = body.mediaUrl.includes(',') ? body.mediaUrl.split(',')[1] : body.mediaUrl;
+      const ok = await this.sender.sendAudioBase64(instanceName, body.remoteJid, base64Pure);
+      if (!ok) throw new BadRequestException(`Sin sesión activa para "${instanceName}".`);
+      return { ok: true };
+    }
+
+    // Para otros tipos: subir a MinIO y enviar URL pública
+    const dataUrl = body.mediaUrl;
+    const commaIdx = dataUrl.indexOf(',');
+    const base64Pure = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+    const mimeFromDataUrl = commaIdx >= 0 ? dataUrl.slice(5, dataUrl.indexOf(';')) : '';
+    const mimetype = body.mimetype || mimeFromDataUrl || 'application/octet-stream';
+
+    const extMap: Record<string, string> = {
+      'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
+      'video/mp4': 'mp4', 'video/quicktime': 'mov',
+      'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a',
+      'application/pdf': 'pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    };
+    const fileNameExt = body.fileName?.includes('.') ? body.fileName.split('.').pop()!.toLowerCase() : '';
+    const ext = fileNameExt || extMap[mimetype] || mimetype.split('/')[1] || 'bin';
+
+    const buffer = Buffer.from(base64Pure, 'base64');
+    const key = `baileys-ui/${instanceName}/${body.remoteJid.replace(/[@:]/g, '_')}/${Date.now()}.${ext}`;
+    const publicUrl = await this.mediaStorage.uploadBuffer(buffer, key, mimetype);
+
+    const ok = await this.sender.sendMedia(instanceName, body.remoteJid, body.mediatype, body.caption ?? '', publicUrl, body.fileName);
+    if (!ok) throw new BadRequestException(`Sin sesión activa para "${instanceName}".`);
+    return { ok: true };
   }
 
   /** POST /whatsapp/baileys/send/:instanceName

@@ -36,22 +36,33 @@ export class BaileysSenderAdapter implements IWhatsAppSender {
     }
   }
 
-  async sendMedia(instanceName: string, remoteJid: string, type: string, caption: string, mediaUrl: string): Promise<boolean> {
+  async sendMedia(instanceName: string, remoteJid: string, type: string, caption: string, mediaUrl: string, fileName?: string): Promise<boolean> {
     const socket = this.sessions.getSocket(instanceName);
     if (!socket) {
       this.logger.warn(`[Baileys] Sin socket activo para ${instanceName}`, 'BaileysSenderAdapter');
       return false;
     }
     try {
-      const typeMap: Record<string, string> = {
-        image: 'image',
-        video: 'video',
-        document: 'document',
-        audio: 'audio',
-      };
+      const typeMap: Record<string, string> = { image: 'image', video: 'video', document: 'document', audio: 'audio' };
       const msgType = typeMap[type.toLowerCase()] ?? 'document';
-      const message: Record<string, any> = { [msgType]: { url: mediaUrl }, caption };
-      await socket.sendMessage(remoteJid, message);
+      const message: Record<string, any> = {
+        [msgType]: { url: mediaUrl },
+        caption,
+        ...(fileName ? { fileName } : {}),
+      };
+      const sent = await socket.sendMessage(remoteJid, message);
+
+      const dbTypeMap: Record<string, string> = { image: 'imageMessage', video: 'videoMessage', document: 'documentMessage', audio: 'audioMessage' };
+      this.messageStore.saveMessage({
+        instanceName, remoteJid,
+        messageId: sent?.key?.id ?? `out-${Date.now()}`,
+        fromMe: true,
+        body: caption || fileName || null,
+        type: dbTypeMap[type.toLowerCase()] ?? 'documentMessage',
+        timestamp: new Date(),
+        mediaUrl,
+      }).catch(() => {});
+
       return true;
     } catch (err) {
       this.logger.error(`[Baileys] Error enviando media a ${remoteJid}`, err?.message, 'BaileysSenderAdapter');

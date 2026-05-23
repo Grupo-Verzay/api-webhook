@@ -281,7 +281,7 @@ export class BaileysSessionManager implements OnModuleInit, OnModuleDestroy {
         const fileName: string = msgContent.fileName ?? '';
         const extFromFile = fileName.includes('.') ? fileName.split('.').pop()!.toLowerCase() : '';
         const extFromMime = mimetype.split('/')[1]?.replace('jpeg', 'jpg').replace('ogg; codecs=opus', 'ogg') ?? 'bin';
-        const ext = extFromFile || extFromMime || BaileysSessionManager.MEDIA_EXT[mediaKey] ?? 'bin';
+        const ext = extFromFile || extFromMime || (BaileysSessionManager.MEDIA_EXT[mediaKey] ?? 'bin');
 
         const stream = await downloadContentFromMessage(msgContent, type.replace('Message', '') as any);
         const chunks: Buffer[] = [];

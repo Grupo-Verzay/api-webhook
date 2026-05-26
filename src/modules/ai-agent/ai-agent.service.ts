@@ -873,10 +873,10 @@ export class AiAgentService {
           }
           const list = services
             .map((s: any, i: number) =>
-              `${i + 1}. ${s.name}${s.description ? ` — ${s.description}` : ''}  (id: ${s.id})`,
+              `${i + 1}. [serviceId="${s.id}"] ${s.name}${s.description ? ` — ${s.description}` : ''}`,
             )
             .join('\n');
-          return `Servicios disponibles (${total}):\n${list}`;
+          return `Servicios disponibles (${total}):\n${list}\n\n⚠️ IMPORTANTE: Usa el valor exacto de serviceId (entre comillas) al llamar consultar_slots_disponibles y crear_cita. NO inventes ni modifiques el ID.`;
         } catch (err: any) {
           logger.error(`[listar_servicios_agenda] Error: ${err?.message}`);
           return 'No fue posible obtener los servicios en este momento. Inténtalo más tarde.';

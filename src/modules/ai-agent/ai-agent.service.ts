@@ -2061,13 +2061,20 @@ export class AiAgentService {
       const next14Days = (() => {
         const lines: string[] = [];
         const now = new Date();
-        for (let i = 0; i <= 14; i++) {
+        const todayIso = now.toLocaleDateString('en-CA', { timeZone: agentTz });
+        const dowShort = new Intl.DateTimeFormat('en-US', { timeZone: agentTz, weekday: 'short' }).format(now);
+        const dowMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+        const localDow = dowMap[dowShort] ?? 0;
+        // Retroceder al lunes de la semana actual (lunes=0 offset)
+        const daysFromMon = (localDow + 6) % 7;
+        for (let i = -daysFromMon; i <= 14; i++) {
           const d = new Date(now);
           d.setDate(now.getDate() + i);
-          const isoDate = d.toLocaleDateString('en-CA', { timeZone: agentTz }); // YYYY-MM-DD
+          const isoDate = d.toLocaleDateString('en-CA', { timeZone: agentTz });
           const dayName = d.toLocaleDateString('es-CO', { timeZone: agentTz, weekday: 'long' });
-          const label = i === 0 ? 'hoy' : i === 1 ? 'mañana' : dayName;
-          lines.push(`  - ${label} (${dayName}): ${isoDate}`);
+          const isPast = isoDate < todayIso;
+          const label = isoDate === todayIso ? 'HOY' : isPast ? 'pasado' : isoDate === new Date(now.getTime() + 86400000).toLocaleDateString('en-CA', { timeZone: agentTz }) ? 'mañana' : dayName;
+          lines.push(`  - ${label} (${dayName}): ${isoDate}${isPast ? ' ← ya pasó, no agendar' : ''}`);
         }
         return lines.join('\n');
       })();

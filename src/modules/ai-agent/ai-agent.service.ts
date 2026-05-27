@@ -1464,13 +1464,27 @@ export class AiAgentService {
             return 'La hoja no contiene datos.';
           }
 
-          const header = `📊 Google Sheets — ${results.length} fila(s):\n\n`;
-          const body = results
-            .map((row, i) => `${i + 1}. ${Object.entries(row).map(([k, v]) => `*${k}*: ${v}`).join(' | ')}`)
-            .join('\n');
-          const instruction = `\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: Transmite el contenido de cada campo EXACTAMENTE como aparece en los datos de arriba, palabra por palabra. PROHIBIDO reformatear, extraer campos individuales, inventar estructura, o usar "[Información no disponible]" o cualquier placeholder. Si un campo tiene texto largo (como datos bancarios), cópialo completo tal cual está escrito. El usuario necesita ver el contenido real de la hoja, no una interpretación tuya.`;
+          const rowsFormatted = results
+            .map((row, i) => {
+              const parts = Object.entries(row)
+                .map(([k, v]) => {
+                  const valStr = String(v ?? '').trim();
+                  return valStr.includes('\n')
+                    ? `${k}:\n"""\n${valStr}\n"""`
+                    : `${k}: ${valStr}`;
+                })
+                .join('\n');
+              return `[Fila ${i + 1}]\n${parts}`;
+            })
+            .join('\n\n');
 
-          return header + body + instruction;
+          return (
+            `📊 Google Sheets — ${results.length} fila(s):\n\n${rowsFormatted}\n\n` +
+            `[INSTRUCCIÓN OBLIGATORIA — NO MOSTRAR ESTA LÍNEA]: El contenido dentro de """ es texto pre-formateado para WhatsApp. ` +
+            `Cópialo EXACTAMENTE como está, incluyendo todos los emojis, saltos de línea y caracteres especiales. ` +
+            `NO extraigas subcampos, NO resumas, NO uses "[Información no disponible]" ni ningún placeholder. ` +
+            `Si hay varias filas, envíalas en un solo mensaje concatenado separado por una línea en blanco.`
+          );
         } catch (err: any) {
           logger.error(`[leer_google_sheets] Error: ${err?.message}`);
           if (err?.response?.status === 403 || err?.response?.status === 401)

@@ -2058,8 +2058,22 @@ export class AiAgentService {
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
       }).format(new Date());
 
+      const next14Days = (() => {
+        const lines: string[] = [];
+        const now = new Date();
+        for (let i = 0; i <= 14; i++) {
+          const d = new Date(now);
+          d.setDate(now.getDate() + i);
+          const isoDate = d.toLocaleDateString('en-CA', { timeZone: agentTz }); // YYYY-MM-DD
+          const dayName = d.toLocaleDateString('es-CO', { timeZone: agentTz, weekday: 'long' });
+          const label = i === 0 ? 'hoy' : i === 1 ? 'mañana' : dayName;
+          lines.push(`  - ${label} (${dayName}): ${isoDate}`);
+        }
+        return lines.join('\n');
+      })();
+
       const agendaRuleBlock = hasAgendaTools
-        ? `\n\n---\n## REGLA CRÍTICA DE AGENDAMIENTO\n**Fecha actual: ${nowLabel}** (zona horaria: ${agentTz}). Usa esta fecha como referencia cuando el usuario mencione "hoy", "mañana", "el lunes", "el 29", etc.\n\nNunca confirmes una cita al usuario sin antes haber llamado exitosamente a la herramienta \`crear_cita\` y recibido una respuesta exitosa.\n\nFlujo obligatorio:\n1. Llama \`consultar_slots_disponibles\` para obtener los horarios disponibles.\n2. Presenta los slots al usuario en hora local.\n3. Cuando el usuario elija un slot, llama \`crear_cita\` con el startTime y endTime EXACTOS devueltos por \`consultar_slots_disponibles\` (valores ISO UTC). NO los reformatees ni construyas fechas propias.\n4. Solo si \`crear_cita\` responde con éxito, confirma la cita al usuario con el mensaje de confirmación. NO agregues frases como "Recibirás un recordatorio por este medio" ni "¿Puedo ayudarte con algo más?" después de confirmar la cita.\n5. Si \`crear_cita\` falla, informa al usuario que hubo un error y ofrece otro horario.\n---`
+        ? `\n\n---\n## REGLA CRÍTICA DE AGENDAMIENTO\n**Fecha actual: ${nowLabel}** (zona horaria: ${agentTz}).\n\nCalendario de referencia — USA ESTAS FECHAS EXACTAS cuando el usuario mencione días de la semana o expresiones como "hoy", "mañana", "el martes", "el viernes", etc. NO calcules fechas por tu cuenta:\n${next14Days}\n\nNunca confirmes una cita al usuario sin antes haber llamado exitosamente a la herramienta \`crear_cita\` y recibido una respuesta exitosa.\n\nFlujo obligatorio:\n1. Llama \`consultar_slots_disponibles\` para obtener los horarios disponibles.\n2. Presenta los slots al usuario en hora local.\n3. Cuando el usuario elija un slot, llama \`crear_cita\` con el startTime y endTime EXACTOS devueltos por \`consultar_slots_disponibles\` (valores ISO UTC). NO los reformatees ni construyas fechas propias.\n4. Solo si \`crear_cita\` responde con éxito, confirma la cita al usuario con el mensaje de confirmación. NO agregues frases como "Recibirás un recordatorio por este medio" ni "¿Puedo ayudarte con algo más?" después de confirmar la cita.\n5. Si \`crear_cita\` falla, informa al usuario que hubo un error y ofrece otro horario.\n---`
         : '';
 
       const hasDataQueryTools = toolConfigs.some(

@@ -849,6 +849,90 @@ export class AiAgentService {
     return fallback;
   }
 
+  /**
+   * Parsea expresiones de hora en español/inglés y devuelve { hour, minute }.
+   * Maneja: "10", "10 am", "10:30", "10:00 am", "diez", "diez y media", etc.
+   */
+  private parseLocalHourFromInput(input: string): { hour: number; minute: number } | null {
+    const s = (input ?? '')
+      .toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/^(a las?|las?)\s+/, '')
+      .trim();
+
+    const WORD_HOURS: Record<string, number> = {
+      'medianoche': 0, 'una': 1, 'dos': 2, 'tres': 3, 'cuatro': 4,
+      'cinco': 5, 'seis': 6, 'siete': 7, 'ocho': 8, 'nueve': 9,
+      'diez': 10, 'once': 11, 'doce': 12, 'mediodia': 12,
+    };
+
+    for (const [word, h] of Object.entries(WORD_HOURS)) {
+      if (s.startsWith(word)) {
+        const rest = s.slice(word.length).trim();
+        const isPm = /pm|tarde|noche/.test(rest);
+        const minute = /y media/.test(rest) ? 30 : /y cuarto/.test(rest) ? 15 : 0;
+        let hour = h;
+        if (isPm && hour > 0 && hour < 12) hour += 12;
+        return { hour, minute };
+      }
+    }
+
+    // "10", "10:30", "10:00 am", "10am", "10 pm"
+    const m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
+    if (m) {
+      let hour = parseInt(m[1], 10);
+      const minute = parseInt(m[2] ?? '0', 10);
+      const ampm = m[3];
+      if (ampm === 'pm' && hour < 12) hour += 12;
+      if (ampm === 'am' && hour === 12) hour = 0;
+      return { hour, minute };
+    }
+
+    return null;
+  }
+
+  /**
+   * Dado un tiempo informal ("10 am", "diez") y una fecha YYYY-MM-DD,
+   * busca en los slots disponibles aquel cuya hora local coincide y devuelve sus ISO UTC.
+   */
+  private async resolveSlotByTimeExpression(
+    userId: string,
+    date: string,
+    timeExpr: string,
+    timezone: string,
+    nextjsUrl: string,
+    runnerKey: string,
+  ): Promise<{ startTime: string; endTime: string } | null> {
+    const parsed = this.parseLocalHourFromInput(timeExpr);
+    if (!parsed) return null;
+
+    let slots: any[] = [];
+    try {
+      const res = await axios.get(
+        `${nextjsUrl}/api/schedule/slots?userId=${encodeURIComponent(userId)}&date=${encodeURIComponent(date)}&timezone=${encodeURIComponent(timezone)}`,
+        { headers: { Authorization: `Bearer ${runnerKey}` } },
+      );
+      slots = res.data?.slots ?? [];
+    } catch {
+      return null;
+    }
+
+    return (
+      slots.find((s: any) => {
+        const d = new Date(s.startTime);
+        const localH = parseInt(
+          d.toLocaleString('en-US', { timeZone: timezone, hour: '2-digit', hour12: false }),
+          10,
+        );
+        const localM = parseInt(
+          d.toLocaleString('en-US', { timeZone: timezone, minute: '2-digit' }),
+          10,
+        );
+        return localH === parsed.hour && localM === parsed.minute;
+      }) ?? null
+    );
+  }
+
   private buildListarServiciosAgendaTool(cfg: any, params: {
     userId: string; instanceName: string; remoteJid: string;
   }): any {
@@ -926,7 +1010,7 @@ export class AiAgentService {
           // Mostrar horarios en la zona horaria del CLIENTE (detectada por código de país)
           const clientTz = this.getClientTimezone(remoteJid, timezone);
           const tzCity = clientTz.split('/').pop()?.replace(/_/g, ' ') ?? clientTz;
-          const localSlots = slots.map((s: any) => {
+          const localSlots = slots.map((s: any, i: number) => {
             const start = new Date(s.startTime).toLocaleTimeString('es-CO', {
               timeZone: clientTz,
               hour: '2-digit',
@@ -939,14 +1023,23 @@ export class AiAgentService {
               minute: '2-digit',
               hour12: true,
             });
-            return `• ${start} – ${end} (hora ${tzCity})  (startTime: ${s.startTime} | endTime: ${s.endTime})`;
+            return `• [${i + 1}] ${start} – ${end} (hora ${tzCity})  startTime="${s.startTime}" endTime="${s.endTime}"`;
           });
 
           const reminder =
-            `\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: Cuando el usuario elija un horario, llama INMEDIATAMENTE a \`crear_cita\` con:\n` +
+            `\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]\n` +
+            `Cuando el usuario confirme o elija un horario, llama INMEDIATAMENTE a \`crear_cita\` con:\n` +
             `  • serviceId: "${serviceId}"\n` +
-            `  • startTime: copia el valor ISO UTC exacto del slot elegido (como aparece arriba)\n` +
-            `  • endTime: copia el valor ISO UTC exacto de fin del slot elegido\n` +
+            `  • date: "${date}"\n` +
+            `  • startTime: el valor startTime del slot elegido tal como aparece arriba entre comillas.\n` +
+            `  • endTime: el valor endTime del slot elegido tal como aparece arriba entre comillas.\n` +
+            `RECONOCIMIENTO DE HORA DEL USUARIO:\n` +
+            `  — Si dice "10", "10 am", "10:00", "las 10", "diez" → es el slot con hora 10:00 a.m.\n` +
+            `  — Si dice "el primero", "opción 1", "1" → es el slot [1]\n` +
+            `  — Si dice "el segundo", "opción 2", "2" → es el slot [2]\n` +
+            `  — Si dice una hora que coincide con un slot, usa ese slot.\n` +
+            `Si no estás 100% seguro del ISO, pasa startTime como la hora que dijo el usuario (ej: "10 am") ` +
+            `y el campo date="${date}" — el sistema lo resolverá automáticamente.\n` +
             `Nunca confirmes la cita sin haber llamado \`crear_cita\` exitosamente.`;
           return `Horarios disponibles para el ${date} (${total}):\n${localSlots.join('\n')}${reminder}`;
         } catch (err: any) {
@@ -976,14 +1069,48 @@ export class AiAgentService {
 
     // @ts-ignore
     return tool(
-      async ({ serviceId, startTime, endTime }: { serviceId: string; startTime: string; endTime: string }) => {
-        logger.log(`Tool "${cfg.toolKey}" (crear_cita) serviceId="${serviceId}" startTime="${startTime}"`);
+      async ({ serviceId, startTime, endTime, date }: { serviceId: string; startTime: string; endTime?: string; date?: string }) => {
+        logger.log(`Tool "${cfg.toolKey}" (crear_cita) serviceId="${serviceId}" startTime="${startTime}" date="${date ?? '—'}"`);
         try {
           const user = await this.prisma.user.findUnique({
             where: { id: userId },
             select: { timezone: true },
           });
           const timezone = user?.timezone || 'UTC';
+
+          const isIso = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s);
+
+          let resolvedStart = startTime;
+          let resolvedEnd = endTime ?? '';
+
+          // Si startTime no es ISO UTC, intentar resolver el slot por expresión de hora informal
+          if (!isIso(startTime) || !isIso(endTime)) {
+            const slotDate =
+              date ??
+              (isIso(startTime) ? startTime.slice(0, 10) : undefined);
+
+            if (slotDate) {
+              logger.log(`[crear_cita] startTime no es ISO, resolviendo "${startTime}" para fecha "${slotDate}"`);
+              const slot = await this.resolveSlotByTimeExpression(
+                userId, slotDate, startTime, timezone, nextjsUrl, runnerKey,
+              );
+              if (slot) {
+                resolvedStart = slot.startTime;
+                resolvedEnd = slot.endTime;
+                logger.log(`[crear_cita] Slot resuelto: startTime="${resolvedStart}"`);
+              } else {
+                return (
+                  `No encontré un horario disponible que coincida con "${startTime}" para el ${slotDate}. ` +
+                  `Muestra los horarios con consultar_slots_disponibles y pide al usuario que elija uno.`
+                );
+              }
+            } else {
+              return (
+                `Necesito saber la fecha para resolver "${startTime}". ` +
+                `Llama primero a consultar_slots_disponibles para obtener los horarios del día.`
+              );
+            }
+          }
 
           const res = await axios.post(
             `${nextjsUrl}/api/schedule/appointment`,
@@ -993,8 +1120,8 @@ export class AiAgentService {
               pushName,
               phone: remoteJid,
               instanceName,
-              startTime,
-              endTime,
+              startTime: resolvedStart,
+              endTime: resolvedEnd,
               timezone,
             },
             {
@@ -1015,7 +1142,7 @@ export class AiAgentService {
                 dateStyle: 'full',
                 timeStyle: 'short',
               })} (hora ${tzCity})`
-            : startTime;
+            : resolvedStart;
 
           const successText = message
             ? `${message} — ${confirmDate}`
@@ -1030,13 +1157,22 @@ export class AiAgentService {
       {
         name: cfg.toolKey,
         description: cfg.toolDescription ||
-          'OBLIGATORIO: Llama esta herramienta en el momento en que el usuario confirme o elija un horario de cita. ' +
-          'Es la ÚNICA forma de registrar la cita en el sistema — sin llamarla, la cita NO existe. ' +
-          'Usa el serviceId devuelto por listar_servicios_agenda y los valores ISO UTC exactos de consultar_slots_disponibles.',
+          'OBLIGATORIO: Llama esta herramienta cuando el usuario confirme o elija un horario de cita. ' +
+          'Es la ÚNICA forma de registrar la cita — sin llamarla, la cita NO existe. ' +
+          'Usa el serviceId de listar_servicios_agenda y los valores startTime/endTime de consultar_slots_disponibles. ' +
+          'Si el usuario dice una hora informal ("10 am", "diez", "10:00"), pásala en startTime junto con date.',
         schema: z.object({
-          serviceId: z.string().describe('ID del servicio seleccionado por el cliente (obtenido de listar_servicios_agenda)'),
-          startTime: z.string().describe('Hora de inicio de la cita en formato ISO UTC. Ejemplo: "2025-05-20T14:00:00.000Z"'),
-          endTime: z.string().describe('Hora de fin de la cita en formato ISO UTC. Ejemplo: "2025-05-20T15:00:00.000Z"'),
+          serviceId: z.string().describe('ID del servicio (de listar_servicios_agenda)'),
+          startTime: z.string().describe(
+            'Hora de inicio: ISO UTC ("2025-05-20T14:00:00.000Z") o expresión informal ("10 am", "10:00", "diez"). ' +
+            'Si es expresión informal, incluye también el campo date.',
+          ),
+          endTime: z.string().optional().describe(
+            'Hora de fin ISO UTC. Puede omitirse si startTime es expresión informal (se resuelve automáticamente).',
+          ),
+          date: z.string().optional().describe(
+            'Fecha en formato YYYY-MM-DD (ej: "2025-05-20"). Requerida cuando startTime no es ISO UTC.',
+          ),
         }),
       },
     );

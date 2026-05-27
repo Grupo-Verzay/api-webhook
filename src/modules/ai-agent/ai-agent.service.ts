@@ -2065,9 +2065,9 @@ export class AiAgentService {
         const dowShort = new Intl.DateTimeFormat('en-US', { timeZone: agentTz, weekday: 'short' }).format(now);
         const dowMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
         const localDow = dowMap[dowShort] ?? 0;
-        // Retroceder al lunes de la semana actual (lunes=0 offset)
-        const daysFromMon = (localDow + 6) % 7;
-        for (let i = -daysFromMon; i <= 14; i++) {
+        // Retroceder al domingo de la semana actual (Sun=0)
+        const daysFromSun = localDow;
+        for (let i = -daysFromSun; i <= 14; i++) {
           const d = new Date(now);
           d.setDate(now.getDate() + i);
           const isoDate = d.toLocaleDateString('en-CA', { timeZone: agentTz });

@@ -1468,8 +1468,9 @@ export class AiAgentService {
           const body = results
             .map((row, i) => `${i + 1}. ${Object.entries(row).map(([k, v]) => `*${k}*: ${v}`).join(' | ')}`)
             .join('\n');
+          const instruction = `\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: Transmite el contenido de cada campo EXACTAMENTE como aparece en los datos de arriba, palabra por palabra. PROHIBIDO reformatear, extraer campos individuales, inventar estructura, o usar "[Información no disponible]" o cualquier placeholder. Si un campo tiene texto largo (como datos bancarios), cópialo completo tal cual está escrito. El usuario necesita ver el contenido real de la hoja, no una interpretación tuya.`;
 
-          return header + body;
+          return header + body + instruction;
         } catch (err: any) {
           logger.error(`[leer_google_sheets] Error: ${err?.message}`);
           if (err?.response?.status === 403 || err?.response?.status === 401)

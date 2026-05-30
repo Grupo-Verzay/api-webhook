@@ -1771,11 +1771,19 @@ export class AiAgentService {
           data: { status: CrmFollowUpStatus.CANCELLED, cancelledAt: new Date() },
         });
 
-        // 3. Cancelar seguimientos de flujos (Seguimiento) por remoteJid
-        const cancelledSeg = await this.prisma.seguimiento.updateMany({
-          where: { remoteJid, followUpStatus: 'pending' },
-          data: { followUpStatus: 'cancelled' },
+        // 3. Eliminar seguimientos de flujos (Seguimiento) por remoteJid
+        // Se excluyen seguimientos protegidos (recordatorios, citas, camping)
+        const PROTECTED_PREFIXES = ['reminder-', 'appt-confirm-', 'appt-reminder-', 'camping-'];
+        const allSeg = await this.prisma.seguimiento.findMany({
+          where: { remoteJid },
+          select: { id: true, idNodo: true },
         });
+        const idsToDelete = allSeg
+          .filter((s) => s.idNodo && !PROTECTED_PREFIXES.some((p) => s.idNodo!.startsWith(p)))
+          .map((s) => s.id);
+        const deletedSeg = idsToDelete.length > 0
+          ? await this.prisma.seguimiento.deleteMany({ where: { id: { in: idsToDelete } } })
+          : { count: 0 };
 
         // 4. Resetear estados de flujos activos (en espera de intención del usuario)
         await this.prisma.sessionWorkflowState.updateMany({
@@ -1784,9 +1792,9 @@ export class AiAgentService {
         });
 
         logger.log(
-          `Lead DESCARTADO. CrmFollowUp: ${cancelledCrm.count}, Seguimientos flujo: ${cancelledSeg.count ?? 0}`,
+          `Lead DESCARTADO. CrmFollowUp: ${cancelledCrm.count}, Seguimientos flujo eliminados: ${deletedSeg.count}`,
         );
-        return `OK: lead DESCARTADO. CrmFollowUp cancelados: ${cancelledCrm.count}, seguimientos de flujo cancelados: ${cancelledSeg.count ?? 0}.`;
+        return `OK: lead DESCARTADO. CrmFollowUp cancelados: ${cancelledCrm.count}, seguimientos de flujo eliminados: ${deletedSeg.count}.`;
       },
       {
         name: 'Marcar_Descartado',

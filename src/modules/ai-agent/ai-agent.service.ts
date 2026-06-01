@@ -1366,8 +1366,10 @@ export class AiAgentService {
     userId: string;
     instanceName: string;
     remoteJid: string;
+    server_url: string;
+    apikey: string;
   }): any {
-    const { userId, instanceName, remoteJid } = params;
+    const { userId, instanceName, remoteJid, server_url, apikey } = params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
     // @ts-ignore
@@ -1480,13 +1482,20 @@ export class AiAgentService {
               .map((s) => s.trim())
               .filter(Boolean);
             const count = secciones.length;
-            return (
-              `[SISTEMA: ${count} BANCO(S) — COPIA OBLIGATORIA COMPLETA]\n` +
-              `Esta respuesta contiene ${count} banco(s). ` +
-              `Debes incluir los ${count} banco(s) en tu respuesta al usuario, uno tras otro, completos. ` +
-              `No omitas ninguno. No resumas. Copia cada línea, emoji y símbolo exactamente.\n\n` +
-              rawCuenta
-            );
+            // Enviar directamente a WhatsApp para evitar que el LLM trunce el contenido
+            try {
+              const sendUrl = `${server_url}/message/sendText/${instanceName}`;
+              const typingDelay = Math.min(Math.max(rawCuenta.length * 30, 1500), 6000);
+              await axios.post(
+                sendUrl,
+                { number: remoteJid, delay: typingDelay, text: rawCuenta },
+                { headers: { 'Content-Type': 'application/json', apikey }, timeout: 10000 },
+              );
+              logger.log(`[leer_google_sheets] Cuentas enviadas directamente (${count} banco(s), ${rawCuenta.length} chars)`);
+            } catch (sendErr: any) {
+              logger.error(`[leer_google_sheets] Error enviando cuentas directo: ${sendErr?.message}`);
+            }
+            return `[CUENTAS_ENVIADAS_DIRECTO]: La información completa de ${count} banco(s) ya fue enviada al usuario. Dile únicamente: "Aquí tienes la información de las cuentas." Sin agregar ni repetir los datos.`;
           }
 
           const rowsFormatted = results

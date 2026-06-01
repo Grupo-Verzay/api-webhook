@@ -1469,21 +1469,22 @@ export class AiAgentService {
               const parts = Object.entries(row)
                 .map(([k, v]) => {
                   const valStr = String(v ?? '').trim();
-                  return valStr.includes('\n')
-                    ? `${k}:\n"""\n${valStr}\n"""`
-                    : `${k}: ${valStr}`;
+                  return `${k}: ${valStr}`;
                 })
                 .join('\n');
               return `[Fila ${i + 1}]\n${parts}`;
             })
             .join('\n\n');
 
+          const totalChars = rowsFormatted.length;
+
           return (
-            `📊 Google Sheets — ${results.length} fila(s):\n\n${rowsFormatted}\n\n` +
-            `[INSTRUCCIÓN OBLIGATORIA — NO MOSTRAR ESTA LÍNEA]: El contenido dentro de """ es texto pre-formateado para WhatsApp. ` +
-            `Cópialo EXACTAMENTE como está, incluyendo todos los emojis, saltos de línea y caracteres especiales. ` +
-            `NO extraigas subcampos, NO resumas, NO uses "[Información no disponible]" ni ningún placeholder. ` +
-            `Si hay varias filas, envíalas en un solo mensaje concatenado separado por una línea en blanco.`
+            `[INSTRUCCIÓN CRÍTICA — NO INCLUIR EN RESPUESTA AL USUARIO]\n` +
+            `Los datos a continuación tienen ${totalChars} caracteres y deben copiarse COMPLETOS. ` +
+            `PROHIBIDO truncar, resumir o seleccionar solo una parte. ` +
+            `Si un campo contiene varios bancos o cuentas separados por "---", debes enviar TODOS sin excepción. ` +
+            `Copia cada emoji, cada salto de línea y cada símbolo exactamente como aparece.\n\n` +
+            `📊 Google Sheets — ${results.length} fila(s):\n\n${rowsFormatted}`
           );
         } catch (err: any) {
           logger.error(`[leer_google_sheets] Error: ${err?.message}`);

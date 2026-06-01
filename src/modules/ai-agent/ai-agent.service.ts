@@ -2140,9 +2140,19 @@ export class AiAgentService {
         content: [{ type: 'text', text: promptAI }],
       });
 
+      const freshnessInjection = googleSheetsTools.length > 0
+        ? new SystemMessage({
+            content: [{
+              type: 'text',
+              text: `[CONSULTA EN TIEMPO REAL — ${new Date().toISOString()}] INSTRUCCIÓN OBLIGATORIA: Para responder el siguiente mensaje DEBES invocar las herramientas de Google Sheets. PROHIBIDO usar tasas, cuentas, precios o cualquier dato de mensajes anteriores del historial — esa información puede estar desactualizada. Llama siempre a la herramienta aunque ya hayas respondido la misma pregunta antes.`,
+            }],
+          })
+        : null;
+
       const messagesForLlm = [
         systemMessage,
         ...historyMessages,
+        ...(freshnessInjection ? [freshnessInjection] : []),
         rawInputMessage,
       ];
 

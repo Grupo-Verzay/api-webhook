@@ -23,7 +23,7 @@ import { GoogleSheetsService } from '../google-sheets/google-sheets.service';
 
 // Refactor
 import { LlmClientFactory } from './services/llmClientFactory/llmClientFactory.service';
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { NodeSenderService } from '../workflow/services/node-sender.service.ts/node-sender.service';
 import { AgentNotificationService } from './services/notificacionService/notificacion.service';
 
@@ -2104,7 +2104,7 @@ export class AiAgentService {
         (c: any) => c.toolType === 'leer_google_sheets' && c.isEnabled,
       );
       const googleSheetsRuleBlock = googleSheetsTools.length > 0
-        ? `\n\n---\n## REGLA CRÍTICA: HERRAMIENTAS DE CONSULTA EN GOOGLE SHEETS\nTienes ${googleSheetsTools.length > 1 ? 'las siguientes herramientas' : 'la siguiente herramienta'} para consultar información en tiempo real desde hojas de cálculo:\n${googleSheetsTools.map((t: any) => `- \`${t.toolKey}\`: ${t.toolDescription}`).join('\n')}\n\nNORMAS DE USO OBLIGATORIO:\n1. SIEMPRE invoca la herramienta correspondiente cuando el usuario solicite cualquier dato que pueda estar en esa hoja (tasas, cuentas, precios, disponibilidad, etc.).\n2. NUNCA respondas "no puedo acceder", "no tengo esa información", "no puedo consultar" ni similares sin haber llamado primero a la herramienta y recibido su respuesta.\n3. Si la herramienta devuelve datos, úsalos directamente en tu respuesta. Si no hay datos para lo solicitado, informa que no hay información disponible — NO inventes ni uses conocimiento propio.\n---`
+        ? `\n\n---\n## REGLA CRÍTICA: HERRAMIENTAS DE CONSULTA EN GOOGLE SHEETS\nTienes ${googleSheetsTools.length > 1 ? 'las siguientes herramientas' : 'la siguiente herramienta'} para consultar información en tiempo real desde hojas de cálculo:\n${googleSheetsTools.map((t: any) => `- \`${t.toolKey}\`: ${t.toolDescription}`).join('\n')}\n\nNORMAS DE USO OBLIGATORIO:\n1. SIEMPRE invoca la herramienta correspondiente cuando el usuario solicite cualquier dato que pueda estar en esa hoja (tasas, cuentas, precios, disponibilidad, etc.).\n2. NUNCA respondas "no puedo acceder", "no tengo esa información", "no puedo consultar" ni similares sin haber llamado primero a la herramienta y recibido su respuesta.\n3. Si la herramienta devuelve datos, úsalos directamente en tu respuesta. Si no hay datos para lo solicitado, informa que no hay información disponible — NO inventes ni uses conocimiento propio.\n4. NUNCA uses datos del historial de conversación para responder sobre información de la hoja — aunque el historial contenga respuestas anteriores sobre el mismo tema, SIEMPRE debes invocar la herramienta de nuevo para obtener datos en tiempo real. El historial puede estar desactualizado.\n5. Copia la respuesta de la herramienta de forma COMPLETA y EXACTA, sin resumir, sin recortar filas, sin omitir campos. Si la herramienta devuelve varias filas, entrégalas TODAS.\n---`
         : '';
 
       const defaultMapsUrl = 'https://maps.google.com/?q=0,0';
@@ -2121,14 +2121,14 @@ export class AiAgentService {
       // logger.log('PROMPT:', promptAI);
 
       const chatHistory =
-        await this.chatHistoryService.getChatHistory(sessionId);
+        await this.chatHistoryService.getChatHistoryWithTypes(sessionId);
 
-      const historyMessages = chatHistory.map(
-        (text) =>
-          new HumanMessage({
-            content: [{ type: 'text', text }],
-          }),
-      );
+      const historyMessages = chatHistory.map(({ content, type }) => {
+        const isAi = type === 'ia' || type === 'ai';
+        return isAi
+          ? new AIMessage({ content: [{ type: 'text', text: content }] })
+          : new HumanMessage({ content: [{ type: 'text', text: content }] });
+      });
 
       // logger.log(`HISTORIAL: ${JSON.stringify(historyMessages, null, 2)}`);
 

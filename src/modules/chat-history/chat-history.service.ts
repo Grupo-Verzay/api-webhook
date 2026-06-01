@@ -60,6 +60,33 @@ export class ChatHistoryService {
       });
   }
 
+  async getChatHistoryWithTypes(
+    sessionId: string,
+  ): Promise<{ content: string; type: string }[]> {
+    const messages = await this.prisma.n8nChatHistory.findMany({
+      where: {
+        sessionId: sessionId,
+        message: { path: ['type'], not: 'intention' },
+      },
+      orderBy: { id: 'asc' },
+      take: 30,
+    });
+
+    return messages.map((msg) => {
+      if (
+        msg.message &&
+        typeof msg.message === 'object' &&
+        'content' in msg.message
+      ) {
+        return {
+          content: (msg.message as any).content ?? '',
+          type: (msg.message as any).type ?? 'human',
+        };
+      }
+      return { content: '', type: 'human' };
+    });
+  }
+
   async registerExecutedIntention(
     sessionId: string,
     name: string,

@@ -1410,35 +1410,47 @@ export class AiAgentService {
           }
           const csvText = rawText;
 
-          const lines = csvText.split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l.trim());
-          if (lines.length < 2) return 'La hoja no contiene datos o está vacía.';
-
-          const parseRow = (line: string): string[] => {
-            const result: string[] = [];
-            let current = '';
+          // Parser CSV que respeta celdas con saltos de línea (campos entre comillas)
+          const parseCSV = (csv: string): string[][] => {
+            const allRows: string[][] = [];
+            let currentRow: string[] = [];
+            let currentField = '';
             let inQuotes = false;
-            for (let i = 0; i < line.length; i++) {
-              const ch = line[i];
+            for (let i = 0; i < csv.length; i++) {
+              const ch = csv[i];
+              const next = csv[i + 1];
               if (ch === '"') {
-                if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+                if (inQuotes && next === '"') { currentField += '"'; i++; }
                 else inQuotes = !inQuotes;
               } else if (ch === ',' && !inQuotes) {
-                result.push(current.trim());
-                current = '';
+                currentRow.push(currentField.trim());
+                currentField = '';
+              } else if (ch === '\r' && next === '\n' && !inQuotes) {
+                i++;
+                currentRow.push(currentField.trim());
+                currentField = '';
+                if (currentRow.some((f) => f !== '')) allRows.push(currentRow);
+                currentRow = [];
+              } else if (ch === '\n' && !inQuotes) {
+                currentRow.push(currentField.trim());
+                currentField = '';
+                if (currentRow.some((f) => f !== '')) allRows.push(currentRow);
+                currentRow = [];
               } else {
-                current += ch;
+                currentField += ch;
               }
             }
-            result.push(current.trim());
-            return result;
+            currentRow.push(currentField.trim());
+            if (currentRow.some((f) => f !== '')) allRows.push(currentRow);
+            return allRows;
           };
 
-          const headers = parseRow(lines[0]);
-          const rows = lines.slice(1)
-            .map((line) => {
-              const values = parseRow(line);
-              return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? '']));
-            })
+          const allParsedRows = parseCSV(csvText);
+          if (allParsedRows.length < 2) return 'La hoja no contiene datos o está vacía.';
+
+          const headers = allParsedRows[0];
+          const rows = allParsedRows.slice(1)
+            .map((values) => Object.fromEntries(headers.map((h, i) => [h, values[i] ?? ''])))
             .filter((row) => Object.values(row).some((v) => v !== ''));
 
           logger.log(`[leer_google_sheets] ${rows.length} filas leídas. Columnas: ${headers.join(', ')}`);

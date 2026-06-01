@@ -1464,6 +1464,31 @@ export class AiAgentService {
             return 'La hoja no contiene datos.';
           }
 
+          // Detectar si hay un campo de cuentas con múltiples secciones separadas por ---
+          const cuentaKey = Object.keys(results[0] ?? {}).find(
+            (k) => k.toUpperCase().includes('CUENTA') || k.toUpperCase().includes('ACCOUNT'),
+          );
+          const hasCuentaMultiple =
+            cuentaKey &&
+            results.length === 1 &&
+            String(results[0][cuentaKey] ?? '').includes('---');
+
+          if (hasCuentaMultiple && cuentaKey) {
+            const rawCuenta = String(results[0][cuentaKey] ?? '').trim();
+            const secciones = rawCuenta
+              .split(/\n---\n|^---\n|\n---$/)
+              .map((s) => s.trim())
+              .filter(Boolean);
+            const count = secciones.length;
+            return (
+              `[SISTEMA: ${count} BANCO(S) — COPIA OBLIGATORIA COMPLETA]\n` +
+              `Esta respuesta contiene ${count} banco(s). ` +
+              `Debes incluir los ${count} banco(s) en tu respuesta al usuario, uno tras otro, completos. ` +
+              `No omitas ninguno. No resumas. Copia cada línea, emoji y símbolo exactamente.\n\n` +
+              rawCuenta
+            );
+          }
+
           const rowsFormatted = results
             .map((row, i) => {
               const parts = Object.entries(row)
@@ -1480,10 +1505,7 @@ export class AiAgentService {
 
           return (
             `[INSTRUCCIÓN CRÍTICA — NO INCLUIR EN RESPUESTA AL USUARIO]\n` +
-            `Los datos a continuación tienen ${totalChars} caracteres y deben copiarse COMPLETOS. ` +
-            `PROHIBIDO truncar, resumir o seleccionar solo una parte. ` +
-            `Si un campo contiene varios bancos o cuentas separados por "---", debes enviar TODOS sin excepción. ` +
-            `Copia cada emoji, cada salto de línea y cada símbolo exactamente como aparece.\n\n` +
+            `Los datos tienen ${totalChars} caracteres. Cópialos COMPLETOS sin truncar ni resumir.\n\n` +
             `📊 Google Sheets — ${results.length} fila(s):\n\n${rowsFormatted}`
           );
         } catch (err: any) {

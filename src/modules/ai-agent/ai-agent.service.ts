@@ -1507,14 +1507,18 @@ export class AiAgentService {
                   { number: remoteJid, delay: Math.min(Math.max(text.length * 30, 1500), 6000), text },
                   { headers: { 'Content-Type': 'application/json', apikey }, timeout: 10000 },
                 );
-              // Intro
-              await send(`Aquí tienes la información de las cuentas para enviar dinero a ${pais}:`);
+              // Intro — usa cfg.introMessage si está configurado, si no usa genérico
+              const introText = cfg.introMessage
+                ? cfg.introMessage.replace(/\[pais\]/gi, pais).replace(/\{pais\}/gi, pais)
+                : `Aquí tienes la información de ${pais}:`;
+              await send(introText);
               // Un mensaje por banco
               for (const seccion of secciones) {
                 await send(seccion);
               }
-              // Cierre
-              await send('Si necesitas más información, ¡avísame! 😊');
+              // Cierre — usa cfg.closingMessage si está configurado, si no usa genérico
+              const closingText = cfg.closingMessage ?? 'Si necesitas más información, ¡avísame! 😊';
+              await send(closingText);
               logger.log(`[leer_google_sheets] Cuentas enviadas directamente (${count} banco(s), ${rawCuenta.length} chars)`);
             } catch (sendErr: any) {
               logger.error(`[leer_google_sheets] Error enviando cuentas directo: ${sendErr?.message}`);

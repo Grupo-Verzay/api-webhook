@@ -967,6 +967,8 @@ model ExternalDataToolConfig {
   toolType        String   @default("search_by_field")
   searchField     String?
   promptTemplate  String?
+  introMessage    String?
+  closingMessage  String?
   isEnabled       Boolean  @default(true)
   sortOrder       Int      @default(0)
   createdAt       DateTime @default(now())

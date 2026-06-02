@@ -264,6 +264,7 @@ export class AiAgentService {
     pushName: string;
     toolConfigs?: any[];
     client: BaseChatModel;
+    directSentState?: { sent: boolean };
   }): Promise<any[]> {
     const {
       userId,
@@ -1368,8 +1369,9 @@ export class AiAgentService {
     remoteJid: string;
     server_url: string;
     apikey: string;
+    directSentState?: { sent: boolean };
   }): any {
-    const { userId, instanceName, remoteJid, server_url, apikey } = params;
+    const { userId, instanceName, remoteJid, server_url, apikey, directSentState } = params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
     // @ts-ignore
@@ -1520,6 +1522,7 @@ export class AiAgentService {
               const closingText = cfg.closingMessage ?? 'Si necesitas más información, ¡avísame! 😊';
               await send(closingText);
               logger.log(`[leer_google_sheets] Cuentas enviadas directamente (${count} banco(s), ${rawCuenta.length} chars)`);
+              if (directSentState) directSentState.sent = true;
             } catch (sendErr: any) {
               logger.error(`[leer_google_sheets] Error enviando cuentas directo: ${sendErr?.message}`);
             }
@@ -2218,6 +2221,9 @@ export class AiAgentService {
 
       const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
+      // Flag para suprimir respuesta del LLM cuando el tool ya envió todo directamente
+      const directSentState = { sent: false };
+
       // Tools + agente ReAct
       const tools = await this.buildReactTools({
         userId,
@@ -2229,6 +2235,7 @@ export class AiAgentService {
         pushName: pushName ?? '',
         toolConfigs,
         client,
+        directSentState,
       });
 
       const createReactAgentWithRetry = async () => {
@@ -2361,6 +2368,11 @@ export class AiAgentService {
       // }
 
       // return finalText;
+      // Si el tool ya envió todo directamente, suprimir la respuesta del LLM
+      if (directSentState.sent) {
+        return '';
+      }
+
       const finalTextRaw = this.extractReactAgentReply(result);
 
       if (!finalTextRaw || !finalTextRaw.trim()) {

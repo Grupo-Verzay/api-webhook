@@ -1494,22 +1494,32 @@ export class AiAgentService {
               .map((s) => s.trim())
               .filter(Boolean);
             const count = secciones.length;
-            // Enviar cada banco como mensaje independiente
+            // Detectar nombre del país del resultado
+            const paisKey = Object.keys(results[0]).find(
+              (k) => k.toUpperCase().includes('PAIS') || k.toUpperCase().includes('PAÍS'),
+            );
+            const pais = paisKey ? String(results[0][paisKey] ?? '').trim() : (valor ?? '');
             try {
               const sendUrl = `${server_url}/message/sendText/${instanceName}`;
-              for (const seccion of secciones) {
-                const typingDelay = Math.min(Math.max(seccion.length * 30, 1500), 6000);
-                await axios.post(
+              const send = async (text: string) =>
+                axios.post(
                   sendUrl,
-                  { number: remoteJid, delay: typingDelay, text: seccion },
+                  { number: remoteJid, delay: Math.min(Math.max(text.length * 30, 1500), 6000), text },
                   { headers: { 'Content-Type': 'application/json', apikey }, timeout: 10000 },
                 );
+              // Intro
+              await send(`Aquí tienes la información de las cuentas para enviar dinero a ${pais}:`);
+              // Un mensaje por banco
+              for (const seccion of secciones) {
+                await send(seccion);
               }
+              // Cierre
+              await send('Si necesitas más información, ¡avísame! 😊');
               logger.log(`[leer_google_sheets] Cuentas enviadas directamente (${count} banco(s), ${rawCuenta.length} chars)`);
             } catch (sendErr: any) {
               logger.error(`[leer_google_sheets] Error enviando cuentas directo: ${sendErr?.message}`);
             }
-            return `[CUENTAS_ENVIADAS_DIRECTO]: La información completa de ${count} banco(s) ya fue enviada al usuario. Dile únicamente: "Aquí tienes la información de las cuentas." Sin agregar ni repetir los datos.`;
+            return `[CUENTAS_ENVIADAS_DIRECTO]: Intro, ${count} banco(s) y cierre ya fueron enviados directamente. NO envíes nada adicional al usuario.`;
           }
 
           const rowsFormatted = results

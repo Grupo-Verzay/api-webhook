@@ -1509,17 +1509,33 @@ export class AiAgentService {
                   { number: remoteJid, delay: Math.min(Math.max(text.length * 30, 1500), 6000), text },
                   { headers: { 'Content-Type': 'application/json', apikey }, timeout: 10000 },
                 );
-              // Intro — usa cfg.introMessage si está configurado, si no usa genérico
-              const introText = cfg.introMessage
-                ? cfg.introMessage.replace(/\[pais\]/gi, pais).replace(/\{pais\}/gi, pais)
-                : `Aquí tienes la información de ${pais}:`;
+              // Parsear intro y cierre desde toolDescription si contiene placeholder {}
+              // Formato esperado: "...\nIntro [PAIS]:\n{}\nCierre [país]..."
+              let introText = cfg.introMessage ?? '';
+              let closingText = cfg.closingMessage ?? '';
+              if (!introText || !closingText) {
+                const desc: string = cfg.toolDescription ?? '';
+                const placeholderIdx = desc.indexOf('{}');
+                if (placeholderIdx !== -1) {
+                  const beforePlaceholder = desc.slice(0, placeholderIdx).trimEnd();
+                  const afterPlaceholder = desc.slice(placeholderIdx + 2).trimStart();
+                  // Tomar la última línea no vacía antes del {}
+                  const introLines = beforePlaceholder.split('\n').map(l => l.trim()).filter(Boolean);
+                  const closingLines = afterPlaceholder.split('\n').map(l => l.trim()).filter(Boolean);
+                  if (!introText && introLines.length > 0) introText = introLines[introLines.length - 1];
+                  if (!closingText && closingLines.length > 0) closingText = closingLines[0];
+                }
+              }
+              // Reemplazar placeholder de país
+              const replacePais = (t: string) => t.replace(/\[pais\]/gi, pais).replace(/\[país\]/gi, pais).replace(/\{pais\}/gi, pais);
+              introText = replacePais(introText || `Aquí tienes la información de ${pais}:`);
+              closingText = replacePais(closingText || 'Si necesitas más información, ¡avísame! 😊');
+
               await send(introText);
               // Un mensaje por banco
               for (const seccion of secciones) {
                 await send(seccion);
               }
-              // Cierre — usa cfg.closingMessage si está configurado, si no usa genérico
-              const closingText = cfg.closingMessage ?? 'Si necesitas más información, ¡avísame! 😊';
               await send(closingText);
               logger.log(`[leer_google_sheets] Cuentas enviadas directamente (${count} banco(s), ${rawCuenta.length} chars)`);
               if (directSentState) directSentState.sent = true;

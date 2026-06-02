@@ -1494,15 +1494,17 @@ export class AiAgentService {
               .map((s) => s.trim())
               .filter(Boolean);
             const count = secciones.length;
-            // Enviar directamente a WhatsApp para evitar que el LLM trunce el contenido
+            // Enviar cada banco como mensaje independiente
             try {
               const sendUrl = `${server_url}/message/sendText/${instanceName}`;
-              const typingDelay = Math.min(Math.max(rawCuenta.length * 30, 1500), 6000);
-              await axios.post(
-                sendUrl,
-                { number: remoteJid, delay: typingDelay, text: rawCuenta },
-                { headers: { 'Content-Type': 'application/json', apikey }, timeout: 10000 },
-              );
+              for (const seccion of secciones) {
+                const typingDelay = Math.min(Math.max(seccion.length * 30, 1500), 6000);
+                await axios.post(
+                  sendUrl,
+                  { number: remoteJid, delay: typingDelay, text: seccion },
+                  { headers: { 'Content-Type': 'application/json', apikey }, timeout: 10000 },
+                );
+              }
               logger.log(`[leer_google_sheets] Cuentas enviadas directamente (${count} banco(s), ${rawCuenta.length} chars)`);
             } catch (sendErr: any) {
               logger.error(`[leer_google_sheets] Error enviando cuentas directo: ${sendErr?.message}`);

@@ -177,7 +177,22 @@ export class RemindersRunnerService {
         const serverUrl = (reminder.serverUrl ?? '').trim();
         const instanceName = (reminder.instanceName ?? '').trim();
         const apikey = (reminder.apikey ?? '').trim();
-        const message = (reminder.description ?? reminder.title ?? '').trim();
+        const rawMessage = (reminder.description ?? reminder.title ?? '').trim();
+
+        // Resolver nombre del cliente para reemplazar @client_name
+        let clientName = (reminder.pushName ?? '').trim();
+        if (!clientName || clientName.toLowerCase() === 'desconocido') {
+          const firstTarget = targets[0];
+          if (firstTarget && reminder.userId) {
+            const session = await this.prisma.session.findFirst({
+              where: { remoteJid: firstTarget, userId: reminder.userId },
+              select: { pushName: true },
+            });
+            const name = (session?.pushName ?? '').trim();
+            if (name && name.toLowerCase() !== 'desconocido') clientName = name;
+          }
+        }
+        const message = rawMessage.replace(/@client_name/g, clientName || 'Cliente');
 
         if (!targets.length || !instanceName) {
           this.logger.warn(

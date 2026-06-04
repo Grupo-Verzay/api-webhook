@@ -1016,12 +1016,11 @@ export class WebhookService {
       const rawFullText = voiceBlocks.join('\n\n');
       const stripSignature = (text: string): string => {
         let t = text;
-        // Strip bloque firma inline al final: *Texto* o — Texto al final del string
-        t = t.replace(/[\n\r]+[\*_—-]*\s*[A-ZÁÉÍÓÚÜÑa-záéíóúüñ ]{3,40}[\*_]*\s*$/, '').trim();
-        // Strip advisorSignature si existe
+        // Strip firma inline al final: línea corta con formato *Texto* o — Texto
+        t = t.replace(/[\n\r]+[\*_—\-]*\s*[A-ZÀ-ßa-zà-ÿ ]{3,40}[\*_]*\s*$/, '').trim();
         if (advisorSig) {
           const escaped = advisorSig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          t = t.replace(new RegExp(`[\\*_—-]*\\s*${escaped}[\\*_]*`, 'gi'), '').trim();
+          t = t.replace(new RegExp(`[\\*_\\u2014\\-]*\\s*${escaped}[\\*_]*`, 'gi'), '').trim();
         }
         return t;
       };

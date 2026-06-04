@@ -1000,18 +1000,18 @@ export class WebhookService {
       !isDetailedForAudio(aiResponse);
 
     if (voiceEnabled) {
-      // Quitar bloques que parecen firma: último bloque corto (<= 40 chars) compuesto
-      // sólo de texto en negrita (*...*) o que empieza con — (guión largo).
+      // Quitar bloques que parecen firma (inicio o final): cortos, negrita o emoji+negrita
       const isSignatureBlock = (b: string) => {
         const t = b.trim();
-        if (t.length > 40) return false;
-        if (/^\*[^*]+\*$/.test(t)) return true;      // *Asistente Verzy*
-        if (/^—\s*\*?[^*]+\*?$/.test(t)) return true; // — Asistente Verzy
+        if (t.length > 60) return false;
+        if (/^\*[^*]+\*$/.test(t)) return true;           // *Asistente Verzy*
+        if (/^—\s*\*?[^*]+\*?$/.test(t)) return true;     // — Asistente Verzy
+        if (/^.{0,6}\s*\*[^*\n]+\*$/.test(t)) return true; // 👨 *Asistente Verzy*
         return false;
       };
-      const voiceBlocks = msgBlocks.at(-1) && isSignatureBlock(msgBlocks[msgBlocks.length - 1])
-        ? msgBlocks.slice(0, -1)
-        : msgBlocks;
+      let voiceBlocks = [...msgBlocks];
+      if (voiceBlocks.length > 1 && isSignatureBlock(voiceBlocks[0])) voiceBlocks = voiceBlocks.slice(1);
+      if (voiceBlocks.length > 0 && isSignatureBlock(voiceBlocks[voiceBlocks.length - 1])) voiceBlocks = voiceBlocks.slice(0, -1);
       const advisorSig = (userWithRelations.advisorSignature ?? '').trim();
       const rawFullText = voiceBlocks.join('\n\n');
       const stripSignature = (text: string): string => {

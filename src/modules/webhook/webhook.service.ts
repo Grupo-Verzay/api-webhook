@@ -576,6 +576,19 @@ export class WebhookService {
       sessionHistoryId, apiMsgUrl, sendTextFn, logger,
     } = params;
 
+    // Guard: re-verificar session.status en tiempo real (puede haberse pausado durante el delay del buffer)
+    const currentSession = await this.sessionService.getSession(
+      canonicalRemoteJid,
+      instanceName,
+      userId,
+    );
+    if (currentSession && !currentSession.status) {
+      logger.log(
+        `[WEBHOOK] Sesión pausada durante el buffer → flujo detenido para ${canonicalRemoteJid}`,
+      );
+      return;
+    }
+
     // Guard: verificar agentDisabled ANTES de cualquier modificación de estado
     const agentDisabled = await this.sessionService.getAgentDisabled(
       canonicalRemoteJid,
@@ -966,7 +979,20 @@ export class WebhookService {
     }
 
     const isBaileysInstance = !server_url;
-    const voiceEnabled = !!userWithRelations.enableVoiceResponses && !!defaultApiKey;
+    const isAudioMessage = messageType === 'audioMessage';
+    const isDetailedForAudio = (text: string): boolean => {
+      if (text.length > 450) return true;
+      if (/\n[-*]\s/.test(text)) return true;
+      if (/\n\d+\.\s/.test(text)) return true;
+      if (/https?:\/\//.test(text)) return true;
+      if ((text.match(/\n/g) ?? []).length > 4) return true;
+      return false;
+    };
+    const voiceEnabled =
+      !!userWithRelations.enableVoiceResponses &&
+      !!defaultApiKey &&
+      isAudioMessage &&
+      !isDetailedForAudio(aiResponse);
 
     if (voiceEnabled) {
       const fullText = msgBlocks.join('\n\n');

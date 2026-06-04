@@ -95,8 +95,10 @@ export class SessionService {
     remoteJidAlt?: string | null,
     senderPn?: string | null,
   ) {
-    const isBadName = (n: string) =>
-      n === '' || n === '.' || n.toLowerCase() === 'desconocido';
+    const isBadName = (n: string) => {
+      const lower = n.toLowerCase().trim();
+      return lower === '' || lower === '.' || lower === 'desconocido' || lower === 'você' || lower === 'voce';
+    };
 
     const pn = this.clean(pushName);
     const observedAliases = [

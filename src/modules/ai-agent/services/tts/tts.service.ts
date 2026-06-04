@@ -66,8 +66,9 @@ export class TtsService {
     } catch (err: any) {
       const detail = err?.response?.data
         ? Buffer.from(err.response.data).toString('utf8')
-        : err?.message;
-      this.logger.error(`[TTS/ElevenLabs] Error: ${detail}`);
+        : err?.message ?? String(err);
+      const status = err?.response?.status ?? 'no-status';
+      this.logger.error(`[TTS/ElevenLabs] HTTP=${status} Error: ${detail}`, undefined, 'TtsService');
       return null;
     }
   }

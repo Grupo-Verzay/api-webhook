@@ -1014,9 +1014,19 @@ export class WebhookService {
         : msgBlocks;
       const advisorSig = (userWithRelations.advisorSignature ?? '').trim();
       const rawFullText = voiceBlocks.join('\n\n');
-      const fullText = advisorSig
-        ? rawFullText.replace(new RegExp(`\\*?—?\\s*${advisorSig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*?`, 'gi'), '').trim()
-        : rawFullText;
+      const stripSignature = (text: string): string => {
+        let t = text;
+        // Strip bloque firma inline al final: *Texto* o — Texto al final del string
+        t = t.replace(/[\n\r]+[\*_—-]*\s*[A-ZÁÉÍÓÚÜÑa-záéíóúüñ ]{3,40}[\*_]*\s*$/, '').trim();
+        // Strip advisorSignature si existe
+        if (advisorSig) {
+          const escaped = advisorSig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          t = t.replace(new RegExp(`[\\*_—-]*\\s*${escaped}[\\*_]*`, 'gi'), '').trim();
+        }
+        return t;
+      };
+      const fullText = stripSignature(rawFullText);
+      logger.log(`[TTS] fullText tras strip: "${fullText.slice(0, 80)}..."`, 'TtsService');
       const ttsProvider = userWithRelations.ttsProvider || 'openai';
       const voiceId = userWithRelations.voiceId || 'nova';
       const voiceModel = userWithRelations.voiceModel || 'gpt-4o-mini-tts';

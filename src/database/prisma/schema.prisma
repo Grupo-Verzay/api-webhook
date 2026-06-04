@@ -336,8 +336,9 @@ model Session {
   sessionTags          SessionTag[]
   sessionTrigger       SessionTrigger?
   workflowStates       SessionWorkflowState[]
-  crmFollowUps         CrmFollowUp[]
-  financeTransactions  FinanceTransaction[]
+  crmFollowUps              CrmFollowUp[]
+  financeTransactions       FinanceTransaction[]
+  leadStatusWorkflowHistory LeadStatusWorkflowExecution[]
 
   @@index([userId, remoteJid])
 }
@@ -503,6 +504,7 @@ model User {
   aiConfigs                          UserAiConfig[]
   weeklyReports                      WeeklyReport[]
   Module                             Module[]                     @relation("UserModules")
+  leadStatusWorkflowConfigs          LeadStatusWorkflowConfig[]
 }
 
 model UserNotificationContact {
@@ -629,6 +631,7 @@ model Workflow {
   sessionStates       SessionWorkflowState[]
   workflowEdges       WorkflowEdge[]
   nodes               WorkflowNode[]
+  leadStatusConfigs   LeadStatusWorkflowConfig[]
 
   @@unique([name, userId])
 }
@@ -1162,6 +1165,36 @@ enum LeadStatus {
   CALIENTE
   FINALIZADO
   DESCARTADO
+}
+
+model LeadStatusWorkflowConfig {
+  id         String     @id @default(uuid())
+  userId     String
+  leadStatus LeadStatus
+  workflowId String
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, leadStatus])
+  @@map("lead_status_workflow_config")
+}
+
+model LeadStatusWorkflowExecution {
+  id         String     @id @default(uuid())
+  sessionId  Int
+  userId     String
+  leadStatus LeadStatus
+  workflowId String
+  executedAt DateTime   @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, leadStatus])
+  @@index([sessionId])
+  @@map("lead_status_workflow_execution")
 }
 
 enum CrmFollowUpStatus {

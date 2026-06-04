@@ -7,6 +7,7 @@ import { RegistroService } from '../registro/registro.service';
 import { LeadStatusIaService } from '../lead-status-ia.service';
 import { CrmFollowUpPlannerService } from '../crm-follow-up-planner.service';
 import { CrmFollowUpRunnerService } from '../crm-follow-up-runner.service';
+import { LeadStatusWorkflowTriggerService } from '../lead-status-workflow-trigger.service';
 
 type LeadFunnelResult =
   | {
@@ -48,6 +49,7 @@ export class LeadFunnelService {
     private readonly leadStatusIaService: LeadStatusIaService,
     private readonly crmFollowUpPlannerService: CrmFollowUpPlannerService,
     private readonly crmFollowUpRunnerService: CrmFollowUpRunnerService,
+    private readonly leadStatusWorkflowTrigger: LeadStatusWorkflowTriggerService,
   ) {}
 
   async processIncomingText(
@@ -251,6 +253,21 @@ export class LeadFunnelService {
           this.logger.debug(
             `[CRM_FOLLOW_UP] disabled sessionDbId=${sessionDbId} userId=${input.userId}`,
           );
+        }
+
+        // Disparar flujo configurado para el nuevo estado (si aplica)
+        if (leadStatusResult.applied) {
+          this.leadStatusWorkflowTrigger
+            .triggerForLeadStatus({
+              sessionId: sessionDbId,
+              userId: input.userId,
+              leadStatus: leadStatusResult.leadStatus,
+            })
+            .catch((err) =>
+              this.logger.warn(
+                `[LEAD_WORKFLOW] trigger error: ${err?.message}`,
+              ),
+            );
         }
       } catch (leadStatusError: any) {
         this.logger.warn(

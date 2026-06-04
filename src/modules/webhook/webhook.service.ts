@@ -995,12 +995,22 @@ export class WebhookService {
       !isDetailedForAudio(aiResponse);
 
     if (voiceEnabled) {
-      const rawFullText = msgBlocks.join('\n\n');
+      // Quitar bloques que parecen firma: último bloque corto (<= 40 chars) compuesto
+      // sólo de texto en negrita (*...*) o que empieza con — (guión largo).
+      const isSignatureBlock = (b: string) => {
+        const t = b.trim();
+        if (t.length > 40) return false;
+        if (/^\*[^*]+\*$/.test(t)) return true;      // *Asistente Verzy*
+        if (/^—\s*\*?[^*]+\*?$/.test(t)) return true; // — Asistente Verzy
+        return false;
+      };
+      const voiceBlocks = msgBlocks.at(-1) && isSignatureBlock(msgBlocks[msgBlocks.length - 1])
+        ? msgBlocks.slice(0, -1)
+        : msgBlocks;
       const advisorSig = (userWithRelations.advisorSignature ?? '').trim();
+      const rawFullText = voiceBlocks.join('\n\n');
       const fullText = advisorSig
-        ? rawFullText
-            .replace(new RegExp(`\\*?—?\\s*${advisorSig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*?`, 'gi'), '')
-            .trim()
+        ? rawFullText.replace(new RegExp(`\\*?—?\\s*${advisorSig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*?`, 'gi'), '').trim()
         : rawFullText;
       const ttsProvider = userWithRelations.ttsProvider || 'openai';
       const voiceId = userWithRelations.voiceId || 'nova';

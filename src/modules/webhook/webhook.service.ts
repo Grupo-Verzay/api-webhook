@@ -1031,7 +1031,11 @@ export class WebhookService {
         if (!fullText) {
           logger.warn(`TTS abortado: texto vacío tras strip de firma`, 'TtsService');
         } else {
-          audioBase64 = await this.ttsService.generateVoiceElevenLabs(fullText, elApiKey, elVoiceId);
+          try {
+            audioBase64 = await this.ttsService.generateVoiceElevenLabs(fullText, elApiKey, elVoiceId);
+          } catch (elErr: any) {
+            logger.error(`[TTS/ElevenLabs] ${elErr?.message ?? elErr}`, undefined, 'TtsService');
+          }
         }
       } else {
         audioBase64 = await this.ttsService.generateVoiceBase64(fullText, defaultApiKey, voiceId, voiceModel, voiceInstructions);

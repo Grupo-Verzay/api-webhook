@@ -68,8 +68,7 @@ export class TtsService {
         ? Buffer.from(err.response.data).toString('utf8')
         : err?.message ?? String(err);
       const status = err?.response?.status ?? 'no-status';
-      this.logger.error(`[TTS/ElevenLabs] HTTP=${status} Error: ${detail}`, undefined, 'TtsService');
-      return null;
+      throw new Error(`HTTP=${status} | ${detail}`);
     }
   }
 }

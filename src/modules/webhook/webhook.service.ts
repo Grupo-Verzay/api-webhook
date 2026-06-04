@@ -995,7 +995,13 @@ export class WebhookService {
       !isDetailedForAudio(aiResponse);
 
     if (voiceEnabled) {
-      const fullText = msgBlocks.join('\n\n');
+      const rawFullText = msgBlocks.join('\n\n');
+      const advisorSig = (userWithRelations.advisorSignature ?? '').trim();
+      const fullText = advisorSig
+        ? rawFullText
+            .replace(new RegExp(`\\*?—?\\s*${advisorSig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*?`, 'gi'), '')
+            .trim()
+        : rawFullText;
       const ttsProvider = userWithRelations.ttsProvider || 'openai';
       const voiceId = userWithRelations.voiceId || 'nova';
       const voiceModel = userWithRelations.voiceModel || 'gpt-4o-mini-tts';

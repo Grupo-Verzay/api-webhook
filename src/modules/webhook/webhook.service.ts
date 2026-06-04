@@ -988,9 +988,14 @@ export class WebhookService {
       if ((text.match(/\n/g) ?? []).length > 4) return true;
       return false;
     };
+    const hasTtsKey = !!(
+      userWithRelations.ttsProvider === 'elevenlabs'
+        ? userWithRelations.elevenLabsApiKey
+        : defaultApiKey
+    );
     const voiceEnabled =
       !!userWithRelations.enableVoiceResponses &&
-      !!defaultApiKey &&
+      hasTtsKey &&
       isAudioMessage &&
       !isDetailedForAudio(aiResponse);
 

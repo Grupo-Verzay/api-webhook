@@ -1024,11 +1024,15 @@ export class WebhookService {
       const elApiKey = userWithRelations.elevenLabsApiKey;
       const elVoiceId = userWithRelations.elevenLabsVoiceId;
 
-      logger.log(`🎙️ Generando nota de voz (provider=${ttsProvider}, voice=${ttsProvider === 'elevenlabs' ? elVoiceId : voiceId}, baileys=${isBaileysInstance})`, 'TtsService');
+      logger.log(`🎙️ Generando nota de voz (provider=${ttsProvider}, voice=${ttsProvider === 'elevenlabs' ? elVoiceId : voiceId}, baileys=${isBaileysInstance}, textLen=${fullText.length})`, 'TtsService');
 
       let audioBase64: string | null = null;
       if (ttsProvider === 'elevenlabs' && elApiKey && elVoiceId) {
-        audioBase64 = await this.ttsService.generateVoiceElevenLabs(fullText, elApiKey, elVoiceId);
+        if (!fullText) {
+          logger.warn(`TTS abortado: texto vacío tras strip de firma`, 'TtsService');
+        } else {
+          audioBase64 = await this.ttsService.generateVoiceElevenLabs(fullText, elApiKey, elVoiceId);
+        }
       } else {
         audioBase64 = await this.ttsService.generateVoiceBase64(fullText, defaultApiKey, voiceId, voiceModel, voiceInstructions);
       }

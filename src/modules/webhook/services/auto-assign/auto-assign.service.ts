@@ -30,14 +30,25 @@ export class AutoAssignService {
 
       // 2. Find advisor with lowest active session count below the limit
       const candidates = await this.prisma.$queryRaw<{ id: string; active_count: number }[]>`
-        SELECT u.id, COUNT(s.id)::int AS active_count
-        FROM "User" u
+        WITH members AS (
+          SELECT u.id, u.advisor_available
+          FROM "User" u
+          WHERE u.owner_id = ${ownerId}
+            AND u.advisor_role IS NOT NULL
+
+          UNION
+
+          SELECT u.id, u.advisor_available
+          FROM "linked_accounts" la
+          JOIN "User" u ON u.id = la."linked_user_id"
+          WHERE la."master_user_id" = ${ownerId}
+        )
+        SELECT m.id, COUNT(s.id)::int AS active_count
+        FROM members m
         LEFT JOIN "Session" s
-          ON s.assigned_advisor_id = u.id AND s.status = true
-        WHERE u.owner_id = ${ownerId}
-          AND u.advisor_role IS NOT NULL
-          AND u.advisor_available = true
-        GROUP BY u.id
+          ON s.assigned_advisor_id = m.id AND s.status = true
+        WHERE m.advisor_available = true
+        GROUP BY m.id
         HAVING COUNT(s.id)::int < ${maxChats}
         ORDER BY COUNT(s.id) ASC
         LIMIT 1
@@ -48,12 +59,27 @@ export class AutoAssignService {
       const advisorId = candidates[0].id;
 
       // 3. Assign only if the session is still unassigned (prevents race condition)
-      await this.prisma.$executeRaw`
+      const updated = await this.prisma.$executeRaw`
         UPDATE "Session"
         SET assigned_advisor_id = ${advisorId}
         WHERE id = ${sessionId}
           AND assigned_advisor_id IS NULL
       `;
+
+      if (Number(updated) <= 0) return;
+
+      try {
+        await this.prisma.$executeRaw`
+          INSERT INTO "AssignmentLog" ("sessionId", "advisorId", "assignedBy", "action", "createdAt")
+          VALUES (${sessionId}, ${advisorId}, ${ownerId}, 'auto_assigned', NOW())
+        `;
+      } catch (logError) {
+        const logMessage =
+          logError instanceof Error ? logError.message : String(logError);
+        this.logger.warn(
+          `[AUTO-ASSIGN] Session ${sessionId} assigned but history log failed: ${logMessage}`,
+        );
+      }
 
       this.logger.log(
         `[AUTO-ASSIGN] Session ${sessionId} assigned to advisor ${advisorId}`,

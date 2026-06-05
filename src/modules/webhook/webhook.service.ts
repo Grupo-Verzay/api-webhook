@@ -1030,11 +1030,47 @@ export class WebhookService {
       const rawFullText = voiceBlocks.join('\n\n');
       const stripSignature = (text: string): string => {
         let t = text;
+        const knownAgentNames = [
+          'Asistente Verzy',
+          'Agente Verzy',
+          'Asistente Verzay',
+          'Agente Verzay',
+        ];
+        const agentNamePattern = knownAgentNames
+          .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+          .join('|');
+        const decorativePrefix = String.raw`[^\p{L}\p{N}]*`;
+
+        // Quita firmas pegadas al inicio: "👨🏻‍💻 *Asistente Verzy* Hola..."
+        t = t.replace(
+          new RegExp(
+            String.raw`^\s*${decorativePrefix}(?:[\*_~]*\s*)?(?:${agentNamePattern})(?:\s*[\*_~]*)?\s*[:：,\-—–|]*\s*`,
+            'iu',
+          ),
+          '',
+        );
+
+        // Quita firmas en líneas propias al inicio o final.
+        t = t
+          .split(/\r?\n/)
+          .filter((line) => {
+            const cleanLine = line
+              .trim()
+              .replace(/^[\s*_~\-—–|:：]+|[\s*_~\-—–|:：]+$/g, '')
+              .trim();
+            if (!cleanLine) return true;
+            return !new RegExp(String.raw`^${decorativePrefix}(?:${agentNamePattern})$`, 'iu').test(cleanLine);
+          })
+          .join('\n');
+
         // Strip firma inline al final: línea corta con formato *Texto* o — Texto
         t = t.replace(/[\n\r]+[\*_—\-]*\s*[A-ZÀ-ßa-zà-ÿ ]{3,40}[\*_]*\s*$/, '').trim();
         if (advisorSig) {
           const escaped = advisorSig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          t = t.replace(new RegExp(`[\\*_\\u2014\\-]*\\s*${escaped}[\\*_]*`, 'gi'), '').trim();
+          t = t
+            .replace(new RegExp(String.raw`^\s*${decorativePrefix}[\*_~—\-]*\s*${escaped}[\*_~—\-]*\s*[:：,\-—–|]*\s*`, 'iu'), '')
+            .replace(new RegExp(`[\\*_\\u2014\\-]*\\s*${escaped}[\\*_]*`, 'gi'), '')
+            .trim();
         }
         return t;
       };

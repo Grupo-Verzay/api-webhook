@@ -32,6 +32,7 @@ import { buildChatHistorySessionId } from '../chat-history/chat-history-session.
 import { FollowUpRunnerService } from './services/follow-up-runner/follow-up-runner.service';
 import { PaymentReceiptProcessorService } from 'src/modules/payment-receipt/services/payment-receipt-processor.service';
 import { TtsService } from '../ai-agent/services/tts/tts.service';
+import { normalizeTextForTts } from '../ai-agent/services/tts/tts-normalizer';
 import { WhatsAppSenderFactory } from '../whatsapp/whatsapp-sender.factory';
 import { BaileysSenderAdapter } from '../whatsapp/adapters/baileys/baileys-sender.adapter';
 import { MessageDeduplicationService } from './services/message-deduplication/message-deduplication.service';
@@ -1074,8 +1075,8 @@ export class WebhookService {
         }
         return t;
       };
-      const fullText = stripSignature(rawFullText);
-      logger.log(`[TTS] fullText tras strip: "${fullText.slice(0, 80)}..."`, 'TtsService');
+      const fullText = normalizeTextForTts(stripSignature(rawFullText));
+      logger.log(`[TTS] fullText normalizado: "${fullText.slice(0, 80)}..."`, 'TtsService');
       const ttsProvider = userWithRelations.ttsProvider || 'openai';
       const voiceId = userWithRelations.voiceId || 'nova';
       const voiceModel = userWithRelations.voiceModel || 'gpt-4o-mini-tts';

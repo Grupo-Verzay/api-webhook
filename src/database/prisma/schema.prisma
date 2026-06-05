@@ -330,6 +330,8 @@ model Session {
   leadScoreReason      String?                @map("lead_score_reason")
   leadScoredAt         DateTime?              @map("lead_scored_at")
   assignedAdvisorId    String?                @map("assigned_advisor_id")
+  adSource             Json?                  @map("ad_source")
+  adSourceAt           DateTime?              @map("ad_source_at")
   appointments         Appointment[]
   registros            Registro[]
   user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)

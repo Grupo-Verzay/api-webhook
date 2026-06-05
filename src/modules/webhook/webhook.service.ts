@@ -225,6 +225,20 @@ export class WebhookService {
     const msgChat = data?.message?.conversation ?? '';
     const conversationMsg = msgChat.trim().toLowerCase();
 
+    // Guardar origen Click-to-WhatsApp la primera vez que llega con adReply
+    if (!fromMe && canonicalSession?.id && !canonicalSession.adSource) {
+      const adReply =
+        (data?.message as any)?.extendedTextMessage?.contextInfo?.externalAdReply ||
+        (data?.contextInfo as any)?.externalAdReply;
+      if (adReply?.title || adReply?.sourceUrl) {
+        void this.sessionService.saveAdSource(canonicalSession.id, {
+          title: adReply.title,
+          body: adReply.body,
+          sourceUrl: adReply.sourceUrl,
+        });
+      }
+    }
+
     /* Pausa / Reactivación solo si escribe el admin (fromMe) */
     if (this.messageDirectionService.isFromMe(fromMe)) {
       await this.conversationControl.stopOrResumeConversation({

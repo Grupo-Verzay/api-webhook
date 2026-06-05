@@ -177,6 +177,16 @@ export class SessionService {
     return !!session?.agentDisabled;
   }
 
+  async saveAdSource(
+    sessionId: number,
+    adData: { title?: string; body?: string; sourceUrl?: string },
+  ) {
+    return this.prisma.session.update({
+      where: { id: sessionId },
+      data: { adSource: adData, adSourceAt: new Date() },
+    });
+  }
+
   // Get a specific session by remoteJid and instanceId
   async getSession(remoteJid: string, instanceId: string, userId: string) {
     const candidates = this.buildRemoteJidCandidates(this.clean(remoteJid));

@@ -109,14 +109,19 @@ model GuideUrl {
 }
 
 model Instancia {
-  id           Int     @id @default(autoincrement())
-  instanceName String
-  userId       String
-  instanceId   String
-  instanceType String? @default("Whatsapp")
-  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                 Int     @id @default(autoincrement())
+  instanceName       String
+  userId             String
+  instanceId         String
+  instanceType       String? @default("Whatsapp")
+  metaPhoneNumberId  String? @map("meta_phone_number_id")
+  metaAccessToken    String? @map("meta_access_token")
+  metaWabaId         String? @map("meta_waba_id")
+  metaVerifyToken    String? @map("meta_verify_token")
+  user               User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([metaPhoneNumberId])
   @@map("Instancias")
 }
 

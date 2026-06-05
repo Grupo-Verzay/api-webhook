@@ -3,12 +3,14 @@ import { PrismaService } from 'src/database/prisma.service';
 import { IWhatsAppSender } from './interfaces/whatsapp-sender.interface';
 import { EvolutionApiSenderAdapter } from './adapters/evolution-api.adapter';
 import { BaileysSenderAdapter } from './adapters/baileys/baileys-sender.adapter';
+import { MetaCloudApiSenderAdapter } from './adapters/meta-cloud-api.adapter';
 
 @Injectable()
 export class WhatsAppSenderFactory {
   constructor(
     private readonly evolutionAdapter: EvolutionApiSenderAdapter,
     private readonly baileysAdapter: BaileysSenderAdapter,
+    private readonly metaAdapter: MetaCloudApiSenderAdapter,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -18,15 +20,14 @@ export class WhatsAppSenderFactory {
       select: { instanceType: true },
     });
 
-    if (instance?.instanceType === 'baileys') {
-      return this.baileysAdapter;
-    }
-
+    if (instance?.instanceType === 'baileys') return this.baileysAdapter;
+    if (instance?.instanceType === 'meta') return this.metaAdapter;
     return this.evolutionAdapter;
   }
 
   getSenderSync(instanceType?: string | null): IWhatsAppSender {
     if (instanceType === 'baileys') return this.baileysAdapter;
+    if (instanceType === 'meta') return this.metaAdapter;
     return this.evolutionAdapter;
   }
 }

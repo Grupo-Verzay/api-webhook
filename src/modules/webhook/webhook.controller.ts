@@ -1,8 +1,10 @@
 import {
   Body,
   Controller,
+  Get,
   Headers,
   Post,
+  Query,
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -13,6 +15,7 @@ import { BillingCronService } from './services/billing-cron/billing-cron.service
 import { WebhookBodyDto } from './dto/webhook-body';
 import { WompiService } from 'src/modules/payment-receipt/wompi/wompi.service';
 import { WompiEventDto } from 'src/modules/payment-receipt/wompi/wompi-event.dto';
+import { MetaWebhookNormalizerService, MetaWebhookPayload } from './services/meta-webhook-normalizer/meta-webhook-normalizer.service';
 
 @Controller('webhook')
 export class WebhookController {
@@ -21,6 +24,7 @@ export class WebhookController {
     private readonly logger: LoggerService,
     private readonly billingCronService: BillingCronService,
     private readonly wompiService: WompiService,
+    private readonly metaNormalizer: MetaWebhookNormalizerService,
   ) {}
 
   @Post()
@@ -54,6 +58,39 @@ export class WebhookController {
       void this.logger.error(
         `[Wompi] Error asíncrono: ${JSON.stringify(error)}`,
       );
+    });
+  }
+
+  /** Meta Cloud API — verificación del webhook (GET) */
+  @Get('meta')
+  verifyMetaWebhook(
+    @Query('hub.mode') mode: string,
+    @Query('hub.challenge') challenge: string,
+    @Query('hub.verify_token') verifyToken: string,
+    @Res() res: Response,
+  ) {
+    const expected = (process.env.META_VERIFY_TOKEN ?? '').trim();
+    if (mode === 'subscribe' && verifyToken && verifyToken === expected) {
+      void this.logger.log(`[Meta] Webhook verificado correctamente`);
+      res.status(200).send(challenge);
+    } else {
+      void this.logger.warn(`[Meta] Verificación fallida — token: ${verifyToken}`);
+      res.status(403).send('Forbidden');
+    }
+  }
+
+  /** Meta Cloud API — recepción de mensajes (POST) */
+  @Post('meta')
+  receiveMetaWebhook(@Body() payload: MetaWebhookPayload, @Res() res: Response) {
+    res.status(200).send('EVENT_RECEIVED');
+    void this.metaNormalizer.normalize(payload).then((dtos) => {
+      for (const dto of dtos) {
+        void this.webhookService.processWebhook(dto).catch((error: unknown) => {
+          void this.logger.error(`[Meta] Error procesando mensaje: ${JSON.stringify(error)}`);
+        });
+      }
+    }).catch((error: unknown) => {
+      void this.logger.error(`[Meta] Error normalizando payload: ${JSON.stringify(error)}`);
     });
   }
 

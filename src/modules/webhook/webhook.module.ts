@@ -40,6 +40,7 @@ import { BaileysWebhookBridgeService } from './services/baileys-webhook-bridge/b
 import { MessageDeduplicationService } from './services/message-deduplication/message-deduplication.service';
 import { ConversationControlService } from './services/conversation-control/conversation-control.service';
 import { SessionOrchestrationService } from './services/session-orchestration/session-orchestration.service';
+import { MetaWebhookNormalizerService } from './services/meta-webhook-normalizer/meta-webhook-normalizer.service';
 
 @Module({
   imports: [HttpModule, WorkflowModule, AiAgentModule, LeadFunnelModule, PaymentReceiptModule, WhatsAppModule],
@@ -82,6 +83,7 @@ import { SessionOrchestrationService } from './services/session-orchestration/se
     MessageDeduplicationService,
     ConversationControlService,
     SessionOrchestrationService,
+    MetaWebhookNormalizerService,
   ],
 })
 export class WebhookModule {}

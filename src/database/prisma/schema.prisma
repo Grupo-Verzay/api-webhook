@@ -1240,12 +1240,11 @@ enum FinanceTxType {
 }
 
 enum Plan {
-  enterprise
   lite
-  unico
   basico
   intermedio
   avanzado
+  enterprise
   personalizado
 }
 

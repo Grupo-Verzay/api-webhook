@@ -66,13 +66,13 @@ export class ExternalClientDataService implements IExternalClientDataProvider {
     userId: string,
     fieldName: string,
     value: string,
-  ): Promise<ExternalClientDataRecord | null> {
-    if (!userId || !fieldName || !value) return null;
+  ): Promise<ExternalClientDataRecord[]> {
+    if (!userId || !fieldName || !value) return [];
 
     // Solo permite: letras, dígitos, guión, guión_bajo y espacios.
     // Cualquier otro carácter es rechazado para evitar inyección en el nombre del campo.
     const safeField = fieldName.replace(/[^a-zA-Z0-9\-_ ]/g, '');
-    if (!safeField) return null;
+    if (!safeField) return [];
 
     try {
       const rows = await this.prisma.$queryRaw<Array<{ data: unknown }>>(
@@ -81,20 +81,18 @@ export class ExternalClientDataService implements IExternalClientDataProvider {
           FROM external_client_data
           WHERE "userId" = ${userId}
             AND LOWER(data->>${Prisma.raw(`'${safeField}'`)}) = LOWER(${value})
-          LIMIT 1
+          ORDER BY id ASC
         `,
       );
 
-      if (!rows.length) return null;
-
-      return rows[0].data as ExternalClientDataRecord;
+      return rows.map((r) => r.data as ExternalClientDataRecord);
     } catch (error: any) {
       this.logger.error(
         `[ExternalClientData] Error al buscar por campo=${fieldName} value=${value}`,
         error?.message,
         'ExternalClientDataService',
       );
-      return null;
+      return [];
     }
   }
 

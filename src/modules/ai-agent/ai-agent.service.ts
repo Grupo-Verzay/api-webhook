@@ -583,12 +583,12 @@ export class AiAgentService {
       async ({ campo, valor }: { campo: string; valor: string }) => {
         const normalizedCampo = campo.trim().toUpperCase();
         logger.log(`Tool "${cfg.toolKey}" (buscar_cliente_por_dato): campo="${normalizedCampo}" valor="${valor}"`);
-        const data = await this.externalClientDataService.getByDataField(userId, normalizedCampo, valor);
-        if (!data || Object.keys(data).length === 0) {
+        const rows = await this.externalClientDataService.getByDataField(userId, normalizedCampo, valor);
+        if (!rows.length) {
           return `No se encontró ningún registro con ${normalizedCampo}: ${valor} en el sistema.\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: No encontraste este dato en la base de datos. Informa al usuario que no tienes esa información disponible. PROHIBIDO inventar, estimar o completar con conocimiento propio.`;
         }
-        const formattedData = this.externalClientDataService.formatForAgent(data);
-        return `${formattedData}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: Estos son los ÚNICOS datos válidos. Úsalos para responder al usuario con el formato que indique el sistema, pero los valores (precios, modelos, marcas, etc.) deben ser EXACTAMENTE los que aparecen arriba. PROHIBIDO usar valores distintos, inventar, estimar o dejar placeholders sin reemplazar.`;
+        const formattedData = rows.map((r) => this.externalClientDataService.formatForAgent(r)).join('\n');
+        return `${formattedData}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: Estos son los ÚNICOS datos válidos (${rows.length} registro(s)). Úsalos para responder al usuario con el formato que indique el sistema, pero los valores (precios, modelos, marcas, etc.) deben ser EXACTAMENTE los que aparecen arriba. PROHIBIDO usar valores distintos, inventar, estimar o dejar placeholders sin reemplazar.`;
       },
       {
         name: cfg.toolKey,
@@ -611,12 +611,12 @@ export class AiAgentService {
     return tool(
       async ({ valor }: { valor: string }) => {
         logger.log(`Tool dinámica "${cfg.toolKey}" (search_by_field): campo="${cfg.searchField}" valor="${valor}"`);
-        const data = await this.externalClientDataService.getByDataField(userId, cfg.searchField!, valor);
-        if (!data || Object.keys(data).length === 0) {
+        const rows = await this.externalClientDataService.getByDataField(userId, cfg.searchField!, valor);
+        if (!rows.length) {
           return `No se encontró ningún registro con ${cfg.searchField!.toUpperCase()}: ${valor}.\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: No encontraste este dato en la base de datos. Informa al usuario que no tienes esa información disponible. PROHIBIDO inventar, estimar o completar con conocimiento propio.`;
         }
-        const formattedData = this.externalClientDataService.formatForAgent(data);
-        return `${formattedData}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: Estos son los ÚNICOS datos válidos. Úsalos para responder al usuario con el formato que indique el sistema, pero los valores (precios, modelos, marcas, etc.) deben ser EXACTAMENTE los que aparecen arriba. PROHIBIDO usar valores distintos, inventar, estimar o dejar placeholders sin reemplazar.`;
+        const formattedData = rows.map((r) => this.externalClientDataService.formatForAgent(r)).join('\n');
+        return `${formattedData}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: Estos son los ÚNICOS datos válidos (${rows.length} registro(s)). Úsalos para responder al usuario con el formato que indique el sistema, pero los valores (precios, modelos, marcas, etc.) deben ser EXACTAMENTE los que aparecen arriba. PROHIBIDO usar valores distintos, inventar, estimar o dejar placeholders sin reemplazar.`;
       },
       {
         name: cfg.toolKey,

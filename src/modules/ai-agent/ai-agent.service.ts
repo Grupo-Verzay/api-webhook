@@ -2135,15 +2135,26 @@ export class AiAgentService {
           ['listar_servicios_agenda', 'consultar_slots_disponibles', 'crear_cita'].includes(c.toolType) &&
           c.isEnabled,
       );
-      const userForTz = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { timezone: true, mapsUrl: true, enableVoiceResponses: true, voiceInstructions: true },
-      });
+      const [userForTz, agentPromptForHours] = await Promise.all([
+        this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { timezone: true, mapsUrl: true, enableVoiceResponses: true, voiceInstructions: true },
+        }),
+        this.prisma.agentPrompt.findFirst({
+          where: { userId, agentId: CRM_AGENT_PROMPT_IDS.systemPrompAI },
+          select: { sections: true },
+        }),
+      ]);
       const agentTz = userForTz?.timezone || 'America/Bogota';
+      const nowDate = new Date();
       const nowLabel = new Intl.DateTimeFormat('es-CO', {
         timeZone: agentTz,
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-      }).format(new Date());
+      }).format(nowDate);
+      const nowTimeLabel = new Intl.DateTimeFormat('es-CO', {
+        timeZone: agentTz,
+        hour: '2-digit', minute: '2-digit', hour12: true,
+      }).format(nowDate);
 
       const next14Days = (() => {
         const lines: string[] = [];
@@ -2186,6 +2197,11 @@ export class AiAgentService {
         ? `\n\n---\n## REGLA CRÍTICA: HERRAMIENTAS DE CONSULTA EN GOOGLE SHEETS\nTienes ${googleSheetsTools.length > 1 ? 'las siguientes herramientas' : 'la siguiente herramienta'} para consultar información en tiempo real desde hojas de cálculo:\n${googleSheetsTools.map((t: any) => `- \`${t.toolKey}\`: ${t.toolDescription}`).join('\n')}\n\nNORMAS DE USO OBLIGATORIO:\n1. SIEMPRE invoca la herramienta correspondiente cuando el usuario solicite cualquier dato que pueda estar en esa hoja (tasas, cuentas, precios, disponibilidad, etc.).\n2. NUNCA respondas "no puedo acceder", "no tengo esa información", "no puedo consultar" ni similares sin haber llamado primero a la herramienta y recibido su respuesta.\n3. Si la herramienta devuelve datos, úsalos directamente en tu respuesta. Si no hay datos para lo solicitado, informa que no hay información disponible — NO inventes ni uses conocimiento propio.\n4. NUNCA uses datos del historial de conversación para responder sobre información de la hoja — aunque el historial contenga respuestas anteriores sobre el mismo tema, SIEMPRE debes invocar la herramienta de nuevo para obtener datos en tiempo real. El historial puede estar desactualizado.\n5. Copia la respuesta de la herramienta de forma COMPLETA y EXACTA, sin resumir, sin recortar filas, sin omitir campos. Si la herramienta devuelve varias filas, entrégalas TODAS.\n---`
         : '';
 
+      const horarios = ((agentPromptForHours?.sections as any)?.business?.horarios ?? '').trim();
+      const businessHoursBlock = horarios
+        ? `\n\n---\n## HORARIO DE ATENCIÓN\n**Hora local actual:** ${nowTimeLabel} — ${nowLabel} (${agentTz})\n**Horario de atención del negocio:** ${horarios}\n\nInstrucción: Cuando el cliente solicite hablar con un asesor o agente humano, considera el horario de atención:\n- Si la hora actual está DENTRO del horario → puedes indicar que hay asesores disponibles si aplica.\n- Si la hora actual está FUERA del horario → NO prometas atención humana inmediata. Informa que el horario de atención es "${horarios}" y que un asesor le contactará al inicio del próximo horario hábil. Mientras tanto, continúa atendiendo al cliente.\n---`
+        : '';
+
       const defaultMapsUrl = 'https://maps.google.com/?q=0,0';
       const mapsBlock = userForTz?.mapsUrl && userForTz.mapsUrl.trim() !== defaultMapsUrl
         ? `\n\n---\nUBICACIÓN DEL NEGOCIO: Cuando el usuario pregunte por la dirección, ubicación o cómo llegar, comparte este enlace: ${userForTz.mapsUrl.trim()}\n---`
@@ -2195,7 +2211,7 @@ export class AiAgentService {
         ? `\n\n---\nNOTA INTERNA — MODO AUDIO ACTIVO: Tus respuestas se convierten a nota de voz automáticamente. Reglas de escritura para audio:\n- Escribe en lenguaje conversacional y natural, como si hablaras.\n- Usa frases cortas y directas.\n- Evita listas con guiones o asteriscos; convierte las listas en frases seguidas con comas o puntos.\n- NUNCA incluyas firma, despedida formal, nombre de la empresa al final, ni frases como "Quedo a tu disposición" o "Saludos".\n- NUNCA menciones que no puedes enviar audios ni hagas referencia a limitaciones técnicas.\n---`
         : '';
 
-      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}`.trim();
+      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${businessHoursBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}`.trim();
 
       // logger.log('PROMPT:', promptAI);
 

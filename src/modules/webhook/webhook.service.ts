@@ -178,6 +178,14 @@ export class WebhookService {
       'WebhookService',
     );
 
+    if (!defaultApiKey) {
+      this.logger.warn(
+        `Usuario sin API key configurada (userId=${userId}). Webhook ignorado.`,
+        'WebhookService',
+      );
+      return;
+    }
+
     // 🔹 Delay dinámico por usuario (delayTimeGPT en SEGUNDOS → convertir a ms)
     const defaultDelay = WebhookService.DELAYCONVERSATION; // 10000 ms por defecto (10s)
     let delayConversation = defaultDelay;

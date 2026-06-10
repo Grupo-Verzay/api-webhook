@@ -148,12 +148,6 @@ export class ExternalClientDataService implements IExternalClientDataProvider {
   }
 
   private async ensureDefaultToolConfigs(userId: string): Promise<void> {
-    const existingCount = await this.prisma.externalDataToolConfig.count({
-      where: { userId },
-    });
-
-    if (existingCount > 0) return;
-
     await this.prisma.externalDataToolConfig.createMany({
       data: DEFAULT_EXTERNAL_TOOL_CONFIGS.map((cfg) => ({
         userId,

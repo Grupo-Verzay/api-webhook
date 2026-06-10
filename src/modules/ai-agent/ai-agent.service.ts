@@ -2590,9 +2590,12 @@ export class AiAgentService {
 
     logger.log(`Flujos detectados: ${JSON.stringify(nombresDetectados)}`);
 
+    const normWfName = (s: string) =>
+      (s ?? '').toLowerCase().replace(/[\s_\-]+/g, '').trim();
+
     for (const nombre of nombresDetectados) {
       const currentWorkflow = workflows.find(
-        (w) => w.name?.toLowerCase?.() === nombre?.toLowerCase?.(),
+        (w) => normWfName(w.name ?? '') === normWfName(nombre),
       );
 
       if (!currentWorkflow) {
@@ -2633,13 +2636,13 @@ export class AiAgentService {
           userId,
         );
 
-        return `Flujo *${currentWorkflow.name}* iniciado correctamente.`;
+        return `[WORKFLOW_DONE] Flujo "${currentWorkflow.name}" ejecutado. Los datos ya fueron enviados al cliente como mensaje separado. PROHIBIDO llamar esta herramienta de nuevo en este turno. Responde al usuario normalmente.`;
       } else {
-        return `Flujo *${currentWorkflow.name}* ejecutado al inicio de este turno. Continúa con el mensaje del paso actual según tu entrenamiento.`;
+        return `[WORKFLOW_ALREADY_DONE] El flujo "${currentWorkflow.name}" ya fue ejecutado y los datos ya están con el cliente. STOP — NO volver a llamar esta herramienta. Continúa la conversación sin invocar más flujos.`;
       }
     }
 
-    return 'No pude iniciar ningún flujo en este momento. ¿Te puedo ayudar con otra cosa?';
+    return '[WORKFLOW_NOT_FOUND] No se encontró ningún flujo compatible. STOP — NO volver a llamar esta herramienta. Responde al usuario con la información disponible en el prompt del sistema.';
   }
 
   private async checkAndFireIntentTriggers(params: {

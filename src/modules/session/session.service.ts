@@ -141,6 +141,7 @@ export class SessionService {
               pushName: nextPushName,
               instanceId: this.clean(instanceId),
               updatedAt: new Date(),
+              // customName nunca se toca desde webhooks — solo el usuario lo edita manualmente
             },
           });
         }

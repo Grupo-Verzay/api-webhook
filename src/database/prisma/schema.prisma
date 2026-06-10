@@ -315,6 +315,7 @@ model Session {
   userId               String
   remoteJid            String
   pushName             String
+  customName           String?                @map("custom_name")
   instanceId           String
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt

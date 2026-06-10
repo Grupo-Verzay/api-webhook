@@ -2145,6 +2145,22 @@ export class AiAgentService {
           select: { sections: true },
         }),
       ]);
+      // Intercepción pre-LLM: palabras clave con respuesta directa
+      const keywordRules: Array<{ keywords: string[]; response: string; action: string }> =
+        ((agentPromptForHours?.sections as any)?.keywords?.rules) ?? [];
+      if (keywordRules.length > 0) {
+        const msgLower = input.toLowerCase();
+        for (const rule of keywordRules) {
+          const matched = rule.keywords.some((kw: string) => msgLower.includes(kw.toLowerCase()));
+          if (matched) {
+            if (rule.action === 'escalar') {
+              return 'En este momento voy a transferirte con uno de nuestros asesores para que te puedan ayudar mejor. Por favor espera un momento. 🙏';
+            }
+            return rule.response;
+          }
+        }
+      }
+
       const agentTz = userForTz?.timezone || 'America/Bogota';
       const nowDate = new Date();
       const nowLabel = new Intl.DateTimeFormat('es-CO', {

@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE "plan_configs" (
+CREATE TABLE IF NOT EXISTS "plan_configs" (
     "id" TEXT NOT NULL,
     "plan" "Plan" NOT NULL,
     "credits" INTEGER NOT NULL DEFAULT 0,
@@ -10,7 +10,7 @@ CREATE TABLE "plan_configs" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "plan_configs_plan_key" ON "plan_configs"("plan");
+CREATE UNIQUE INDEX IF NOT EXISTS "plan_configs_plan_key" ON "plan_configs"("plan");
 
 -- Seed default plan credits
 INSERT INTO "plan_configs" ("id", "plan", "credits", "updatedAt") VALUES

@@ -2253,6 +2253,7 @@ export class AiAgentService {
                 .map((b) => `### ${b.title}\n${b.content}`)
                 .join('\n\n') +
               '\n---';
+          }
         }
       } catch {
         // RAG falla silenciosamente — el agente continúa con el prompt original

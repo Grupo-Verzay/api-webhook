@@ -12,6 +12,7 @@ import { SeguimientosService } from '../seguimientos/seguimientos.service';
 import { SessionService } from '../session/session.service';
 import { NotificacionToolService } from './tools/notificacion/notificacion.service';
 import { WorkflowModule } from '../workflow/workflow.module';
+import { AiCreditsModule } from '../ai-credits/ai-credits.module';
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { PromptCompressorService } from './services/prompt-compressor/prompt-compressor.service';
 import { LlmClientFactory } from './services/llmClientFactory/llmClientFactory.service';
@@ -23,7 +24,7 @@ import { TtsService } from './services/tts/tts.service';
 import { GoogleSheetsModule } from '../google-sheets/google-sheets.module';
 
 @Module({
-  imports: [HttpModule, ConfigModule, forwardRef(() => WorkflowModule), ExternalClientDataModule, GoogleSheetsModule],
+  imports: [HttpModule, ConfigModule, forwardRef(() => WorkflowModule), ExternalClientDataModule, GoogleSheetsModule, AiCreditsModule],
   providers: [
     AiAgentService,
     PromptService,
@@ -34,7 +35,6 @@ import { GoogleSheetsModule } from '../google-sheets/google-sheets.module';
     SeguimientosService,
     SessionService,
     NotificacionToolService,
-    AiCreditsService,
     LlmClientFactory,
     AgentNotificationService,
     NotificationContactsService,

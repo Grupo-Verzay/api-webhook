@@ -2241,13 +2241,18 @@ export class AiAgentService {
           );
           if (relevant.length > 0) {
             knowledgeContext =
-              '\n\n---\n## INFORMACIÓN RELEVANTE DEL CATÁLOGO\n' +
+              '\n\n---\n## INFORMACIÓN ESPECÍFICA DEL NEGOCIO (Base de Conocimiento)\n' +
+              'La siguiente información fue cargada por el negocio y es la fuente de verdad para responder esta consulta. ' +
+              'REGLAS DE USO OBLIGATORIO:\n' +
+              '1. Usa ÚNICAMENTE esta información para responder preguntas sobre los temas que cubre. NO uses tu conocimiento general ni inventes datos.\n' +
+              '2. Si la información está en estos bloques, respóndela de forma natural y conversacional — no la copies textualmente ni la enumeres toda de golpe.\n' +
+              '3. Si el cliente pregunta algo que NO está cubierto aquí, indícalo honestamente.\n' +
+              '4. No menciones que estás consultando una "base de conocimiento" ni que tienes "bloques de información" — simplemente responde con naturalidad.\n\n' +
               relevant
                 .slice(0, 3)
-                .map((b) => b.content)
-                .join('\n\n---\n\n') +
+                .map((b) => `### ${b.title}\n${b.content}`)
+                .join('\n\n') +
               '\n---';
-          }
         }
       } catch {
         // RAG falla silenciosamente — el agente continúa con el prompt original

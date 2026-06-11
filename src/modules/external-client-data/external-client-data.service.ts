@@ -148,19 +148,33 @@ export class ExternalClientDataService implements IExternalClientDataProvider {
   }
 
   private async ensureDefaultToolConfigs(userId: string): Promise<void> {
-    await this.prisma.externalDataToolConfig.createMany({
-      data: DEFAULT_EXTERNAL_TOOL_CONFIGS.map((cfg) => ({
-        userId,
-        toolKey: cfg.toolKey,
-        displayName: cfg.displayName,
-        toolDescription: cfg.toolDescription,
-        toolCategory: cfg.toolCategory,
-        toolType: cfg.toolType,
-        isEnabled: true,
-        isDefault: true,
-        sortOrder: cfg.sortOrder,
-      })),
-      skipDuplicates: true,
-    });
+    for (const cfg of DEFAULT_EXTERNAL_TOOL_CONFIGS) {
+      const existing = await this.prisma.externalDataToolConfig.findUnique({
+        where: { userId_toolKey: { userId, toolKey: cfg.toolKey } },
+      });
+      if (existing) {
+        // Si ya existe pero está desactivado, reactivarlo
+        if (!existing.isEnabled) {
+          await this.prisma.externalDataToolConfig.update({
+            where: { userId_toolKey: { userId, toolKey: cfg.toolKey } },
+            data: { isEnabled: true },
+          });
+        }
+      } else {
+        await this.prisma.externalDataToolConfig.create({
+          data: {
+            userId,
+            toolKey: cfg.toolKey,
+            displayName: cfg.displayName,
+            toolDescription: cfg.toolDescription,
+            toolCategory: cfg.toolCategory,
+            toolType: cfg.toolType,
+            isEnabled: true,
+            isDefault: true,
+            sortOrder: cfg.sortOrder,
+          },
+        });
+      }
+    }
   }
 }

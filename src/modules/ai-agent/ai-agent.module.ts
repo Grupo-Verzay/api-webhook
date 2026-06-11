@@ -13,7 +13,6 @@ import { SessionService } from '../session/session.service';
 import { NotificacionToolService } from './tools/notificacion/notificacion.service';
 import { WorkflowModule } from '../workflow/workflow.module';
 import { AiCreditsModule } from '../ai-credits/ai-credits.module';
-import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { PromptCompressorService } from './services/prompt-compressor/prompt-compressor.service';
 import { LlmClientFactory } from './services/llmClientFactory/llmClientFactory.service';
 import { UserService } from '../user/user.service';
@@ -44,7 +43,7 @@ import { GoogleSheetsModule } from '../google-sheets/google-sheets.module';
   exports: [
     NotificacionToolService,
     NodeSenderService,
-    AiCreditsService,
+    AiCreditsModule,
     LlmClientFactory,
     AgentNotificationService,
     AiAgentService,

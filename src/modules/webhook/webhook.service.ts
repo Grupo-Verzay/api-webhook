@@ -17,7 +17,7 @@ import { WorkflowService } from '../workflow/services/workflow.service.ts/workfl
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import {
   CreditValidationInput,
-  flags,
+  creditFlags,
   UserWithPausar,
 } from 'src/types/open-ai';
 import { AntifloodService } from './services/antiflood/antiflood.service';
@@ -315,7 +315,7 @@ export class WebhookService {
     // 🔹 Si el agente NO está muteado -> sí validamos créditos
     if (!agentMuted) {
       const creditOk = await this.creditValidation({
-        flags,
+        flags: creditFlags,
         userId,
         webhookUrl: userWithRelations.webhookUrl ?? '',
         apikey,
@@ -514,45 +514,34 @@ export class WebhookService {
       const credits = await this.aiCreditsService.getCreditsByUser(userId);
 
       if (!credits.success) {
-        try {
-          await this.nodeSenderService.sendTextNode(
-            apiUrl,
-            apikey,
-            userPhone,
-            flags[0].message,
-          );
-        } catch (error) {
-          logger.error(
-            `Error enviando notificación por flag ${credits.msg}`,
-            error,
-          );
+        if (!this.aiCreditsService.hasNotifiedThreshold(userId, -1)) {
+          const zeroFlag = flags.find((f) => f.pct === 0);
+          const msg = zeroFlag ? zeroFlag.message({ available: 0, total: 0 }) : '🛑 Sin créditos disponibles.';
+          try {
+            await this.nodeSenderService.sendTextNode(apiUrl, apikey, userPhone, msg);
+            this.aiCreditsService.markThresholdNotified(userId, -1);
+          } catch (error) {
+            logger.error(`Error enviando notificación sin registro de créditos`, error);
+          }
         }
         return false;
       }
 
-      const { available } = credits;
+      const { available, total } = credits;
+      const availablePct = total > 0 ? Math.floor((available / total) * 100) : 0;
 
-      const range = 5;
-      for (const flag of flags) {
-        const min = flag.value - range;
-        const max = flag.value + range;
+      // Ordenar de mayor a menor para notificar primero el umbral más alto cruzado
+      const sortedFlags = [...flags].sort((a, b) => b.pct - a.pct);
 
-        if (available >= min && available <= max) {
-          logger.log(
-            `⚠️ alcanzó rango de créditos ${flag.value} (dentro de ${min}-${max}). Enviando mensaje... "${flag.message}"`,
-          );
+      for (const flag of sortedFlags) {
+        const crossed = flag.pct === 0 ? available <= 0 : availablePct <= flag.pct;
+        if (crossed && !this.aiCreditsService.hasNotifiedThreshold(userId, flag.pct)) {
+          logger.log(`⚠️ Créditos al ${availablePct}% — umbral ${flag.pct}% cruzado. Enviando notificación.`);
           try {
-            await this.nodeSenderService.sendTextNode(
-              apiUrl,
-              apikey,
-              userPhone,
-              flag.message,
-            );
+            await this.nodeSenderService.sendTextNode(apiUrl, apikey, userPhone, flag.message({ available, total }));
+            this.aiCreditsService.markThresholdNotified(userId, flag.pct);
           } catch (error) {
-            logger.error(
-              `Error enviando notificación por flag ${flag.value}`,
-              error,
-            );
+            logger.error(`Error enviando notificación por umbral ${flag.pct}%`, error);
           }
         }
       }

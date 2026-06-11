@@ -101,37 +101,38 @@ export interface onAutoRepliesInterface {
 }
 
 export interface CreditFlag {
-  value: number; // valor en créditos requeridos
-  message: string; // mensaje a mostrar si se activa esta flag
+  pct: number;
+  message: (ctx: { available: number; total: number }) => string;
 }
 
 export interface CreditValidationInput {
   userId: string;
-  flags: { value: number; message: string }[];
+  flags: CreditFlag[];
   webhookUrl: string;
   apiUrl: string;
   apikey: string;
   userPhone: string;
 }
 
-export const flags = [
+export const creditFlags: CreditFlag[] = [
   {
-    value: 0,
-    message: `🛑 CRÍTICO: ¡Te has quedado *SIN CRÉDITOS*! \n\n• Tu servicio está *SUSPENDIDO* \n• No podrás recibir mensajes \n• Perderás números asociados \n\n🔴 *RECARGA URGENTE* para reactivar: ${whatsappCreditsMsg}`,
+    pct: 50,
+    message: ({ available, total }) =>
+      `🔔 Aviso: te quedan *${available} de ${total} créditos* (50% disponible). Aún tienes tiempo para recargar.\n\n👉 ${whatsappCreditsMsg}`,
   },
   {
-    value: 500,
-    message:
-      '🚨 Tienes menos de *500 créditos* disponibles. Tu cuenta podría ser pausada pronto. Considera recargar urgentemente.',
+    pct: 25,
+    message: ({ available, total }) =>
+      `⚠️ Atención: solo te quedan *${available} de ${total} créditos* (25% disponible). Te recomendamos recargar pronto.\n\n👉 ${whatsappCreditsMsg}`,
   },
   {
-    value: 1000,
-    message:
-      '⚠️ Estás por debajo de *1000 créditos*. Te recomendamos recargar antes de que se agoten.',
+    pct: 5,
+    message: ({ available, total }) =>
+      `🚨 URGENTE: solo tienes *${available} de ${total} créditos* disponibles (5%). Recarga ya para no interrumpir tu servicio.\n\n👉 ${whatsappCreditsMsg}`,
   },
   {
-    value: 2000,
-    message:
-      '🔔 Aviso: tienes menos de *2000 créditos* disponibles. Aún estás a tiempo de recargar.',
+    pct: 0,
+    message: ({ total }) =>
+      `🛑 CRÍTICO: ¡Te has quedado *SIN CRÉDITOS*!\n\n• Consumiste los *${total} créditos* de tu plan\n• Tu servicio está *SUSPENDIDO*\n• No podrás recibir mensajes de clientes\n\n🔴 *RECARGA URGENTE* para reactivar tu agente:\n${whatsappCreditsMsg}`,
   },
 ];

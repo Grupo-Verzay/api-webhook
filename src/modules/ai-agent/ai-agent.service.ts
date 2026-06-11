@@ -2227,7 +2227,33 @@ export class AiAgentService {
         ? `\n\n---\nNOTA INTERNA — MODO AUDIO ACTIVO: Tus respuestas se convierten a nota de voz automáticamente. Reglas de escritura para audio:\n- Escribe en lenguaje conversacional y natural, como si hablaras.\n- Usa frases cortas y directas.\n- Evita listas con guiones o asteriscos; convierte las listas en frases seguidas con comas o puntos.\n- NUNCA incluyas firma, despedida formal, nombre de la empresa al final, ni frases como "Quedo a tu disposición" o "Saludos".\n- NUNCA menciones que no puedes enviar audios ni hagas referencia a limitaciones técnicas.\n---`
         : '';
 
-      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${businessHoursBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}`.trim();
+      // RAG: inyectar bloques de conocimiento relevantes según keywords del mensaje
+      let knowledgeContext = '';
+      try {
+        const knowledgeBlocks = await this.prisma.knowledgeBlock.findMany({
+          where: { userId, isActive: true },
+          select: { keywords: true, content: true, title: true },
+        });
+        if (knowledgeBlocks.length > 0) {
+          const msgLower = input.toLowerCase();
+          const relevant = knowledgeBlocks.filter((block) =>
+            block.keywords.some((kw) => msgLower.includes(kw.toLowerCase())),
+          );
+          if (relevant.length > 0) {
+            knowledgeContext =
+              '\n\n---\n## INFORMACIÓN RELEVANTE DEL CATÁLOGO\n' +
+              relevant
+                .slice(0, 3)
+                .map((b) => b.content)
+                .join('\n\n---\n\n') +
+              '\n---';
+          }
+        }
+      } catch {
+        // RAG falla silenciosamente — el agente continúa con el prompt original
+      }
+
+      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${businessHoursBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}${knowledgeContext}`.trim();
 
       // logger.log('PROMPT:', promptAI);
 

@@ -11,6 +11,7 @@ import { LeadFunnelModule } from './modules/lead-funnel/lead-funnel.module';
 import { RegistrosModule } from './modules/registros/registros.module';
 import { ChatHistoryModule } from './modules/chat-history/chat-history.module';
 import { GoogleSheetsModule } from './modules/google-sheets/google-sheets.module';
+import { StageAutomationModule } from './modules/stage-automation/stage-automation.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -29,6 +30,7 @@ import { HealthController } from './health/health.controller';
     RegistrosModule,
     ChatHistoryModule,
     GoogleSheetsModule,
+    StageAutomationModule,
   ],
   providers: [
     ServicesService,

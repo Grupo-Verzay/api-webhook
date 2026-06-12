@@ -13,9 +13,10 @@ import { CrmFollowUpRunnerSchedulerService } from './services/crm-follow-up-runn
 import { CrmFollowUpRuleService } from './services/crm-follow-up-rule.service';
 import { LeadStatusWorkflowTriggerService } from './services/lead-status-workflow-trigger.service';
 import { WorkflowModule } from '../workflow/workflow.module';
+import { StageAutomationModule } from '../stage-automation/stage-automation.module';
 
 @Module({
-  imports: [AiAgentModule, ChatHistoryModule, WorkflowModule],
+  imports: [AiAgentModule, ChatHistoryModule, WorkflowModule, StageAutomationModule],
   providers: [
     LeadFunnelService,
     LeadClassifierIaService,

@@ -8,6 +8,7 @@ import { LeadStatusIaService } from '../lead-status-ia.service';
 import { CrmFollowUpPlannerService } from '../crm-follow-up-planner.service';
 import { CrmFollowUpRunnerService } from '../crm-follow-up-runner.service';
 import { LeadStatusWorkflowTriggerService } from '../lead-status-workflow-trigger.service';
+import { StageAutomationService } from 'src/modules/stage-automation/stage-automation.service';
 
 type LeadFunnelResult =
   | {
@@ -50,6 +51,7 @@ export class LeadFunnelService {
     private readonly crmFollowUpPlannerService: CrmFollowUpPlannerService,
     private readonly crmFollowUpRunnerService: CrmFollowUpRunnerService,
     private readonly leadStatusWorkflowTrigger: LeadStatusWorkflowTriggerService,
+    private readonly stageAutomationService: StageAutomationService,
   ) {}
 
   async processIncomingText(
@@ -267,6 +269,12 @@ export class LeadFunnelService {
               this.logger.warn(
                 `[LEAD_WORKFLOW] trigger error: ${err?.message}`,
               ),
+            );
+
+          this.stageAutomationService
+            .executeForSession(sessionDbId, leadStatusResult.leadStatus)
+            .catch((err) =>
+              this.logger.warn(`[STAGE_AUTOMATION] trigger error: ${err?.message}`),
             );
         }
       } catch (leadStatusError: any) {

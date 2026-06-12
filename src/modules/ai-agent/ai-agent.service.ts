@@ -2571,13 +2571,24 @@ export class AiAgentService {
         return '';
       }
 
-      // 🔹 Otros errores genéricos del proveedor de IA (timeout, 500, etc.)
+      // 🔹 Otros errores genéricos del proveedor de IA (timeout, 500, downtime, etc.)
       logger.error(
         `Error procesando entrada con el proveedor de IA. Detalle: ${JSON.stringify(rawError)}`,
       );
 
-      // Aquí, por ahora, NO notificamos por WhatsApp para evitar usar variables fuera de scope.
-      // Si luego quieres, se puede agregar una notificación genérica similar pero con su propio bloque try/catch.
+      if (server_url) {
+        try {
+          const apiUrl = `${server_url}/message/sendText/${instanceName}`;
+          await this.nodeSenderService.sendTextNode(
+            apiUrl,
+            apikey,
+            remoteJid,
+            '🤖 En este momento estoy teniendo dificultades técnicas. Por favor intenta de nuevo en unos minutos. 🙏',
+          );
+        } catch (sendErr: any) {
+          logger.error('Error enviando mensaje de degradación al cliente.', sendErr?.message);
+        }
+      }
 
       return '';
     }

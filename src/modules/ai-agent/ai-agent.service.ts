@@ -646,7 +646,14 @@ export class AiAgentService {
         if (sku) {
           where.sku = sku;
         } else {
-          if (query) where.title = { contains: query, mode: 'insensitive' };
+          if (query) {
+            const tokens = query.trim().split(/\s+/).filter(Boolean);
+            if (tokens.length <= 1) {
+              where.title = { contains: query.trim(), mode: 'insensitive' };
+            } else {
+              where.AND = tokens.map((t) => ({ title: { contains: t, mode: 'insensitive' } }));
+            }
+          }
           if (category) where.category = category;
         }
 
@@ -1465,12 +1472,18 @@ export class AiAgentService {
               if (!matchedKey) {
                 return `No existe la columna "${columna}" en la hoja. Columnas disponibles: ${headers.join(', ')}.`;
               }
-              results = rows.filter((row) => normalize(row[matchedKey] ?? '').includes(normalize(valor)));
+              const tokensCol = valor.split(/\s+/).map(normalize).filter(Boolean);
+              results = rows.filter((row) => {
+                const cell = normalize(row[matchedKey] ?? '');
+                return tokensCol.every((t) => cell.includes(t));
+              });
             } else {
               // Sin columna especificada → buscar en TODAS las columnas
-              results = rows.filter((row) =>
-                Object.values(row).some((v) => normalize(String(v ?? '')).includes(normalize(valor))),
-              );
+              const tokensAll = valor.split(/\s+/).map(normalize).filter(Boolean);
+              results = rows.filter((row) => {
+                const cells = Object.values(row).map((v) => normalize(String(v ?? '')));
+                return tokensAll.every((token) => cells.some((cell) => cell.includes(token)));
+              });
             }
 
             if (!results.length) {

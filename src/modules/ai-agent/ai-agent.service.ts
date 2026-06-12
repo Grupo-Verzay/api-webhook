@@ -2249,10 +2249,27 @@ export class AiAgentService {
           select: { keywords: true, content: true, title: true },
         });
         if (knowledgeBlocks.length > 0) {
-          const msgLower = input.toLowerCase();
-          const relevant = knowledgeBlocks.filter((block) =>
-            block.keywords.some((kw) => msgLower.includes(kw.toLowerCase())),
-          );
+          const ragNorm = (s: string) =>
+            s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[\s\-_./]/g, '');
+
+          const msgNorm = ragNorm(input);
+          const msgTokens = input
+            .toLowerCase()
+            .split(/\s+/)
+            .map((t) => t.replace(/[.,!?¿¡:;]/g, '').trim())
+            .filter((t) => t.length > 3)
+            .map(ragNorm);
+
+          const relevant = knowledgeBlocks.filter((block) => {
+            // 1. Keyword match normalizado (tildes, guiones, mayúsculas)
+            if (block.keywords.some((kw) => msgNorm.includes(ragNorm(kw)))) return true;
+            // 2. Título: algún token del mensaje aparece en el título normalizado
+            const titleNorm = ragNorm(block.title);
+            if (msgTokens.some((t) => titleNorm.includes(t))) return true;
+            // 3. Contenido: tokens significativos (>4 chars) aparecen en el contenido
+            const contentNorm = ragNorm(block.content);
+            return msgTokens.filter((t) => t.length > 4).some((t) => contentNorm.includes(t));
+          });
           if (relevant.length > 0) {
             knowledgeContext =
               '\n\n---\n## INFORMACIÓN ESPECÍFICA DEL NEGOCIO (Base de Conocimiento)\n' +

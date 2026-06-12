@@ -3,6 +3,7 @@ import { LoggerService } from 'src/core/logger/logger.service';
 import { PrismaService } from 'src/database/prisma.service';
 import { NodeSenderService } from 'src/modules/workflow/services/node-sender.service.ts/node-sender.service';
 
+const ADMIN_USER_ID = process.env.ADMIN_USER_ID ?? 'cm842kthc0000qd2l66nbnytv';
 const TIMEOUT_MS = 10_000;
 const MAX_DAILY_NOTIFICATIONS = 3;
 const TIME_ZONE = 'America/Bogota';
@@ -77,8 +78,8 @@ export class ConnectionCheckService {
   async run(now = new Date()): Promise<{ checked: number; disconnected: number; notified: number }> {
     const dayKey = this.getDayKey(now);
 
-    const adminUser = await this.prisma.user.findFirst({
-      where: { role: 'admin', ownerId: null },
+    const adminUser = await this.prisma.user.findUnique({
+      where: { id: ADMIN_USER_ID },
       include: {
         apiKey: { select: { url: true } },
         instancias: {

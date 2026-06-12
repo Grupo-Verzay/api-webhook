@@ -63,9 +63,11 @@ const COUNTRY_TZ_MAP: [string, string][] = [
 
 @Injectable()
 export class AiAgentService {
-  // Cliente LLM (LangChain / OpenAI envuelto)
-  // Nombre del flujo de bienvenida inicial
   readonly initWorkflowName: string = 'BIENVENIDA';
+
+  private readonly agentFailures = new Map<string, { consecutive: number; lastAlertAt: number }>();
+  private readonly FAILURE_THRESHOLD = 3;
+  private readonly FAILURE_ALERT_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 
   constructor(
     private readonly logger: LoggerService,
@@ -2089,6 +2091,47 @@ export class AiAgentService {
    * Proceso principal de entrada (AGENTE PRINCIPAL).
    * Llamado desde el webhook.
    */
+  private resetAgentFailures(userId: string): void {
+    const entry = this.agentFailures.get(userId);
+    if (entry) entry.consecutive = 0;
+  }
+
+  private async trackAgentFailure(
+    userId: string,
+    remoteJid: string,
+    server_url: string,
+    apikey: string,
+    instanceName: string,
+  ): Promise<void> {
+    const now = Date.now();
+    const entry = this.agentFailures.get(userId) ?? { consecutive: 0, lastAlertAt: 0 };
+    entry.consecutive += 1;
+    this.agentFailures.set(userId, entry);
+
+    if (
+      entry.consecutive >= this.FAILURE_THRESHOLD &&
+      now - entry.lastAlertAt > this.FAILURE_ALERT_COOLDOWN_MS &&
+      server_url
+    ) {
+      entry.lastAlertAt = now;
+      entry.consecutive = 0;
+      try {
+        const apiUrl = `${server_url}/message/sendText/${instanceName}`;
+        const phones = await this.agentNotificationService.getNotificationPhones(userId, remoteJid);
+        if (phones.length > 0) {
+          const clientPhone = remoteJid.split('@')[0];
+          const msg =
+            `⚠️ Tu *agente IA* no pudo responder los últimos *${this.FAILURE_THRESHOLD} mensajes* seguidos.\n\n` +
+            `📱 Último cliente: +${clientPhone}\n\n` +
+            `Revisa el estado del agente:\n👉 agente.ia-app.com/profile`;
+          await Promise.all(phones.map((p) => this.nodeSenderService.sendTextNode(apiUrl, apikey, p, msg)));
+        }
+      } catch (err: any) {
+        this.scopedLogger({ userId }).error('Error enviando alerta de fallos consecutivos.', err?.message);
+      }
+    }
+  }
+
   async processInput({
     input,
     userId,
@@ -2531,6 +2574,7 @@ export class AiAgentService {
         client,
       });
 
+      this.resetAgentFailures(userId);
       return finalText;
     } catch (error: any) {
       const logger = this.scopedLogger({ userId, instanceName, remoteJid });
@@ -2606,6 +2650,8 @@ export class AiAgentService {
           logger.error('Error enviando mensaje de degradación al cliente.', sendErr?.message);
         }
       }
+
+      await this.trackAgentFailure(userId, remoteJid, server_url, apikey, instanceName);
 
       return '';
     }

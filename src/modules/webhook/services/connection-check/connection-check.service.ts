@@ -9,7 +9,7 @@ const TIME_ZONE = 'America/Bogota';
 const DISABLED_SENTINEL = '0000000000';
 
 const DISCONNECTION_MSG =
-  `📵 Se *desvinculó* su WhatsApp del Agente.\n\n*Solución*: entre a su cuenta\n\n👉 agente.ia-app.com\n\n*Conectar* → en WhatsApp Business: Dispositivos vinculados.\n\n*Vincular un dispositivo* y escanee el *QR*  📳`;
+  `📵 Se *desvinculó* su WhatsApp del Agente.\n\n*Solución*: entre a su cuenta\n\n👉 agente.ia-app.com/profile\n\n*Conectar* → en WhatsApp Business: Dispositivos vinculados.\n\n*Vincular un dispositivo* y escanee el *QR*  📳`;
 
 type DailyEntry = { dayKey: string; count: number };
 

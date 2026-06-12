@@ -41,6 +41,8 @@ import { MessageDeduplicationService } from './services/message-deduplication/me
 import { ConversationControlService } from './services/conversation-control/conversation-control.service';
 import { SessionOrchestrationService } from './services/session-orchestration/session-orchestration.service';
 import { MetaWebhookNormalizerService } from './services/meta-webhook-normalizer/meta-webhook-normalizer.service';
+import { ConnectionCheckService } from './services/connection-check/connection-check.service';
+import { ConnectionCheckSchedulerService } from './services/connection-check/connection-check.scheduler.service';
 
 @Module({
   imports: [HttpModule, WorkflowModule, AiAgentModule, LeadFunnelModule, PaymentReceiptModule, WhatsAppModule],
@@ -84,6 +86,8 @@ import { MetaWebhookNormalizerService } from './services/meta-webhook-normalizer
     ConversationControlService,
     SessionOrchestrationService,
     MetaWebhookNormalizerService,
+    ConnectionCheckService,
+    ConnectionCheckSchedulerService,
   ],
 })
 export class WebhookModule {}

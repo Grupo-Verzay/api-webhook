@@ -1,8 +1,11 @@
--- CreateEnum
-CREATE TYPE "StageActionType" AS ENUM ('TAG_ADD', 'TAG_REMOVE', 'TASK', 'ASSIGN', 'EXECUTE_FLOW', 'MESSAGE', 'REMINDER', 'NOTIFY_ADVISOR', 'TOGGLE_AI', 'SEND_FILE', 'WEBHOOK', 'CHANGE_STATUS');
+-- CreateEnum (idempotent)
+DO $$ BEGIN
+  CREATE TYPE "StageActionType" AS ENUM ('TAG_ADD', 'TAG_REMOVE', 'TASK', 'ASSIGN', 'EXECUTE_FLOW', 'MESSAGE', 'REMINDER', 'NOTIFY_ADVISOR', 'TOGGLE_AI', 'SEND_FILE', 'WEBHOOK', 'CHANGE_STATUS');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateTable
-CREATE TABLE "stage_automations" (
+CREATE TABLE IF NOT EXISTS "stage_automations" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "stage" "LeadStatus" NOT NULL,
@@ -15,7 +18,7 @@ CREATE TABLE "stage_automations" (
 );
 
 -- CreateTable
-CREATE TABLE "stage_automation_actions" (
+CREATE TABLE IF NOT EXISTS "stage_automation_actions" (
     "id" TEXT NOT NULL,
     "automationId" TEXT NOT NULL,
     "type" "StageActionType" NOT NULL,
@@ -29,13 +32,18 @@ CREATE TABLE "stage_automation_actions" (
 );
 
 -- CreateIndex
-CREATE INDEX "stage_automations_userId_stage_idx" ON "stage_automations"("userId", "stage");
+CREATE INDEX IF NOT EXISTS "stage_automations_userId_stage_idx" ON "stage_automations"("userId", "stage");
 
 -- CreateIndex
-CREATE INDEX "stage_automation_actions_automationId_idx" ON "stage_automation_actions"("automationId");
+CREATE INDEX IF NOT EXISTS "stage_automation_actions_automationId_idx" ON "stage_automation_actions"("automationId");
 
--- AddForeignKey
-ALTER TABLE "stage_automations" ADD CONSTRAINT "stage_automations_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-- AddForeignKey (idempotent)
+DO $$ BEGIN
+  ALTER TABLE "stage_automations" ADD CONSTRAINT "stage_automations_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "stage_automation_actions" ADD CONSTRAINT "stage_automation_actions_automationId_fkey" FOREIGN KEY ("automationId") REFERENCES "stage_automations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "stage_automation_actions" ADD CONSTRAINT "stage_automation_actions_automationId_fkey" FOREIGN KEY ("automationId") REFERENCES "stage_automations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

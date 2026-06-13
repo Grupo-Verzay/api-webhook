@@ -386,6 +386,12 @@ export class AiAgentService {
         return this.buildConsultarSlotsDisponiblesTool(cfg, params);
       case 'crear_cita':
         return this.buildCrearCitaTool(cfg, params);
+      case 'listar_servicios_booking':
+        return this.buildListarServiciosBookingTool(cfg, params);
+      case 'consultar_slots_booking':
+        return this.buildConsultarSlotsBookingTool(cfg, params);
+      case 'crear_cita_booking':
+        return this.buildCrearCitaBookingTool(cfg, params);
       case 'etiquetar_contacto':
         return this.buildEtiquetarContactoTool(cfg, params);
       case 'registrar_nota_seguimiento':
@@ -1179,6 +1185,259 @@ export class AiAgentService {
           ),
           endTime: z.string().optional().describe(
             'Hora de fin ISO UTC. Puede omitirse si startTime es expresión informal (se resuelve automáticamente).',
+          ),
+          date: z.string().optional().describe(
+            'Fecha en formato YYYY-MM-DD (ej: "2025-05-20"). Requerida cuando startTime no es ISO UTC.',
+          ),
+        }),
+      },
+    );
+  }
+
+  private buildListarServiciosBookingTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+    const nextjsUrl = (process.env.NEXTJS_URL ?? '').replace(/\/+$/, '');
+    const runnerKey = process.env.CRM_FOLLOW_UP_RUNNER_KEY ?? '';
+
+    // @ts-ignore
+    return tool(
+      async () => {
+        logger.log(`Tool "${cfg.toolKey}" (listar_servicios_booking) llamada.`);
+        try {
+          const res = await axios.get(
+            `${nextjsUrl}/api/bookings/services?userId=${encodeURIComponent(userId)}`,
+            { headers: { Authorization: `Bearer ${runnerKey}` } },
+          );
+          const { services = [], total = 0, teamName = '' } = res.data ?? {};
+          if (!Array.isArray(services) || services.length === 0) {
+            return 'No hay servicios de reserva configurados en este momento.';
+          }
+          const list = services
+            .map((s: any, i: number) => {
+              const memberNames = s.members?.map((m: any) => m.name).join(', ') ?? '';
+              const membersText = memberNames ? ` — Especialistas: ${memberNames}` : '';
+              return `${i + 1}. [serviceId="${s.id}"] ${s.name} (${s.duration} min)${s.description ? ` — ${s.description}` : ''}${membersText}`;
+            })
+            .join('\n');
+          const header = teamName ? `Servicios disponibles en ${teamName} (${total}):\n` : `Servicios disponibles (${total}):\n`;
+          return `${header}${list}\n\n⚠️ IMPORTANTE: Usa el valor exacto de serviceId (entre comillas) al llamar consultar_slots_booking y crear_cita_booking. NO inventes ni modifiques el ID.`;
+        } catch (err: any) {
+          logger.error(`[listar_servicios_booking] Error: ${err?.message}`);
+          return 'No fue posible obtener los servicios en este momento. Inténtalo más tarde.';
+        }
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({}),
+      },
+    );
+  }
+
+  private buildConsultarSlotsBookingTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+    const nextjsUrl = (process.env.NEXTJS_URL ?? '').replace(/\/+$/, '');
+    const runnerKey = process.env.CRM_FOLLOW_UP_RUNNER_KEY ?? '';
+
+    // @ts-ignore
+    return tool(
+      async ({ date, serviceId, memberId }: { date: string; serviceId: string; memberId?: string }) => {
+        logger.log(`Tool "${cfg.toolKey}" (consultar_slots_booking) date="${date}" serviceId="${serviceId}" memberId="${memberId ?? '—'}"`);
+        try {
+          const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { timezone: true },
+          });
+          const timezone = user?.timezone || 'UTC';
+
+          let url =
+            `${nextjsUrl}/api/bookings/slots?userId=${encodeURIComponent(userId)}` +
+            `&serviceId=${encodeURIComponent(serviceId)}&date=${encodeURIComponent(date)}`;
+          if (memberId) url += `&memberId=${encodeURIComponent(memberId)}`;
+
+          const res = await axios.get(url, { headers: { Authorization: `Bearer ${runnerKey}` } });
+          const { slots = [], total = 0, serviceName = '' } = res.data ?? {};
+
+          if (!Array.isArray(slots) || slots.length === 0) {
+            return `No hay horarios disponibles para el ${date}${serviceName ? ` (${serviceName})` : ''}.`;
+          }
+
+          const clientTz = this.getClientTimezone(remoteJid, timezone);
+          const tzCity = clientTz.split('/').pop()?.replace(/_/g, ' ') ?? clientTz;
+          const localSlots = slots.map((s: any, i: number) => {
+            const start = new Date(s.startTime).toLocaleTimeString('es-CO', {
+              timeZone: clientTz, hour: '2-digit', minute: '2-digit', hour12: true,
+            });
+            const end = new Date(s.endTime).toLocaleTimeString('es-CO', {
+              timeZone: clientTz, hour: '2-digit', minute: '2-digit', hour12: true,
+            });
+            const specialist = s.memberName ? ` [Especialista: ${s.memberName}]` : '';
+            return `• [${i + 1}] ${start} – ${end} (hora ${tzCity})${specialist}  startTime="${s.startTime}" endTime="${s.endTime}" memberId="${s.memberId}"`;
+          });
+
+          const reminder =
+            `\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]\n` +
+            `Cuando el usuario confirme o elija un horario, llama INMEDIATAMENTE a \`crear_cita_booking\` con:\n` +
+            `  • serviceId: "${serviceId}"\n` +
+            `  • date: "${date}"\n` +
+            `  • startTime: el valor startTime del slot elegido tal como aparece arriba entre comillas.\n` +
+            `  • endTime: el valor endTime del slot elegido tal como aparece arriba entre comillas.\n` +
+            `  • memberId: el valor memberId del slot elegido tal como aparece arriba entre comillas.\n` +
+            `RECONOCIMIENTO DE HORA DEL USUARIO:\n` +
+            `  — Si dice "10", "10 am", "10:00", "las 10", "diez" → es el slot con hora 10:00 a.m.\n` +
+            `  — Si dice "el primero", "opción 1", "1" → es el slot [1]\n` +
+            `  — Si dice "el segundo", "opción 2", "2" → es el slot [2]\n` +
+            `  — Si dice una hora que coincide con un slot, usa ese slot.\n` +
+            `Nunca confirmes la cita sin haber llamado \`crear_cita_booking\` exitosamente.`;
+          return `Horarios disponibles para el ${date}${serviceName ? ` (${serviceName})` : ''} (${total}):\n${localSlots.join('\n')}${reminder}`;
+        } catch (err: any) {
+          logger.error(`[consultar_slots_booking] Error: ${err?.message}`);
+          return 'No fue posible consultar los horarios disponibles. Inténtalo más tarde.';
+        }
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription,
+        schema: z.object({
+          date: z.string().describe('Fecha a consultar en formato YYYY-MM-DD. Ejemplo: "2025-05-20"'),
+          serviceId: z.string().describe('ID exacto (UUID) del servicio seleccionado, tal como lo devolvió listar_servicios_booking'),
+          memberId: z.string().optional().describe('ID del especialista para filtrar slots. Opcional; si se omite, muestra slots de todos los especialistas del servicio.'),
+        }),
+      },
+    );
+  }
+
+  private buildCrearCitaBookingTool(cfg: any, params: {
+    userId: string; instanceName: string; remoteJid: string; pushName: string;
+  }): any {
+    const { userId, instanceName, remoteJid, pushName } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+    const nextjsUrl = (process.env.NEXTJS_URL ?? '').replace(/\/+$/, '');
+    const runnerKey = process.env.CRM_FOLLOW_UP_RUNNER_KEY ?? '';
+
+    // @ts-ignore
+    return tool(
+      async ({ serviceId, startTime, endTime, memberId, date }: {
+        serviceId: string; startTime: string; endTime?: string; memberId?: string; date?: string;
+      }) => {
+        logger.log(`Tool "${cfg.toolKey}" (crear_cita_booking) serviceId="${serviceId}" startTime="${startTime}" memberId="${memberId ?? '—'}" date="${date ?? '—'}"`);
+        try {
+          const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { timezone: true },
+          });
+          const timezone = user?.timezone || 'UTC';
+
+          const isIso = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s);
+
+          let resolvedStart = startTime;
+          let resolvedEnd = endTime ?? '';
+          let resolvedMemberId = memberId ?? '';
+
+          if (!isIso(startTime) || !isIso(endTime)) {
+            const slotDate = date ?? (isIso(startTime) ? startTime.slice(0, 10) : undefined);
+            if (slotDate) {
+              logger.log(`[crear_cita_booking] Resolviendo slot informal "${startTime}" para fecha "${slotDate}"`);
+              const parsed = this.parseLocalHourFromInput(startTime);
+              if (parsed) {
+                try {
+                  let slotUrl =
+                    `${nextjsUrl}/api/bookings/slots?userId=${encodeURIComponent(userId)}` +
+                    `&serviceId=${encodeURIComponent(serviceId)}&date=${encodeURIComponent(slotDate)}`;
+                  if (resolvedMemberId) slotUrl += `&memberId=${encodeURIComponent(resolvedMemberId)}`;
+                  const slotRes = await axios.get(slotUrl, { headers: { Authorization: `Bearer ${runnerKey}` } });
+                  const slots: any[] = slotRes.data?.slots ?? [];
+                  const matched = slots.find((s: any) => {
+                    const d = new Date(s.startTime);
+                    const localH = parseInt(d.toLocaleString('en-US', { timeZone: timezone, hour: '2-digit', hour12: false }), 10);
+                    const localM = parseInt(d.toLocaleString('en-US', { timeZone: timezone, minute: '2-digit' }), 10);
+                    return localH === parsed.hour && localM === parsed.minute;
+                  }) ?? null;
+                  if (matched) {
+                    resolvedStart = matched.startTime;
+                    resolvedEnd = matched.endTime;
+                    if (!resolvedMemberId && matched.memberId) resolvedMemberId = matched.memberId;
+                  } else {
+                    return (
+                      `No encontré un horario disponible que coincida con "${startTime}" para el ${slotDate}. ` +
+                      `Muestra los horarios con consultar_slots_booking y pide al usuario que elija uno.`
+                    );
+                  }
+                } catch {
+                  return (
+                    `No encontré un horario disponible que coincida con "${startTime}". ` +
+                    `Muestra los horarios con consultar_slots_booking y pide al usuario que elija uno.`
+                  );
+                }
+              } else {
+                return (
+                  `Necesito saber la fecha para resolver "${startTime}". ` +
+                  `Llama primero a consultar_slots_booking para obtener los horarios del día.`
+                );
+              }
+            } else {
+              return (
+                `Necesito saber la fecha para resolver "${startTime}". ` +
+                `Llama primero a consultar_slots_booking para obtener los horarios del día.`
+              );
+            }
+          }
+
+          const body: Record<string, string> = {
+            userId, serviceId, pushName, phone: remoteJid, instanceName,
+            startTime: resolvedStart, endTime: resolvedEnd, timezone,
+          };
+          if (resolvedMemberId) body.memberId = resolvedMemberId;
+
+          const res = await axios.post(
+            `${nextjsUrl}/api/bookings/appointment`,
+            body,
+            { headers: { Authorization: `Bearer ${runnerKey}`, 'Content-Type': 'application/json' } },
+          );
+
+          const { message, appointment } = res.data ?? {};
+          const clientTz = this.getClientTimezone(remoteJid, timezone);
+          const tzCity = clientTz.split('/').pop()?.replace(/_/g, ' ') ?? clientTz;
+          const confirmDate = appointment?.startTime
+            ? `${new Date(appointment.startTime).toLocaleString('es-CO', {
+                timeZone: clientTz, dateStyle: 'full', timeStyle: 'short',
+              })} (hora ${tzCity})`
+            : resolvedStart;
+
+          const successText = message
+            ? `${message} — ${confirmDate}`
+            : `Cita agendada exitosamente para el ${confirmDate}.`;
+          return `${successText}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: La cita fue registrada. Muestra SOLO el mensaje de confirmación anterior. NO agregues frases adicionales.`;
+        } catch (err: any) {
+          const errMsg = err?.response?.data?.error ?? err?.response?.data?.message ?? err?.message ?? 'error desconocido';
+          logger.error(`[crear_cita_booking] Error: ${errMsg}`);
+          return `No fue posible agendar la cita: ${errMsg}`;
+        }
+      },
+      {
+        name: cfg.toolKey,
+        description: cfg.toolDescription ||
+          'OBLIGATORIO: Llama esta herramienta cuando el usuario confirme o elija un horario de reserva. ' +
+          'Es la ÚNICA forma de registrar la cita — sin llamarla, la cita NO existe. ' +
+          'Usa el serviceId de listar_servicios_booking, los valores startTime/endTime y memberId de consultar_slots_booking. ' +
+          'Si el usuario dice una hora informal ("10 am", "diez", "10:00"), pásala en startTime junto con date.',
+        schema: z.object({
+          serviceId: z.string().describe('ID del servicio (de listar_servicios_booking)'),
+          startTime: z.string().describe(
+            'Hora de inicio: ISO UTC ("2025-05-20T14:00:00.000Z") o expresión informal ("10 am", "10:00", "diez"). ' +
+            'Si es expresión informal, incluye también el campo date.',
+          ),
+          endTime: z.string().optional().describe(
+            'Hora de fin ISO UTC. Puede omitirse si startTime es expresión informal (se resuelve automáticamente).',
+          ),
+          memberId: z.string().optional().describe(
+            'ID del especialista asignado al slot (de consultar_slots_booking). Recomendado para garantizar disponibilidad.',
           ),
           date: z.string().optional().describe(
             'Fecha en formato YYYY-MM-DD (ej: "2025-05-20"). Requerida cuando startTime no es ISO UTC.',

@@ -314,12 +314,22 @@ export class WebhookService {
 
     // 🔹 Si el agente NO está muteado -> sí validamos créditos
     if (!agentMuted) {
+      // Para clientes de reseller: notificaciones de créditos desde la línea del reseller
+      let notifApiUrl = apiMsgUrl;
+      let notifApikey = apikey;
+      if (userWithRelations.ownerId) {
+        const resellerSender = await this.userService.getResellerSender(userWithRelations.ownerId);
+        if (resellerSender) {
+          notifApiUrl = resellerSender.sendUrl;
+          notifApikey = resellerSender.senderApikey;
+        }
+      }
       const creditOk = await this.creditValidation({
         flags: creditFlags,
         userId,
         webhookUrl: userWithRelations.webhookUrl ?? '',
-        apikey,
-        apiUrl: apiMsgUrl,
+        apikey: notifApikey,
+        apiUrl: notifApiUrl,
         userPhone: userWithRelations.notificationNumber,
       });
 

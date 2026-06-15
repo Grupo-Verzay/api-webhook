@@ -104,11 +104,11 @@ export class ConnectionCheckService {
     const users = await this.prisma.user.findMany({
       where: {
         status: true,
-        ownerId: null,
         instancias: { some: { instanceType: 'Whatsapp' } },
       },
       select: {
         id: true,
+        ownerId: true,
         notificationNumber: true,
         apiKey: { select: { url: true } },
         instancias: {
@@ -118,6 +118,36 @@ export class ConnectionCheckService {
         },
       },
     });
+
+    // Precarga instancias de resellers en bulk para evitar N+1
+    const ownerIds = [...new Set(users.map(u => u.ownerId).filter(Boolean))] as string[];
+    const resellerSenderMap = new Map<string, { sendUrl: string; senderApikey: string }>();
+
+    if (ownerIds.length > 0) {
+      const owners = await this.prisma.user.findMany({
+        where: { id: { in: ownerIds } },
+        select: {
+          id: true,
+          apiKey: { select: { url: true } },
+          instancias: {
+            where: { instanceType: 'Whatsapp' },
+            select: { instanceName: true, instanceId: true },
+            take: 1,
+          },
+        },
+      });
+      for (const owner of owners) {
+        const inst = owner.instancias[0];
+        const srv = owner.apiKey?.url?.trim();
+        if (inst && srv) {
+          const base = normalizeBase(srv);
+          resellerSenderMap.set(owner.id, {
+            sendUrl: `${base}/message/sendText/${encodeURIComponent(inst.instanceName)}`,
+            senderApikey: inst.instanceId,
+          });
+        }
+      }
+    }
 
     let checked = 0;
     let disconnected = 0;
@@ -146,18 +176,24 @@ export class ConnectionCheckService {
         continue;
       }
 
+      // Usar instancia del reseller si el usuario le pertenece; si no, usar admin
+      const resellerSender = user.ownerId ? resellerSenderMap.get(user.ownerId) : undefined;
+      const senderUrl = resellerSender?.sendUrl ?? adminSendUrl;
+      const senderApikey = resellerSender?.senderApikey ?? adminInstance.instanceId;
+
       try {
         await this.nodeSenderService.sendTextNode(
-          adminSendUrl,
-          adminInstance.instanceId,
+          senderUrl,
+          senderApikey,
           phone,
           DISCONNECTION_MSG,
         );
         this.markNotified(instanceKey, dayKey);
         notified++;
         const count = this.dailyNotified.get(instanceKey)?.count ?? 1;
+        const via = resellerSender ? `reseller=${user.ownerId}` : 'admin';
         this.logger.log(
-          `[ConnectionCheck] Notificación enviada → ${instance.instanceName} (userId=${user.id}) aviso=${count}/${MAX_DAILY_NOTIFICATIONS}`,
+          `[ConnectionCheck] Notificación enviada → ${instance.instanceName} (userId=${user.id}) aviso=${count}/${MAX_DAILY_NOTIFICATIONS} via=${via}`,
         );
       } catch (error: any) {
         this.logger.error(

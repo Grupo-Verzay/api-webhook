@@ -87,6 +87,45 @@ export class AiAgentService {
     private readonly googleSheetsService: GoogleSheetsService,
   ) {}
 
+  private async resolveNotifSender(
+    userId: string,
+    fallbackUrl: string,
+    fallbackApikey: string,
+  ): Promise<{ notifUrl: string; notifApikey: string }> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { ownerId: true },
+      });
+      if (user?.ownerId) {
+        const owner = await this.prisma.user.findUnique({
+          where: { id: user.ownerId },
+          select: {
+            apiKey: { select: { url: true } },
+            instancias: {
+              where: { instanceType: 'Whatsapp' },
+              select: { instanceName: true, instanceId: true },
+              take: 1,
+            },
+          },
+        });
+        const inst = owner?.instancias?.[0];
+        const srv = owner?.apiKey?.url?.trim();
+        if (inst && srv) {
+          const base = srv.replace(/\/+$/, '');
+          const normalizedBase = /^https?:\/\//i.test(base) ? base : `https://${base}`;
+          return {
+            notifUrl: `${normalizedBase}/message/sendText/${encodeURIComponent(inst.instanceName)}`,
+            notifApikey: inst.instanceId,
+          };
+        }
+      }
+    } catch {
+      // fallback al remitente original
+    }
+    return { notifUrl: fallbackUrl, notifApikey: fallbackApikey };
+  }
+
   private async getClientForUser(userId: string, temperature?: number): Promise<BaseChatModel> {
     // 1) Usuario (default provider/model)
     const user = await this.prisma.user.findUnique({
@@ -2378,7 +2417,11 @@ export class AiAgentService {
       entry.lastAlertAt = now;
       entry.consecutive = 0;
       try {
-        const apiUrl = `${server_url}/message/sendText/${instanceName}`;
+        const { notifUrl, notifApikey } = await this.resolveNotifSender(
+          userId,
+          `${server_url}/message/sendText/${instanceName}`,
+          apikey,
+        );
         const phones = await this.agentNotificationService.getNotificationPhones(userId, remoteJid);
         if (phones.length > 0) {
           const clientPhone = remoteJid.split('@')[0];
@@ -2386,7 +2429,7 @@ export class AiAgentService {
             `⚠️ Tu *agente IA* no pudo responder los últimos *${this.FAILURE_THRESHOLD} mensajes* seguidos.\n\n` +
             `📱 Último cliente: +${clientPhone}\n\n` +
             `Revisa el estado del agente:\n👉 agente.ia-app.com/profile`;
-          await Promise.all(phones.map((p) => this.nodeSenderService.sendTextNode(apiUrl, apikey, p, msg)));
+          await Promise.all(phones.map((p) => this.nodeSenderService.sendTextNode(notifUrl, notifApikey, p, msg)));
         }
       } catch (err: any) {
         this.scopedLogger({ userId }).error('Error enviando alerta de fallos consecutivos.', err?.message);
@@ -2715,7 +2758,11 @@ export class AiAgentService {
           );
 
           try {
-            const apiUrl = `${server_url}/message/sendText/${instanceName}`;
+            const { notifUrl, notifApikey } = await this.resolveNotifSender(
+              userId,
+              `${server_url}/message/sendText/${instanceName}`,
+              apikey,
+            );
             const notificationPhones =
               await this.agentNotificationService.getNotificationPhones(
                 userId,
@@ -2729,7 +2776,7 @@ export class AiAgentService {
                 '👉 https://platform.openai.com/settings/organization/billing/overview';
               await Promise.all(
                 notificationPhones.map((phone) =>
-                  this.nodeSenderService.sendTextNode(apiUrl, apikey, phone, aviso),
+                  this.nodeSenderService.sendTextNode(notifUrl, notifApikey, phone, aviso),
                 ),
               );
             } else {
@@ -2861,7 +2908,11 @@ export class AiAgentService {
         );
 
         try {
-          const apiUrl = `${server_url}/message/sendText/${instanceName}`;
+          const { notifUrl, notifApikey } = await this.resolveNotifSender(
+            userId,
+            `${server_url}/message/sendText/${instanceName}`,
+            apikey,
+          );
           const notificationPhones =
             await this.agentNotificationService.getNotificationPhones(
               userId,
@@ -2875,7 +2926,7 @@ export class AiAgentService {
 
             await Promise.all(
               notificationPhones.map((phone) =>
-                this.nodeSenderService.sendTextNode(apiUrl, apikey, phone, aviso),
+                this.nodeSenderService.sendTextNode(notifUrl, notifApikey, phone, aviso),
               ),
             );
           } else {

@@ -68,6 +68,29 @@ export class UserService {
     return result;
   }
 
+  async getResellerSender(ownerId: string): Promise<{ sendUrl: string; senderApikey: string } | null> {
+    const owner = await this.prisma.user.findUnique({
+      where: { id: ownerId },
+      select: {
+        apiKey: { select: { url: true } },
+        instancias: {
+          where: { instanceType: 'Whatsapp' },
+          select: { instanceName: true, instanceId: true },
+          take: 1,
+        },
+      },
+    });
+    const instance = owner?.instancias?.[0];
+    const serverUrl = owner?.apiKey?.url?.trim();
+    if (!instance || !serverUrl) return null;
+    const base = serverUrl.replace(/\/+$/, '');
+    const normalizedBase = /^https?:\/\//i.test(base) ? base : `https://${base}`;
+    return {
+      sendUrl: `${normalizedBase}/message/sendText/${encodeURIComponent(instance.instanceName)}`,
+      senderApikey: instance.instanceId,
+    };
+  }
+
   // =================================================================
   // CONFIGURACIÓN DE IA (ALINEADA A TU SCHEMA)
   // =================================================================

@@ -1652,6 +1652,9 @@ export class AiAgentService {
         // Normaliza tildes, diacríticos, guiones, puntos y espacios para comparaciones flexibles
         const normalize = (s: string) =>
           s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[\s\-_.\/]/g, '').trim();
+        // Para comparar valores: trata la 'r' como separador adicional
+        // Así "315/80R22.5" y "315/80/22.5" producen el mismo token "31580225"
+        const normalizeVal = (s: string) => normalize(s).replace(/r/g, '');
 
         try {
           const parsed = new URL(resolvedUrl);
@@ -1733,22 +1736,17 @@ export class AiAgentService {
               if (!matchedKey) {
                 return `No existe la columna "${columna}" en la hoja. Columnas disponibles: ${headers.join(', ')}.`;
               }
-              const tokensCol = valor.split(/\s+/).map(normalize).filter(Boolean);
+              const tokensCol = valor.split(/\s+/).map(normalizeVal).filter(Boolean);
               results = rows.filter((row) => {
-                const cell = normalize(row[matchedKey] ?? '');
-                const cellNoR = cell.replace(/r/g, '');
-                return tokensCol.every((t) => cell.includes(t) || cellNoR.includes(t.replace(/r/g, '')));
+                const cell = normalizeVal(row[matchedKey] ?? '');
+                return tokensCol.every((t) => cell.includes(t));
               });
             } else {
               // Sin columna especificada → buscar en TODAS las columnas
-              const tokensAll = valor.split(/\s+/).map(normalize).filter(Boolean);
+              const tokensAll = valor.split(/\s+/).map(normalizeVal).filter(Boolean);
               results = rows.filter((row) => {
-                const cells = Object.values(row).map((v) => normalize(String(v ?? '')));
-                const cellsNoR = cells.map((c) => c.replace(/r/g, ''));
-                return tokensAll.every((token) =>
-                  cells.some((cell) => cell.includes(token)) ||
-                  cellsNoR.some((cell) => cell.includes(token.replace(/r/g, '')))
-                );
+                const cells = Object.values(row).map((v) => normalizeVal(String(v ?? '')));
+                return tokensAll.every((token) => cells.some((cell) => cell.includes(token)));
               });
             }
 

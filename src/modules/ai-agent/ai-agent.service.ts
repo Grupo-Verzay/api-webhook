@@ -1736,14 +1736,19 @@ export class AiAgentService {
               const tokensCol = valor.split(/\s+/).map(normalize).filter(Boolean);
               results = rows.filter((row) => {
                 const cell = normalize(row[matchedKey] ?? '');
-                return tokensCol.every((t) => cell.includes(t));
+                const cellNoR = cell.replace(/r/g, '');
+                return tokensCol.every((t) => cell.includes(t) || cellNoR.includes(t.replace(/r/g, '')));
               });
             } else {
               // Sin columna especificada → buscar en TODAS las columnas
               const tokensAll = valor.split(/\s+/).map(normalize).filter(Boolean);
               results = rows.filter((row) => {
                 const cells = Object.values(row).map((v) => normalize(String(v ?? '')));
-                return tokensAll.every((token) => cells.some((cell) => cell.includes(token)));
+                const cellsNoR = cells.map((c) => c.replace(/r/g, ''));
+                return tokensAll.every((token) =>
+                  cells.some((cell) => cell.includes(token)) ||
+                  cellsNoR.some((cell) => cell.includes(token.replace(/r/g, '')))
+                );
               });
             }
 

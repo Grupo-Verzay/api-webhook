@@ -2467,10 +2467,60 @@ export class AiAgentService {
         .catch(() => '');
 
       // Datos externos del cliente (cédula, correo, servicio, monto, etc.)
-      const [externalClientData, toolConfigs] = await Promise.all([
+      const [externalClientData, toolConfigs, sessionData] = await Promise.all([
         this.externalClientDataService.getByRemoteJid(userId, remoteJid).catch(() => null),
         this.externalClientDataService.getToolConfigs(userId).catch(() => []),
+        this.prisma.session.findFirst({
+          where: { userId, remoteJid },
+          select: {
+            id: true,
+            pushName: true,
+            customName: true,
+            leadStatus: true,
+            serviceType: true,
+            agentDisabled: true,
+            assignedAdvisorId: true,
+          },
+        }).catch(() => null),
       ]);
+
+      // ── Pre-check del contacto ────────────────────────────────────────────
+      // Determina si el contacto es nuevo, activo o tiene servicio contratado.
+      // Este bloque se inyecta en el system prompt para que la IA adapte su saludo y comportamiento.
+      const contactName = sessionData?.customName || pushName || 'el cliente';
+      const isNewLead = !sessionData;
+      const hasServiceType = !!sessionData?.serviceType;
+
+      const LEAD_STATUS_LABELS: Record<string, string> = {
+        FRIO: 'Frío (sin interacción reciente)',
+        TIBIO: 'Tibio (interesado pero sin cerrar)',
+        CALIENTE: 'Caliente (listo para comprar)',
+        FINALIZADO: 'Finalizado (transacción completada)',
+        DESCARTADO: 'Descartado',
+      };
+
+      let clientContextBlock = '';
+      if (isNewLead) {
+        clientContextBlock = `\n\n---\n## CONTEXTO DEL CONTACTO\nEste es un contacto NUEVO que escribe por primera vez. No existe registro previo en el sistema.\n- Salúdalo cordialmente y capta su nombre e interés principal antes de continuar.\n- No menciones que es nuevo ni que no tienes sus datos.\n---`;
+      } else {
+        const statusLabel = sessionData.leadStatus
+          ? LEAD_STATUS_LABELS[sessionData.leadStatus] ?? sessionData.leadStatus
+          : 'Sin clasificar';
+        const serviceLabel = sessionData.serviceType === 'IA'
+          ? 'Asistencia IA (te corresponde atender)'
+          : sessionData.serviceType === 'HUMANO'
+            ? 'Asistencia Humana (debes escalar a un asesor)'
+            : 'Sin servicio asignado aún (lead en proceso)';
+
+        clientContextBlock = `\n\n---\n## CONTEXTO DEL CONTACTO\nNombre: ${contactName}\nEstado CRM: ${statusLabel}\nTipo de servicio: ${serviceLabel}\n${
+          hasServiceType && sessionData.serviceType === 'IA'
+            ? 'INSTRUCCIÓN: Saluda al cliente por su nombre y atiéndelo directamente con la IA.'
+            : hasServiceType && sessionData.serviceType === 'HUMANO'
+              ? 'INSTRUCCIÓN: Saluda al cliente por su nombre e informa que lo conectarás con un asesor humano. No intentes resolver su consulta por tu cuenta.'
+              : 'INSTRUCCIÓN: Atiende al cliente e intenta identificar el servicio que necesita.'
+        }\n---`;
+      }
+      // ── Fin pre-check ─────────────────────────────────────────────────────
 
       let externalDataBlock = '';
       if (externalClientData && Object.keys(externalClientData).length > 0) {
@@ -2638,7 +2688,7 @@ export class AiAgentService {
         // RAG falla silenciosamente — el agente continúa con el prompt original
       }
 
-      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${businessHoursBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}${knowledgeContext}`.trim();
+      const promptAI = `${extraRules} ${systemPrompt}${clientContextBlock}${externalDataBlock}${agendaRuleBlock}${businessHoursBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}${knowledgeContext}`.trim();
 
       // logger.log('PROMPT:', promptAI);
 

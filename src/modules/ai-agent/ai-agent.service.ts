@@ -2478,6 +2478,7 @@ export class AiAgentService {
             customName: true,
             leadStatus: true,
             serviceType: true,
+            clientStatus: true,
             agentDisabled: true,
             assignedAdvisorId: true,
           },
@@ -2511,14 +2512,25 @@ export class AiAgentService {
           : sessionData.serviceType === 'HUMANO'
             ? 'Asistencia Humana (debes escalar a un asesor)'
             : 'Sin servicio asignado aún (lead en proceso)';
+        const clientStatusLabel = (sessionData as any).clientStatus === 'ACTIVO'
+          ? 'Cliente Activo (suscripción vigente — atender soporte del servicio)'
+          : (sessionData as any).clientStatus === 'INACTIVO'
+            ? 'Cliente Inactivo (ex-cliente — puede querer retomar el servicio, mostrar novedades)'
+            : 'Sin clasificar';
 
-        clientContextBlock = `\n\n---\n## CONTEXTO DEL CONTACTO\nNombre: ${contactName}\nEstado CRM: ${statusLabel}\nTipo de servicio: ${serviceLabel}\n${
-          hasServiceType && sessionData.serviceType === 'IA'
-            ? 'INSTRUCCIÓN: Saluda al cliente por su nombre y atiéndelo directamente con la IA.'
-            : hasServiceType && sessionData.serviceType === 'HUMANO'
-              ? 'INSTRUCCIÓN: Saluda al cliente por su nombre e informa que lo conectarás con un asesor humano. No intentes resolver su consulta por tu cuenta.'
-              : 'INSTRUCCIÓN: Atiende al cliente e intenta identificar el servicio que necesita.'
-        }\n---`;
+        const clientStatusInstruction = (sessionData as any).clientStatus === 'ACTIVO'
+          ? 'INSTRUCCIÓN: Es un cliente activo con suscripción vigente. Atiende su consulta de soporte (fallas, dudas de uso, cambios en cuenta) con prioridad.'
+          : (sessionData as any).clientStatus === 'INACTIVO'
+            ? 'INSTRUCCIÓN: Es un ex-cliente. Salúdalo con calidez, pregunta en qué puedes ayudarle, menciona novedades o mejoras del servicio si es relevante, e invítalo a retomar.'
+            : 'INSTRUCCIÓN: Atiende al cliente e intenta identificar el servicio que necesita.';
+
+        const serviceInstruction = hasServiceType && sessionData.serviceType === 'IA'
+          ? 'Tipo de atención: Saluda por su nombre y atiéndelo directamente con la IA.'
+          : hasServiceType && sessionData.serviceType === 'HUMANO'
+            ? 'Tipo de atención: Saluda por su nombre e informa que lo conectarás con un asesor humano. No intentes resolver su consulta por tu cuenta.'
+            : '';
+
+        clientContextBlock = `\n\n---\n## CONTEXTO DEL CONTACTO\nNombre: ${contactName}\nEstado CRM: ${statusLabel}\nEstado cliente: ${clientStatusLabel}\nTipo de servicio: ${serviceLabel}\n${clientStatusInstruction}${serviceInstruction ? '\n' + serviceInstruction : ''}\n---`;
       }
       // ── Fin pre-check ─────────────────────────────────────────────────────
 

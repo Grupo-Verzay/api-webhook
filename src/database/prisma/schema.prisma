@@ -357,6 +357,7 @@ model Session {
   leadStatusSourceHash String?                @map("lead_status_source_hash")
   leadStatusUpdatedAt  DateTime?              @map("lead_status_updated_at")
   serviceType          ServiceType?           @map("service_type")
+  clientStatus         ClientStatus?          @map("client_status")
   leadScore            Int?                   @map("lead_score")
   leadScoreReason      String?                @map("lead_score_reason")
   leadScoredAt         DateTime?              @map("lead_scored_at")
@@ -1246,6 +1247,11 @@ enum LeadStatus {
 enum ServiceType {
   IA
   HUMANO
+}
+
+enum ClientStatus {
+  ACTIVO
+  INACTIVO
 }
 
 model LeadStatusWorkflowConfig {

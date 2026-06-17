@@ -109,19 +109,22 @@ model GuideUrl {
 }
 
 model Instancia {
-  id                 Int     @id @default(autoincrement())
-  instanceName       String
-  userId             String
-  instanceId         String
-  instanceType       String? @default("Whatsapp")
-  metaPhoneNumberId  String? @map("meta_phone_number_id")
-  metaAccessToken    String? @map("meta_access_token")
-  metaWabaId         String? @map("meta_waba_id")
-  metaVerifyToken    String? @map("meta_verify_token")
-  user               User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                     Int     @id @default(autoincrement())
+  instanceName           String
+  userId                 String
+  instanceId             String
+  instanceType           String? @default("Whatsapp")
+  metaPhoneNumberId      String? @map("meta_phone_number_id")
+  metaAccessToken        String? @map("meta_access_token")
+  metaWabaId             String? @map("meta_waba_id")
+  metaVerifyToken        String? @map("meta_verify_token")
+  metaChannel            String? @default("whatsapp") @map("meta_channel")
+  metaPageId             String? @map("meta_page_id")
+  user                   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([metaPhoneNumberId])
+  @@index([metaPageId])
   @@map("Instancias")
 }
 
@@ -187,23 +190,44 @@ model Pausar {
 }
 
 model Product {
-  id          String          @id @default(uuid())
-  userId      String
-  title       String
-  description String?
-  price       Decimal         @db.Decimal(65, 2)
-  sku         String?         @unique
-  stock       Int             @default(0)
-  isActive    Boolean         @default(true)
-  images      String[]
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  category    String
-  tags        String[]
-  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String          @id @default(uuid())
+  userId          String
+  title           String
+  description     String?
+  price           Decimal         @db.Decimal(65, 2)
+  comparePrice    Decimal?        @db.Decimal(65, 2)
+  sku             String?         @unique
+  stock           Int             @default(0)
+  isActive        Boolean         @default(true)
+  images          String[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  category        String
+  tags            String[]
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   cotizacionItems CotizacionItem[]
 
   @@index([userId, title])
+}
+
+model CatalogConfig {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  whatsappNumber String?
+  bannerUrl      String?
+  primaryColor   String?
+  headline       String?
+  subheadline    String?
+  instagram      String?
+  facebook       String?
+  tiktok         String?
+  ctaText        String?
+  showStock      Boolean  @default(true)
+  showSku        Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("catalog_config")
 }
 
 model Cotizacion {
@@ -332,6 +356,8 @@ model Session {
   leadStatusReason     String?                @map("lead_status_reason")
   leadStatusSourceHash String?                @map("lead_status_source_hash")
   leadStatusUpdatedAt  DateTime?              @map("lead_status_updated_at")
+  serviceType          ServiceType?           @map("service_type")
+  clientStatus         ClientStatus?          @map("client_status")
   leadScore            Int?                   @map("lead_score")
   leadScoreReason      String?                @map("lead_score_reason")
   leadScoredAt         DateTime?              @map("lead_scored_at")
@@ -484,6 +510,7 @@ model User {
   instancias                         Instancia[]
   pausar                             Pausar[]
   products                           Product[]
+  catalogConfig                      CatalogConfig?
   cotizaciones                       Cotizacion[]
   promptInstances                    PromptInstance[]
   services                           Service[]
@@ -515,6 +542,19 @@ model User {
   Module                             Module[]                     @relation("UserModules")
   leadStatusWorkflowConfigs          LeadStatusWorkflowConfig[]
   stageAutomations                   StageAutomation[]
+  visualStyles                       UserVisualStyle[]
+}
+
+model UserVisualStyle {
+  id          String   @id @default(uuid())
+  userId      String
+  name        String
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model UserNotificationContact {
@@ -1202,6 +1242,16 @@ enum LeadStatus {
   CALIENTE
   FINALIZADO
   DESCARTADO
+}
+
+enum ServiceType {
+  IA
+  HUMANO
+}
+
+enum ClientStatus {
+  ACTIVO
+  INACTIVO
 }
 
 model LeadStatusWorkflowConfig {

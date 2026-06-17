@@ -2467,10 +2467,77 @@ export class AiAgentService {
         .catch(() => '');
 
       // Datos externos del cliente (cédula, correo, servicio, monto, etc.)
-      const [externalClientData, toolConfigs] = await Promise.all([
+      const [externalClientData, toolConfigs, sessionData] = await Promise.all([
         this.externalClientDataService.getByRemoteJid(userId, remoteJid).catch(() => null),
         this.externalClientDataService.getToolConfigs(userId).catch(() => []),
+        this.prisma.session.findFirst({
+          where: { userId, remoteJid },
+          select: {
+            id: true,
+            pushName: true,
+            customName: true,
+            leadStatus: true,
+            serviceType: true,
+            clientStatus: true,
+            agentDisabled: true,
+            assignedAdvisorId: true,
+          },
+        }).catch(() => null),
       ]);
+
+      // ── Pre-check del contacto ────────────────────────────────────────────
+      // Solo se ejecuta si el usuario tiene la herramienta 'client_validation' habilitada.
+      const clientValidationEnabled = toolConfigs.some(
+        (c: any) => c.toolType === 'client_validation' && c.isEnabled,
+      );
+
+      const contactName = sessionData?.customName || pushName || 'el cliente';
+      const isNewLead = !sessionData;
+      const hasServiceType = !!sessionData?.serviceType;
+
+      const LEAD_STATUS_LABELS: Record<string, string> = {
+        FRIO: 'Frío (sin interacción reciente)',
+        TIBIO: 'Tibio (interesado pero sin cerrar)',
+        CALIENTE: 'Caliente (listo para comprar)',
+        FINALIZADO: 'Finalizado (transacción completada)',
+        DESCARTADO: 'Descartado',
+      };
+
+      let clientContextBlock = '';
+      if (clientValidationEnabled) {
+        if (isNewLead) {
+          clientContextBlock = `\n\n---\n## CONTEXTO DEL CONTACTO\nEste es un contacto NUEVO que escribe por primera vez. No existe registro previo en el sistema.\n- Salúdalo cordialmente y capta su nombre e interés principal antes de continuar.\n- No menciones que es nuevo ni que no tienes sus datos.\n---`;
+        } else {
+          const statusLabel = sessionData.leadStatus
+            ? LEAD_STATUS_LABELS[sessionData.leadStatus] ?? sessionData.leadStatus
+            : 'Sin clasificar';
+          const serviceLabel = sessionData.serviceType === 'IA'
+            ? 'Asistencia IA'
+            : sessionData.serviceType === 'HUMANO'
+              ? 'Asistencia Humana (S/N)'
+              : 'Sin servicio asignado aún';
+          const clientStatusLabel = (sessionData as any).clientStatus === 'ACTIVO'
+            ? 'Cliente Activo (suscripción vigente)'
+            : (sessionData as any).clientStatus === 'INACTIVO'
+              ? 'Cliente Inactivo (ex-cliente)'
+              : 'Sin clasificar';
+
+          const clientStatusInstruction = (sessionData as any).clientStatus === 'ACTIVO'
+            ? 'INSTRUCCIÓN ESTADO: Es un cliente activo con suscripción vigente. Atiende su consulta de soporte (fallas, dudas de uso, cambios en cuenta) con prioridad.'
+            : (sessionData as any).clientStatus === 'INACTIVO'
+              ? 'INSTRUCCIÓN ESTADO: Es un ex-cliente. Salúdalo con calidez, pregunta en qué puedes ayudarle, menciona novedades o mejoras del servicio si es relevante, e invítalo a retomar.'
+              : 'INSTRUCCIÓN ESTADO: Atiende al cliente e intenta identificar el servicio que necesita.';
+
+          const serviceInstruction = sessionData.serviceType === 'IA'
+            ? 'INSTRUCCIÓN SERVICIO: El cliente tiene Asistencia IA. Atiéndelo completamente con la IA. No escales a un asesor humano bajo ninguna circunstancia.'
+            : sessionData.serviceType === 'HUMANO'
+              ? 'INSTRUCCIÓN SERVICIO: El cliente tiene Asistencia Humana. Atiéndelo con la IA en primera instancia. Si la consulta lo requiere (reclamo complejo, solicitud de hablar con persona, situación sensible), escala a un asesor humano.'
+              : 'INSTRUCCIÓN SERVICIO: Tipo de asistencia no definido. Atiende al cliente normalmente.';
+
+          clientContextBlock = `\n\n---\n## CONTEXTO DEL CONTACTO\nNombre: ${contactName}\nEstado CRM: ${statusLabel}\nEstado cliente: ${clientStatusLabel}\nTipo de servicio: ${serviceLabel}\n${clientStatusInstruction}\n${serviceInstruction}\n---`;
+        }
+      }
+      // ── Fin pre-check ─────────────────────────────────────────────────────
 
       let externalDataBlock = '';
       if (externalClientData && Object.keys(externalClientData).length > 0) {
@@ -2638,7 +2705,7 @@ export class AiAgentService {
         // RAG falla silenciosamente — el agente continúa con el prompt original
       }
 
-      const promptAI = `${extraRules} ${systemPrompt}${externalDataBlock}${agendaRuleBlock}${businessHoursBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}${knowledgeContext}`.trim();
+      const promptAI = `${extraRules} ${systemPrompt}${clientContextBlock}${externalDataBlock}${agendaRuleBlock}${businessHoursBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}${knowledgeContext}`.trim();
 
       // logger.log('PROMPT:', promptAI);
 

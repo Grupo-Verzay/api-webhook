@@ -84,6 +84,15 @@ export class BaileysWebhookBridgeService implements OnModuleInit {
       }
     }
 
+    if (messageType === 'documentMessage') {
+      const result = await this.downloadMediaAsBase64(message, 'document');
+      if (result) {
+        mediaBase64 = result.base64;
+        mediaMimetype = result.mimetype;
+        this.logger.log(`[BaileyseBridge] Documento descargado para ${instanceName} (${Math.round(result.base64.length * 0.75 / 1024)}KB, ${result.mimetype})`, 'BaileysWebhookBridgeService');
+      }
+    }
+
     const payload = {
       event: 'messages.upsert',
       instance: instanceName,

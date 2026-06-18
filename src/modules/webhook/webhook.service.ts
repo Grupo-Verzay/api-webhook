@@ -630,7 +630,9 @@ export class WebhookService {
     // tenga contexto claro en turnos futuros.
     const msgToSave = messageType === 'imageMessage'
       ? `[IMAGEN]: ${mergedText}`
-      : mergedText;
+      : messageType === 'documentMessage'
+        ? mergedText  // ya incluye el prefijo [DOCUMENTO: nombre] desde message-type-handler
+        : mergedText;
     await this.chatHistoryService.saveMessage(
       sessionHistoryId,
       msgToSave,
@@ -937,7 +939,7 @@ export class WebhookService {
     // entienda que viene de una imagen (ya guardado así en el historial).
     const aiInput = messageType === 'imageMessage'
       ? `[IMAGEN]: ${mergedText}`
-      : mergedText;
+      : mergedText;  // documentMessage ya trae [DOCUMENTO: nombre]\n{texto} desde message-type-handler
 
     const dataProccessInput = {
       input: aiInput,

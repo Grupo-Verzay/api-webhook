@@ -363,6 +363,7 @@ export class AiAgentService {
     for (const cfg of allConfigs) {
       if (!cfg.isEnabled) continue;
       if (cfg.toolType === 'auto_inject') continue; // lo maneja processInput
+      if (cfg.toolType === 'client_validation') continue; // inyecta contexto en el prompt, no es una tool LangChain
 
       // Inyectar config de Google Sheets en notificacion_asesor para auto-write
       const enrichedCfg =

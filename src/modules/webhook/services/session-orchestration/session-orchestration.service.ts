@@ -102,6 +102,11 @@ export class SessionOrchestrationService {
 
       logger.log(`[SESSION] Usuario ya registrado: ${session.remoteJid}`);
 
+      // Retry auto-assign si la sesión existe pero aún no tiene asesor asignado
+      if (!session.assignedAdvisorId) {
+        void this.autoAssignService.tryAssign(session.id, userId);
+      }
+
       const hasTrigger = await this.sessionTriggerService.findBySessionId(session.id.toString());
       const dateReactivate = await this.getReactivateDate({ userWithRelations });
 

@@ -265,6 +265,17 @@ export class AiCreditsService {
         return { success: false, msg: 'No se encontraron créditos' };
       }
 
+      if (credit.total < 0) {
+        this.logger.log(`Créditos userId=${userId} → ILIMITADO`);
+        return {
+          success: true,
+          total: -1,
+          used: 0,
+          available: 999999999,
+          renewalDate: credit.renewalDate,
+        };
+      }
+
       const usedCredits = Math.floor(credit.used / TOKENS_PER_CREDIT);
       const availableCredits = Math.max(credit.total - usedCredits, 0);
 

@@ -43,6 +43,8 @@ import { SessionOrchestrationService } from './services/session-orchestration/se
 import { MetaWebhookNormalizerService } from './services/meta-webhook-normalizer/meta-webhook-normalizer.service';
 import { ConnectionCheckService } from './services/connection-check/connection-check.service';
 import { ConnectionCheckSchedulerService } from './services/connection-check/connection-check.scheduler.service';
+import { TrialFollowUpCronService } from './services/trial-followup-cron/trial-followup-cron.service';
+import { TrialFollowUpCronSchedulerService } from './services/trial-followup-cron/trial-followup-cron.scheduler.service';
 
 @Module({
   imports: [HttpModule, WorkflowModule, AiAgentModule, LeadFunnelModule, PaymentReceiptModule, WhatsAppModule],
@@ -88,6 +90,8 @@ import { ConnectionCheckSchedulerService } from './services/connection-check/con
     MetaWebhookNormalizerService,
     ConnectionCheckService,
     ConnectionCheckSchedulerService,
+    TrialFollowUpCronService,
+    TrialFollowUpCronSchedulerService,
   ],
 })
 export class WebhookModule {}

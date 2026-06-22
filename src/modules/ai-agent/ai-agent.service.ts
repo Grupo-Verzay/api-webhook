@@ -1592,7 +1592,7 @@ export class AiAgentService {
 
     // @ts-ignore
     return tool(
-      async ({ titulo, descripcion, fecha_iso }: { titulo: string; descripcion?: string; fecha_iso: string }) => {
+      async ({ titulo, descripcion, fecha_iso }: { titulo: string; descripcion: string; fecha_iso: string }) => {
         logger.log(`Tool "${cfg.toolKey}" (crear_recordatorio) llamada: ${titulo} para ${fecha_iso}`);
         try {
           await this.prisma.reminders.create({
@@ -1619,8 +1619,8 @@ export class AiAgentService {
         name: cfg.toolKey,
         description: cfg.toolDescription,
         schema: z.object({
-          titulo: z.string().describe('Título del recordatorio'),
-          descripcion: z.string().optional().describe('Detalle adicional del recordatorio'),
+          titulo: z.string().describe('Etiqueta interna breve SOLO para identificar el recordatorio. NO se envía al cliente. Ej: "Llamada con Mario".'),
+          descripcion: z.string().describe('MENSAJE EXACTO que se enviará al cliente por WhatsApp en la fecha/hora programada. Redáctalo dirigido al cliente, en segunda persona, cálido y claro, como si tú se lo escribieras (puedes usar emojis). NO es una nota interna ni una descripción en tercera persona. Usa @client_name donde quieras que aparezca el nombre del cliente. Ej: "¡Hola @client_name! 👋 Te escribo para coordinar la llamada y ver juntos los detalles del servicio. ¿Te queda bien hoy a esta hora?"'),
           fecha_iso: z.string().describe('Fecha y hora en formato ISO 8601 (ej: 2025-06-15T10:00:00)'),
         }),
       },

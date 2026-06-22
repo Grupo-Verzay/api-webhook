@@ -95,7 +95,7 @@ export class TrialFollowUpCronService {
     );
     const minute = this.parseMinute(
       this.configService.get<string>('TRIAL_FOLLOWUP_CRON_MINUTE'),
-      0,
+      30,
     );
     const timeZone =
       this.configService.get<string>('TRIAL_FOLLOWUP_CRON_TIME_ZONE') ?? 'America/Bogota';
@@ -139,18 +139,19 @@ export class TrialFollowUpCronService {
   }
 
   private hasReachedSchedule(parts: ZonedDateTimeParts, settings: TrialFollowUpCronSettings) {
-    if (parts.hour > settings.hour) return true;
-    if (parts.hour < settings.hour) return false;
+    // Cron horario (24/7): cada hora se vuelve elegible una vez pasado el minuto
+    // configurado (por defecto :30). La hora la decide el route segun la zona del cliente.
     return parts.minute >= settings.minute;
   }
 
-  private buildSlotKey(parts: ZonedDateTimeParts, settings: TrialFollowUpCronSettings) {
+  private buildSlotKey(parts: ZonedDateTimeParts) {
     const dateKey = [
       String(parts.year),
       String(parts.month).padStart(2, '0'),
       String(parts.day).padStart(2, '0'),
     ].join('-');
-    return `${dateKey}@${String(settings.hour).padStart(2, '0')}:${String(settings.minute).padStart(2, '0')}`;
+    // Un slot por HORA actual -> dispara una vez por hora (no una vez por dia).
+    return `${dateKey}@${String(parts.hour).padStart(2, '0')}`;
   }
 
   private getErrorMessage(error: unknown, timeoutMs: number) {
@@ -172,7 +173,7 @@ export class TrialFollowUpCronService {
     const now = args?.now ?? new Date();
     const settings = this.getSettings();
     const zonedParts = this.getZonedDateTimeParts(now, settings.timeZone);
-    const slotKey = this.buildSlotKey(zonedParts, settings);
+    const slotKey = this.buildSlotKey(zonedParts);
 
     if (!settings.endpointUrl) {
       const message = 'Trial follow-up cron sin endpoint configurado.';

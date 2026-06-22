@@ -35,7 +35,7 @@ export class TrialFollowUpCronSchedulerService implements OnModuleInit, OnModule
     }, settings.intervalMs);
 
     await this.logger.log(
-      `Trial follow-up cron scheduler iniciado. Intervalo=${settings.intervalMs}ms hora=${String(settings.hour).padStart(2, '0')}:${String(settings.minute).padStart(2, '0')} tz=${settings.timeZone}`,
+      `Trial follow-up cron scheduler iniciado. Cadencia=cada hora al minuto :${String(settings.minute).padStart(2, '0')} Intervalo=${settings.intervalMs}ms tz=${settings.timeZone}`,
       'TrialFollowUpCronSchedulerService',
     );
   }

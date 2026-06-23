@@ -32,9 +32,13 @@ export class RemindersRunnerSchedulerService
 
   private getSettings() {
     return {
+      // Deshabilitado por defecto: los recordatorios se procesan vía
+      // seguimientos (follow-up-runner). Este runner duplicaba el envío y
+      // borraba la fila de Reminders (la evidencia). Para reactivarlo,
+      // poner REMINDERS_RUNNER_ENABLED=true explícitamente.
       enabled: this.parseBoolean(
         this.configService.get<string>('REMINDERS_RUNNER_ENABLED'),
-        true,
+        false,
       ),
       intervalMs: this.parsePositiveInt(
         this.configService.get<string>('REMINDERS_RUNNER_INTERVAL_MS'),

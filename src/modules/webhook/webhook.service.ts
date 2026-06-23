@@ -38,6 +38,7 @@ import { BaileysSenderAdapter } from '../whatsapp/adapters/baileys/baileys-sende
 import { MessageDeduplicationService } from './services/message-deduplication/message-deduplication.service';
 import { ConversationControlService } from './services/conversation-control/conversation-control.service';
 import { SessionOrchestrationService } from './services/session-orchestration/session-orchestration.service';
+import { ChatEventsGateway } from '../realtime/chat-events.gateway';
 
 @Injectable()
 export class WebhookService {
@@ -69,6 +70,7 @@ export class WebhookService {
     private readonly messageDeduplication: MessageDeduplicationService,
     private readonly conversationControl: ConversationControlService,
     private readonly sessionOrchestration: SessionOrchestrationService,
+    private readonly chatEvents: ChatEventsGateway,
   ) { }
 
   /**
@@ -100,13 +102,28 @@ export class WebhookService {
     instanceName: string,
     server_url: string,
     apikey: string,
+    userId?: string,
   ): (remoteJid: string, text: string) => Promise<void> {
+    // Notifica en tiempo real que el chat cambió tras un envío saliente.
+    // Envuelto para no afectar nunca el resultado del envío.
+    const notify = (remoteJid: string) => {
+      if (userId) {
+        this.chatEvents.emitChatChanged({ userId, remoteJid, instanceName });
+      }
+    };
+
     if (!server_url) {
       const sender = this.whatsAppSenderFactory.getSenderSync('baileys');
-      return (remoteJid, text) => sender.sendText(instanceName, remoteJid, text).then(() => {});
+      return (remoteJid, text) =>
+        sender.sendText(instanceName, remoteJid, text).then(() => {
+          notify(remoteJid);
+        });
     }
     const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
-    return (remoteJid, text) => this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, remoteJid, text);
+    return (remoteJid, text) =>
+      this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, remoteJid, text).then(() => {
+        notify(remoteJid);
+      });
   }
 
   /**
@@ -162,6 +179,13 @@ export class WebhookService {
     const prismaInstancia = await this.instancesService.getUserId(instanceName);
     const userId = prismaInstancia?.userId ?? '';
     const instanceId = prismaInstancia?.instanceId ?? '';
+
+    // Tiempo real: notificar que este chat cambió en cuanto sabemos a qué
+    // usuario/instancia pertenece. Cubre mensajes entrantes (y los echos
+    // salientes que reenvía Evolution). Es aditivo y nunca bloquea el flujo.
+    if (userId && remoteJid) {
+      this.chatEvents.emitChatChanged({ userId, remoteJid, instanceName });
+    }
 
     // Logger con contexto ya incluye userId/inst/jid
     const userWithRelations = (await this.userService.getUserWithPausar(
@@ -306,7 +330,7 @@ export class WebhookService {
       canonicalRemoteJid,
     );
     const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
-    const sendTextFn = this.makeSendTextFn(instanceName, server_url, apikey);
+    const sendTextFn = this.makeSendTextFn(instanceName, server_url, apikey, userId);
 
     // this.logger.debug(`[PAUSA] fromMe=${fromMe} | msg="${conversationMsg}"`);
 

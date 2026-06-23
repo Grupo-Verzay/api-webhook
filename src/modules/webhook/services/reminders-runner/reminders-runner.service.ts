@@ -174,7 +174,13 @@ export class RemindersRunnerService {
                 .filter(Boolean)
             : [(reminder.remoteJid ?? '').trim()].filter(Boolean);
 
-        const serverUrl = (reminder.serverUrl ?? '').trim();
+        // El serverUrl puede venir sin protocolo (ej. "evoapi.ia-app.com"),
+        // lo que provoca "Invalid URL" al construir la URL de Evolution. Se
+        // antepone https:// si falta para que el envío no falle.
+        const rawServerUrl = (reminder.serverUrl ?? '').trim().replace(/\/+$/, '');
+        const serverUrl = rawServerUrl && !/^https?:\/\//i.test(rawServerUrl)
+          ? `https://${rawServerUrl}`
+          : rawServerUrl;
         const instanceName = (reminder.instanceName ?? '').trim();
         const apikey = (reminder.apikey ?? '').trim();
         const rawMessage = (reminder.description ?? reminder.title ?? '').trim();

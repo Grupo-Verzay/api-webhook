@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Reminders" ADD COLUMN IF NOT EXISTS "sentAt" TIMESTAMP(3);

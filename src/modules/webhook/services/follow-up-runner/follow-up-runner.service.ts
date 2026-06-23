@@ -322,6 +322,35 @@ export class FollowUpRunnerService {
   }
 
   /**
+   * Marca el recordatorio (tabla Reminders) como enviado cuando el seguimiento
+   * proviene de un recordatorio (`reminder-<id>`) o campaña (`camping-<id>-<n>`).
+   * Deja evidencia persistente de "enviado" sin depender del seguimiento, que
+   * sí se elimina/actualiza tras el envío.
+   */
+  private async markReminderSentIfApplicable(idNodo?: string | null) {
+    const id = (idNodo ?? '').trim();
+    let reminderId: string | null = null;
+
+    if (id.startsWith('reminder-')) {
+      reminderId = id.slice('reminder-'.length).trim();
+    } else {
+      const match = id.match(/^camping-(.+)-\d+$/);
+      if (match) reminderId = match[1];
+    }
+
+    if (!reminderId) return;
+
+    try {
+      await this.prisma.reminders.update({
+        where: { id: reminderId },
+        data: { sentAt: new Date() },
+      });
+    } catch {
+      // La fila de Reminders pudo haberse eliminado; ignorar.
+    }
+  }
+
+  /**
    * Si el seguimiento proviene de un recordatorio con workflow asignado,
    * lo ejecuta después de enviar el mensaje de texto.
    */
@@ -668,6 +697,9 @@ export class FollowUpRunnerService {
           finalMessage,
           effectiveRemoteJid,
         );
+
+        // Marca el recordatorio como enviado (evidencia en la tabla Reminders).
+        await this.markReminderSentIfApplicable(seguimiento.idNodo);
 
         // Si el recordatorio tiene un workflow asignado y hay sesión, ejecutarlo
         if (session) {

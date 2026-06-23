@@ -319,6 +319,7 @@ model Reminders {
   isSchedule   Boolean?    @default(false)
   order        Int         @default(0)
   isCampaign   Boolean?    @default(false)
+  sentAt       DateTime?
 }
 
 model Service {

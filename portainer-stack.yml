@@ -59,7 +59,9 @@ services:
       SESSION_TRIGGER_RUNNER_ENABLED: "true"
       SESSION_TRIGGER_RUNNER_INTERVAL_MS: "60000"
 
-      REMINDERS_RUNNER_ENABLED: "true"
+      # Deshabilitado: los recordatorios se procesan vía seguimientos
+      # (follow-up-runner). Activarlo causa doble envío y borra la evidencia.
+      REMINDERS_RUNNER_ENABLED: "false"
       REMINDERS_RUNNER_INTERVAL_MS: "60000"
 
       WEEKLY_REPORT_CRON_ENABLED: "true"

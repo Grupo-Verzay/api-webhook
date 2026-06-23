@@ -63,14 +63,20 @@ export class WebhookController {
 
   /** Meta Cloud API — verificación del webhook (GET) */
   @Get('meta')
-  verifyMetaWebhook(
+  async verifyMetaWebhook(
     @Query('hub.mode') mode: string,
     @Query('hub.challenge') challenge: string,
     @Query('hub.verify_token') verifyToken: string,
     @Res() res: Response,
   ) {
-    const expected = (process.env.META_VERIFY_TOKEN ?? '').trim();
-    if (mode === 'subscribe' && verifyToken && verifyToken === expected) {
+    if (mode !== 'subscribe' || !verifyToken) {
+      void this.logger.warn(`[Meta] Verificación fallida — modo o token vacío`);
+      res.status(403).send('Forbidden');
+      return;
+    }
+
+    const valid = await this.metaNormalizer.verifyToken(verifyToken);
+    if (valid) {
       void this.logger.log(`[Meta] Webhook verificado correctamente`);
       res.status(200).send(challenge);
     } else {

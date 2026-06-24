@@ -184,7 +184,33 @@ export class WebhookService {
     // usuario/instancia pertenece. Cubre mensajes entrantes (y los echos
     // salientes que reenvía Evolution). Es aditivo y nunca bloquea el flujo.
     if (userId && remoteJid) {
-      this.chatEvents.emitChatChanged({ userId, remoteJid, instanceName });
+      // Para mensajes de TEXTO incluimos el contenido para que el cliente haga
+      // append directo sin re-consultar a Evolution (Fase 2). Para multimedia,
+      // el contenido va vacío y el cliente cae al refetch.
+      const realtimeText =
+        data?.message?.conversation ||
+        data?.message?.extendedTextMessage?.text ||
+        '';
+      const realtimeTs =
+        typeof data?.messageTimestamp === 'number'
+          ? data.messageTimestamp
+          : Math.floor(Date.now() / 1000);
+
+      this.chatEvents.emitChatChanged({
+        userId,
+        remoteJid,
+        instanceName,
+        message: realtimeText
+          ? {
+              id: data?.key?.id ?? null,
+              fromMe: Boolean(data?.key?.fromMe),
+              content: realtimeText,
+              messageType: data?.messageType ?? 'conversation',
+              pushName: incomingPushName || null,
+              ts: realtimeTs,
+            }
+          : null,
+      });
     }
 
     // Logger con contexto ya incluye userId/inst/jid

@@ -61,19 +61,32 @@ export class ChatEventsGateway implements OnGatewayConnection {
 
   /**
    * Notifica que una conversación cambió (mensaje entrante o saliente).
-   * El cliente lo usa como disparador para refrescar ese chat / la lista.
+   *
+   * Si se incluye `message` con contenido de texto, el cliente puede hacer
+   * "append" directo del mensaje sin re-consultar a Evolution (Fase 2). Cuando
+   * no hay `message` (p. ej. salientes o multimedia), el cliente cae al refetch.
+   *
    * Nunca lanza: si el servidor aún no está listo, simplemente no emite.
    */
   emitChatChanged(params: {
     userId: string;
     remoteJid: string;
     instanceName?: string | null;
+    message?: {
+      id: string | null;
+      fromMe: boolean;
+      content: string;
+      messageType: string;
+      pushName: string | null;
+      ts: number;
+    } | null;
   }): void {
     try {
       if (!params?.userId || !this.server) return;
       this.server.to(`user:${params.userId}`).emit('chat:changed', {
         remoteJid: params.remoteJid,
         instanceName: params.instanceName ?? null,
+        message: params.message ?? null,
         ts: Date.now(),
       });
     } catch {

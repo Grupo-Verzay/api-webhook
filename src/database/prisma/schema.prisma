@@ -499,6 +499,7 @@ model User {
   elevenLabsVoiceId                  String?
   ttsProvider                        String?                      @default("openai")
   ownerId                            String?                      @map("owner_id")
+  demoResellerId                     String?                      @map("demo_reseller_id")
   advisorRole                        String?                      @map("advisor_role")
   advisorAvailable                   Boolean                      @default(true) @map("advisor_available")
   autoAssignEnabled                  Boolean                      @default(false) @map("auto_assign_enabled")

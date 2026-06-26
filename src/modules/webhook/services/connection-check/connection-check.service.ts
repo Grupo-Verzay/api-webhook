@@ -109,6 +109,7 @@ export class ConnectionCheckService {
       select: {
         id: true,
         ownerId: true,
+        demoResellerId: true,
         notificationNumber: true,
         apiKey: { select: { url: true } },
         instancias: {
@@ -119,8 +120,13 @@ export class ConnectionCheckService {
       },
     });
 
-    // Precarga instancias de resellers en bulk para evitar N+1
-    const ownerIds = [...new Set(users.map(u => u.ownerId).filter(Boolean))] as string[];
+    // Precarga instancias del "dueño" (cuenta padre de un asesor por ownerId, o
+    // reseller de un cliente por demoResellerId) en bulk para evitar N+1.
+    const ownerIds = [
+      ...new Set(
+        users.flatMap(u => [u.ownerId, u.demoResellerId]).filter(Boolean),
+      ),
+    ] as string[];
     const resellerSenderMap = new Map<string, { sendUrl: string; senderApikey: string }>();
 
     if (ownerIds.length > 0) {
@@ -176,8 +182,10 @@ export class ConnectionCheckService {
         continue;
       }
 
-      // Usar instancia del reseller si el usuario le pertenece; si no, usar admin
-      const resellerSender = user.ownerId ? resellerSenderMap.get(user.ownerId) : undefined;
+      // Emisor: instancia del padre (asesor→ownerId) o del reseller
+      // (cliente→demoResellerId); si no hay, usar la instancia admin.
+      const ownerKey = user.ownerId ?? user.demoResellerId;
+      const resellerSender = ownerKey ? resellerSenderMap.get(ownerKey) : undefined;
       const senderUrl = resellerSender?.sendUrl ?? adminSendUrl;
       const senderApikey = resellerSender?.senderApikey ?? adminInstance.instanceId;
 

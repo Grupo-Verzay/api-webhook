@@ -3,8 +3,8 @@ import { LoggerService } from 'src/core/logger/logger.service';
 import { ConnectionCheckService } from './connection-check.service';
 
 const TIME_ZONE = 'America/Bogota';
-// Slots en formato HH:MM. NOTA: 17:45 es TEMPORAL para probar el fix; volver a 17:00 luego.
-const CHECK_SLOTS = ['09:00', '13:00', '17:45'];
+// Slots en formato HH:MM.
+const CHECK_SLOTS = ['09:00', '13:00', '17:00'];
 const INTERVAL_MS = 60_000;
 
 @Injectable()

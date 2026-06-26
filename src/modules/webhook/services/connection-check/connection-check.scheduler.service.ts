@@ -3,7 +3,8 @@ import { LoggerService } from 'src/core/logger/logger.service';
 import { ConnectionCheckService } from './connection-check.service';
 
 const TIME_ZONE = 'America/Bogota';
-const CHECK_SLOTS_HOURS = [9, 13, 17];
+// Slots en formato HH:MM. NOTA: 17:45 es TEMPORAL para probar el fix; volver a 17:00 luego.
+const CHECK_SLOTS = ['09:00', '13:00', '17:45'];
 const INTERVAL_MS = 60_000;
 
 @Injectable()
@@ -20,7 +21,7 @@ export class ConnectionCheckSchedulerService implements OnModuleInit, OnModuleDe
   onModuleInit() {
     this.timer = setInterval(() => void this.runTick(), INTERVAL_MS);
     this.logger.log(
-      `Connection check scheduler iniciado. Slots=${CHECK_SLOTS_HOURS.map((h) => `${h}:00`).join(', ')} tz=${TIME_ZONE}`,
+      `Connection check scheduler iniciado. Slots=${CHECK_SLOTS.join(', ')} tz=${TIME_ZONE}`,
       'ConnectionCheckSchedulerService',
     );
   }
@@ -43,12 +44,11 @@ export class ConnectionCheckSchedulerService implements OnModuleInit, OnModuleDe
     }).formatToParts(now);
 
     const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '0';
-    const hour = parseInt(get('hour'), 10);
-    const minute = parseInt(get('minute'), 10);
+    const hm = `${get('hour').padStart(2, '0')}:${get('minute').padStart(2, '0')}`;
     const dateStr = `${get('year')}-${get('month')}-${get('day')}`;
 
-    if (!CHECK_SLOTS_HOURS.includes(hour) || minute !== 0) return null;
-    return `${dateStr}::${hour}`;
+    if (!CHECK_SLOTS.includes(hm)) return null;
+    return `${dateStr}::${hm}`;
   }
 
   private async runTick() {

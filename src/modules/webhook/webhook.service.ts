@@ -110,12 +110,29 @@ export class WebhookService {
     server_url: string,
     apikey: string,
     userId?: string,
+    source?: string,
   ): (remoteJid: string, text: string) => Promise<void> {
     // Notifica en tiempo real que el chat cambió tras un envío saliente.
     // Envuelto para no afectar nunca el resultado del envío.
     const notify = (remoteJid: string) => {
       if (userId) {
         this.chatEvents.emitChatChanged({ userId, remoteJid, instanceName });
+      }
+    };
+
+    // Persiste el saliente en el store unificado (canales no-Evolution).
+    const persistOutbound = (channel: string, remoteJid: string, text: string, ok: boolean) => {
+      if (ok && userId) {
+        void this.chatStore.persistMessage({
+          userId,
+          instanceName,
+          instanceType: channel,
+          remoteJid,
+          fromMe: true,
+          messageType: 'conversation',
+          content: text,
+          messageTimestamp: Math.floor(Date.now() / 1000),
+        });
       }
     };
 
@@ -132,18 +149,17 @@ export class WebhookService {
       return (remoteJid, text) =>
         sender.sendText(instanceName, remoteJid, text, server_url, apikey).then((ok) => {
           notify(remoteJid);
-          if (ok && userId) {
-            void this.chatStore.persistMessage({
-              userId,
-              instanceName,
-              instanceType: 'telegram',
-              remoteJid,
-              fromMe: true,
-              messageType: 'conversation',
-              content: text,
-              messageTimestamp: Math.floor(Date.now() / 1000),
-            });
-          }
+          persistOutbound('telegram', remoteJid, text, ok);
+        });
+    }
+    // Meta (WhatsApp Cloud / Facebook / Instagram): usa el adaptador de Graph API.
+    // server_url es el phoneNumberId/pageId y apikey es el access token.
+    if (source === 'meta') {
+      const sender = this.whatsAppSenderFactory.getSenderSync('meta');
+      return (remoteJid, text) =>
+        sender.sendText(instanceName, remoteJid, text, server_url, apikey).then((ok) => {
+          notify(remoteJid);
+          persistOutbound('meta', remoteJid, text, ok);
         });
     }
     const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
@@ -383,7 +399,7 @@ export class WebhookService {
       canonicalRemoteJid,
     );
     const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
-    const sendTextFn = this.makeSendTextFn(instanceName, server_url, apikey, userId);
+    const sendTextFn = this.makeSendTextFn(instanceName, server_url, apikey, userId, data?.source);
 
     // this.logger.debug(`[PAUSA] fromMe=${fromMe} | msg="${conversationMsg}"`);
 
@@ -1207,8 +1223,9 @@ export class WebhookService {
       if (audioBase64) {
         if (isBaileysInstance) {
           audioSent = await this.baileysSender.sendAudioBase64(instanceName, canonicalRemoteJid, audioBase64);
-        } else if (server_url === 'telegram') {
-          // Telegram sendVoice requiere URL/archivo OGG, no base64: se hace fallback a texto.
+        } else if (!/^https?:\/\//i.test(server_url)) {
+          // Canales no-Evolution (Telegram/Meta): el envío de voz requiere URL/archivo,
+          // no base64. Se hace fallback a texto.
           audioSent = false;
         } else {
           const audioUrl = `${server_url}/message/sendWhatsAppAudio/${instanceName}`;

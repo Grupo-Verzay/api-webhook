@@ -27,6 +27,8 @@ import { BillingCronService } from './services/billing-cron/billing-cron.service
 import { BillingCronSchedulerService } from './services/billing-cron/billing-cron.scheduler.service';
 import { LogCleanupService } from './services/log-cleanup/log-cleanup.service';
 import { LogCleanupSchedulerService } from './services/log-cleanup/log-cleanup.scheduler.service';
+import { ChatMessagesCleanupService } from './services/chat-messages-cleanup/chat-messages-cleanup.service';
+import { ChatMessagesCleanupSchedulerService } from './services/chat-messages-cleanup/chat-messages-cleanup.scheduler.service';
 import { PaymentReceiptModule } from 'src/modules/payment-receipt/payment-receipt.module';
 import { AutoAssignService } from './services/auto-assign/auto-assign.service';
 import { SessionTriggerRunnerService } from './services/session-trigger-runner/session-trigger-runner.service';
@@ -70,6 +72,8 @@ import { TrialFollowUpCronSchedulerService } from './services/trial-followup-cro
     BillingCronSchedulerService,
     LogCleanupService,
     LogCleanupSchedulerService,
+    ChatMessagesCleanupService,
+    ChatMessagesCleanupSchedulerService,
     FollowUpRunnerService,
     FollowUpRunnerSchedulerService,
     MessageDirectionService,

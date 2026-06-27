@@ -44,6 +44,7 @@ import { ConversationControlService } from './services/conversation-control/conv
 import { SessionOrchestrationService } from './services/session-orchestration/session-orchestration.service';
 import { MetaWebhookNormalizerService } from './services/meta-webhook-normalizer/meta-webhook-normalizer.service';
 import { TelegramWebhookNormalizerService } from './services/telegram-webhook-normalizer/telegram-webhook-normalizer.service';
+import { ChatStoreService } from './services/chat-store/chat-store.service';
 import { ConnectionCheckService } from './services/connection-check/connection-check.service';
 import { ConnectionCheckSchedulerService } from './services/connection-check/connection-check.scheduler.service';
 import { TrialFollowUpCronService } from './services/trial-followup-cron/trial-followup-cron.service';
@@ -94,6 +95,7 @@ import { TrialFollowUpCronSchedulerService } from './services/trial-followup-cro
     SessionOrchestrationService,
     MetaWebhookNormalizerService,
     TelegramWebhookNormalizerService,
+    ChatStoreService,
     ConnectionCheckService,
     ConnectionCheckSchedulerService,
     TrialFollowUpCronService,

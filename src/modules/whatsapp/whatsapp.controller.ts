@@ -6,6 +6,7 @@ import { BaileysSessionManager } from './adapters/baileys/baileys-session.manage
 import { BaileysMessageStore } from './adapters/baileys/baileys-message.store';
 import { BaileysSenderAdapter } from './adapters/baileys/baileys-sender.adapter';
 import { MediaStorageService } from './adapters/baileys/media-storage.service';
+import { WhatsAppSenderFactory } from './whatsapp-sender.factory';
 import { PrismaService } from 'src/database/prisma.service';
 import { LoggerService } from 'src/core/logger/logger.service';
 
@@ -16,6 +17,7 @@ export class WhatsAppController {
     private readonly messageStore: BaileysMessageStore,
     private readonly sender: BaileysSenderAdapter,
     private readonly mediaStorage: MediaStorageService,
+    private readonly senderFactory: WhatsAppSenderFactory,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly logger: LoggerService,
@@ -173,6 +175,47 @@ export class WhatsAppController {
     if (!body?.remoteJid || !body?.text) throw new BadRequestException('remoteJid y text son requeridos.');
     const ok = await this.sender.sendText(instanceName, body.remoteJid, body.text);
     if (!ok) throw new BadRequestException(`Sin sesión activa para "${instanceName}".`);
+    return { ok: true };
+  }
+
+  /** POST /whatsapp/baileys/send-channel/:instanceName
+   *  Envío manual genérico para canales no-Evolution (Telegram, Meta).
+   *  Resuelve credenciales por instancia y usa el adapter correspondiente. */
+  @Post('send-channel/:instanceName')
+  async sendChannel(
+    @Param('instanceName') instanceName: string,
+    @Body() body: { remoteJid: string; text: string },
+    @Headers() headers: Record<string, string>,
+  ) {
+    this.authorize(headers);
+    if (!body?.remoteJid || !body?.text) throw new BadRequestException('remoteJid y text son requeridos.');
+
+    const instance = await this.prisma.instancia.findFirst({
+      where: { instanceName },
+      select: {
+        instanceType: true,
+        metaAccessToken: true,
+        metaPhoneNumberId: true,
+        metaPageId: true,
+      },
+    });
+    if (!instance) throw new NotFoundException(`Instancia "${instanceName}" no encontrada.`);
+
+    const sender = this.senderFactory.getSenderSync(instance.instanceType);
+
+    // Credenciales por canal
+    let serverUrl: string | undefined;
+    let apikey: string | undefined;
+    if (instance.instanceType === 'telegram') {
+      serverUrl = 'telegram';
+      apikey = instance.metaAccessToken ?? undefined;
+    } else if (instance.instanceType === 'meta') {
+      serverUrl = instance.metaPhoneNumberId ?? instance.metaPageId ?? undefined;
+      apikey = instance.metaAccessToken ?? undefined;
+    }
+
+    const ok = await sender.sendText(instanceName, body.remoteJid, body.text, serverUrl, apikey);
+    if (!ok) throw new BadRequestException(`No se pudo enviar el mensaje para "${instanceName}".`);
     return { ok: true };
   }
 

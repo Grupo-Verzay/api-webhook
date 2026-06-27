@@ -39,6 +39,7 @@ import { MessageDeduplicationService } from './services/message-deduplication/me
 import { ConversationControlService } from './services/conversation-control/conversation-control.service';
 import { SessionOrchestrationService } from './services/session-orchestration/session-orchestration.service';
 import { ChatEventsGateway } from '../realtime/chat-events.gateway';
+import { ChatStoreService } from './services/chat-store/chat-store.service';
 
 @Injectable()
 export class WebhookService {
@@ -71,7 +72,13 @@ export class WebhookService {
     private readonly conversationControl: ConversationControlService,
     private readonly sessionOrchestration: SessionOrchestrationService,
     private readonly chatEvents: ChatEventsGateway,
+    private readonly chatStore: ChatStoreService,
   ) { }
+
+  /** Canales cuyos mensajes se persisten en el store unificado (no pasan por Evolution). */
+  private isUnifiedStoreChannel(source?: string): boolean {
+    return source === 'telegram' || source === 'meta';
+  }
 
   /**
    * Crea un logger con contexto fijo para prefijar todos los mensajes.
@@ -123,8 +130,20 @@ export class WebhookService {
     if (server_url === 'telegram') {
       const sender = this.whatsAppSenderFactory.getSenderSync('telegram');
       return (remoteJid, text) =>
-        sender.sendText(instanceName, remoteJid, text, server_url, apikey).then(() => {
+        sender.sendText(instanceName, remoteJid, text, server_url, apikey).then((ok) => {
           notify(remoteJid);
+          if (ok && userId) {
+            void this.chatStore.persistMessage({
+              userId,
+              instanceName,
+              instanceType: 'telegram',
+              remoteJid,
+              fromMe: true,
+              messageType: 'conversation',
+              content: text,
+              messageTimestamp: Math.floor(Date.now() / 1000),
+            });
+          }
         });
     }
     const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
@@ -426,6 +445,23 @@ export class WebhookService {
     if (incomingMessage === '[UNKNOWN_MESSAGE_TYPE]') {
       logger.debug(`[CONTENT] Tipo de mensaje no soportado (sticker/media) → ignorado.`);
       return;
+    }
+
+    /* Persistir entrante en el store unificado (Telegram/Meta) para la bandeja de Chats */
+    if (this.isUnifiedStoreChannel(data?.source)) {
+      void this.chatStore.persistMessage({
+        userId,
+        instanceName,
+        instanceType: data.source,
+        remoteJid: canonicalRemoteJid,
+        remoteJidAlt: canonicalAlt || null,
+        messageId: data?.key?.id,
+        fromMe: false,
+        pushName: incomingPushName || null,
+        messageType,
+        content: incomingMessage,
+        messageTimestamp: data?.messageTimestamp,
+      });
     }
 
     /* Registrar contenido e timestamp para checks de antiflood */

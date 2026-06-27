@@ -13,6 +13,39 @@ export class MessageTypeHandlerService {
 
   constructor(private readonly aiAgentService: AiAgentService) {}
 
+  /**
+   * Resuelve una URL interna `telegram-file://<file_id>?token=<botToken>` a la
+   * URL de descarga real de Telegram, vía el endpoint getFile.
+   * Si no es una URL de Telegram, devuelve la URL sin cambios.
+   */
+  private async resolveMediaUrl(mediaUrl?: string): Promise<string | undefined> {
+    if (!mediaUrl || !mediaUrl.startsWith('telegram-file://')) return mediaUrl;
+
+    const withoutScheme = mediaUrl.slice('telegram-file://'.length);
+    const sep = withoutScheme.indexOf('?token=');
+    if (sep === -1) {
+      this.logger.warn(`[Telegram] mediaUrl malformada: ${mediaUrl.slice(0, 40)}...`);
+      return undefined;
+    }
+    const fileId = withoutScheme.slice(0, sep);
+    const botToken = withoutScheme.slice(sep + '?token='.length);
+
+    try {
+      const info = await axios.get(`https://api.telegram.org/bot${botToken}/getFile`, {
+        params: { file_id: fileId },
+      });
+      const filePath = info.data?.result?.file_path;
+      if (!filePath) {
+        this.logger.warn(`[Telegram] getFile sin file_path para ${fileId}`);
+        return undefined;
+      }
+      return `https://api.telegram.org/file/bot${botToken}/${filePath}`;
+    } catch (err: any) {
+      this.logger.error(`[Telegram] Error en getFile: ${err?.message}`);
+      return undefined;
+    }
+  }
+
   private async extractPdfText(base64: string): Promise<string | null> {
     try {
       const buffer = Buffer.from(base64, 'base64');
@@ -66,7 +99,7 @@ export class MessageTypeHandlerService {
         );
 
       case 'audioMessage':
-        const audioUrl = data?.message?.mediaUrl;
+        const audioUrl = await this.resolveMediaUrl(data?.message?.mediaUrl);
         const audioType = data?.message?.audioMessage?.mimetype ?? '';
 
         if (audioUrl) {
@@ -97,8 +130,8 @@ export class MessageTypeHandlerService {
           );
         }
 
-        // Evolution API: descargar desde mediaUrl
-        const imageUrl = data?.message?.mediaUrl;
+        // Evolution API / Telegram: descargar desde mediaUrl
+        const imageUrl = await this.resolveMediaUrl(data?.message?.mediaUrl);
         if (imageUrl) {
           try {
             const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
@@ -141,8 +174,8 @@ export class MessageTypeHandlerService {
             return text ? `${header}\n\n${text}` : `${header}\n[No se pudo extraer texto del PDF]`;
           }
 
-          // Evolution API: descargar desde mediaUrl
-          const docUrl: string | undefined = data?.message?.mediaUrl;
+          // Evolution API / Telegram: descargar desde mediaUrl
+          const docUrl: string | undefined = await this.resolveMediaUrl(data?.message?.mediaUrl);
           if (docUrl) {
             try {
               const response = await axios.get(docUrl, { responseType: 'arraybuffer' });

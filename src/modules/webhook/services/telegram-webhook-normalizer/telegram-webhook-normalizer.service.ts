@@ -20,6 +20,44 @@ interface TelegramChat {
   title?: string;
 }
 
+interface TelegramPhotoSize {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+}
+
+interface TelegramVoice {
+  file_id: string;
+  duration?: number;
+  mime_type?: string;
+  file_size?: number;
+}
+
+interface TelegramAudio {
+  file_id: string;
+  duration?: number;
+  mime_type?: string;
+  file_name?: string;
+  file_size?: number;
+}
+
+interface TelegramDocument {
+  file_id: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+}
+
+interface TelegramVideo {
+  file_id: string;
+  duration?: number;
+  mime_type?: string;
+  file_name?: string;
+  file_size?: number;
+}
+
 interface TelegramMessage {
   message_id: number;
   from?: TelegramUser;
@@ -27,11 +65,11 @@ interface TelegramMessage {
   date: number;
   text?: string;
   caption?: string;
-  photo?: unknown[];
-  voice?: unknown;
-  audio?: unknown;
-  document?: unknown;
-  video?: unknown;
+  photo?: TelegramPhotoSize[];
+  voice?: TelegramVoice;
+  audio?: TelegramAudio;
+  document?: TelegramDocument;
+  video?: TelegramVideo;
 }
 
 export interface TelegramUpdate {
@@ -98,17 +136,55 @@ export class TelegramWebhookNormalizerService {
     return dto ? [dto] : [];
   }
 
+  /** URL interna que MessageTypeHandlerService resuelve vía getFile. */
+  private fileUrl(fileId: string, botToken: string): string {
+    return `telegram-file://${fileId}?token=${botToken}`;
+  }
+
   private buildDto(
     msg: TelegramMessage,
     ctx: { instanceName: string; instanceId: string; botToken: string },
   ): WebhookBodyDto | null {
-    const text = msg.text ?? msg.caption ?? '';
+    const caption = msg.caption ?? '';
 
-    // MVP: solo texto (y captions). El multimedia entrante de Telegram requiere
-    // descarga vía getFile y se manejará en una iteración posterior.
-    if (!text) {
+    let messageType = 'conversation';
+    const message: WebhookDataDto['message'] = {};
+
+    if (msg.text) {
+      messageType = 'conversation';
+      message.conversation = msg.text;
+    } else if (msg.photo?.length) {
+      // Telegram envía varias resoluciones; la última es la de mayor tamaño.
+      const largest = msg.photo[msg.photo.length - 1];
+      messageType = 'imageMessage';
+      message.mediaUrl = this.fileUrl(largest.file_id, ctx.botToken);
+      message.conversation = caption;
+    } else if (msg.voice) {
+      messageType = 'audioMessage';
+      message.mediaUrl = this.fileUrl(msg.voice.file_id, ctx.botToken);
+      (message as any).audioMessage = { mimetype: msg.voice.mime_type ?? 'audio/ogg' };
+    } else if (msg.audio) {
+      messageType = 'audioMessage';
+      message.mediaUrl = this.fileUrl(msg.audio.file_id, ctx.botToken);
+      (message as any).audioMessage = { mimetype: msg.audio.mime_type ?? 'audio/mpeg' };
+    } else if (msg.document) {
+      messageType = 'documentMessage';
+      message.mediaUrl = this.fileUrl(msg.document.file_id, ctx.botToken);
+      (message as any).mediaMimetype = msg.document.mime_type ?? '';
+      (message as any).documentMessage = {
+        fileName: msg.document.file_name ?? 'documento',
+        mimetype: msg.document.mime_type ?? '',
+        caption,
+      };
+    } else if (msg.video) {
+      // El video no se analiza (ningún canal lo procesa). Se entrega como nota de texto.
+      messageType = 'conversation';
+      message.conversation = caption
+        ? `[Video recibido] ${caption}`
+        : '[Video recibido]';
+    } else {
       this.logger.warn(
-        `[Telegram] Mensaje sin texto ignorado (tipo no soportado aún). chat=${msg.chat?.id}`,
+        `[Telegram] Mensaje sin contenido soportado ignorado. chat=${msg.chat?.id}`,
       );
       return null;
     }
@@ -126,8 +202,8 @@ export class TelegramWebhookNormalizerService {
       key: { remoteJid, fromMe: false, id: String(msg.message_id) },
       pushName,
       status: 'RECEIVED',
-      message: { conversation: text },
-      messageType: 'conversation',
+      message,
+      messageType,
       messageTimestamp: msg.date || Math.floor(Date.now() / 1000),
       instanceId: ctx.instanceId,
       source: 'telegram',

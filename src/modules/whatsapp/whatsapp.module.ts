@@ -5,6 +5,7 @@ import { BaileysSenderAdapter } from './adapters/baileys/baileys-sender.adapter'
 import { BaileysMessageStore } from './adapters/baileys/baileys-message.store';
 import { MediaStorageService } from './adapters/baileys/media-storage.service';
 import { MetaCloudApiSenderAdapter } from './adapters/meta-cloud-api.adapter';
+import { TelegramSenderAdapter } from './adapters/telegram-sender.adapter';
 import { WhatsAppSenderFactory } from './whatsapp-sender.factory';
 import { WhatsAppController } from './whatsapp.controller';
 import { WorkflowModule } from 'src/modules/workflow/workflow.module';
@@ -19,8 +20,9 @@ import { WorkflowModule } from 'src/modules/workflow/workflow.module';
     BaileysMessageStore,
     MediaStorageService,
     MetaCloudApiSenderAdapter,
+    TelegramSenderAdapter,
     WhatsAppSenderFactory,
   ],
-  exports: [WhatsAppSenderFactory, BaileysSessionManager, BaileysMessageStore, BaileysSenderAdapter],
+  exports: [WhatsAppSenderFactory, BaileysSessionManager, BaileysMessageStore, BaileysSenderAdapter, TelegramSenderAdapter],
 })
 export class WhatsAppModule {}

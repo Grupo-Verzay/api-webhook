@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  Param,
   Post,
   Query,
   Res,
@@ -16,6 +17,7 @@ import { WebhookBodyDto } from './dto/webhook-body';
 import { WompiService } from 'src/modules/payment-receipt/wompi/wompi.service';
 import { WompiEventDto } from 'src/modules/payment-receipt/wompi/wompi-event.dto';
 import { MetaWebhookNormalizerService, MetaWebhookPayload } from './services/meta-webhook-normalizer/meta-webhook-normalizer.service';
+import { TelegramWebhookNormalizerService, TelegramUpdate } from './services/telegram-webhook-normalizer/telegram-webhook-normalizer.service';
 
 @Controller('webhook')
 export class WebhookController {
@@ -25,6 +27,7 @@ export class WebhookController {
     private readonly billingCronService: BillingCronService,
     private readonly wompiService: WompiService,
     private readonly metaNormalizer: MetaWebhookNormalizerService,
+    private readonly telegramNormalizer: TelegramWebhookNormalizerService,
   ) {}
 
   @Post()
@@ -98,6 +101,29 @@ export class WebhookController {
     }).catch((error: unknown) => {
       void this.logger.error(`[Meta] Error normalizando payload: ${JSON.stringify(error)}`);
     });
+  }
+
+  /** Telegram Bot API — recepción de updates (POST). La instancia viene en la URL. */
+  @Post('telegram/:instanceName')
+  receiveTelegramWebhook(
+    @Param('instanceName') instanceName: string,
+    @Body() update: TelegramUpdate,
+    @Res() res: Response,
+    @Headers('x-telegram-bot-api-secret-token') secretToken?: string,
+  ) {
+    res.status(200).send('OK');
+    void this.telegramNormalizer
+      .normalize(instanceName, update, secretToken)
+      .then((dtos) => {
+        for (const dto of dtos) {
+          void this.webhookService.processWebhook(dto).catch((error: unknown) => {
+            void this.logger.error(`[Telegram] Error procesando mensaje: ${JSON.stringify(error)}`);
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        void this.logger.error(`[Telegram] Error normalizando update: ${JSON.stringify(error)}`);
+      });
   }
 
   @Post('billing/process')

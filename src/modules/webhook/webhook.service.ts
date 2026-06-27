@@ -119,6 +119,14 @@ export class WebhookService {
           notify(remoteJid);
         });
     }
+    // Telegram: server_url es el sentinel "telegram" y apikey es el bot token.
+    if (server_url === 'telegram') {
+      const sender = this.whatsAppSenderFactory.getSenderSync('telegram');
+      return (remoteJid, text) =>
+        sender.sendText(instanceName, remoteJid, text, server_url, apikey).then(() => {
+          notify(remoteJid);
+        });
+    }
     const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
     return (remoteJid, text) =>
       this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, remoteJid, text).then(() => {
@@ -1163,6 +1171,9 @@ export class WebhookService {
       if (audioBase64) {
         if (isBaileysInstance) {
           audioSent = await this.baileysSender.sendAudioBase64(instanceName, canonicalRemoteJid, audioBase64);
+        } else if (server_url === 'telegram') {
+          // Telegram sendVoice requiere URL/archivo OGG, no base64: se hace fallback a texto.
+          audioSent = false;
         } else {
           const audioUrl = `${server_url}/message/sendWhatsAppAudio/${instanceName}`;
           audioSent = await this.nodeSenderService.sendAudioNode(audioUrl, apikey, canonicalRemoteJid, audioBase64);

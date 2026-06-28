@@ -465,6 +465,23 @@ export class WebhookService {
 
     /* Persistir entrante en el store unificado (Telegram/Meta) para la bandeja de Chats */
     if (this.isUnifiedStoreChannel(data?.source)) {
+      const mediaTypes = ['imageMessage', 'audioMessage', 'videoMessage', 'documentMessage'];
+      const isMedia = mediaTypes.includes(messageType);
+      // storeIncomingMedia ya dejó la URL pública en data.message.mediaUrl (si pudo subirla).
+      const storedUrl = data?.message?.mediaUrl;
+      const publicMediaUrl =
+        typeof storedUrl === 'string' && /^https?:\/\//.test(storedUrl) ? storedUrl : null;
+      const mediaLabel =
+        messageType === 'imageMessage' ? '[Imagen]'
+          : messageType === 'audioMessage' ? '[Audio]'
+            : messageType === 'videoMessage' ? '[Video]'
+              : messageType === 'documentMessage' ? '[Documento]' : '';
+      // Para media, el panel renderiza el archivo; el texto que se guarda es el
+      // caption o una etiqueta (la descripción/transcripción la usa la IA, no el panel).
+      const displayContent = isMedia
+        ? (data?.message?.conversation?.trim() || mediaLabel)
+        : incomingMessage;
+
       void this.chatStore.persistMessage({
         userId,
         instanceName,
@@ -475,7 +492,8 @@ export class WebhookService {
         fromMe: false,
         pushName: incomingPushName || null,
         messageType,
-        content: incomingMessage,
+        content: displayContent,
+        mediaUrl: publicMediaUrl,
         messageTimestamp: data?.messageTimestamp,
       });
     }

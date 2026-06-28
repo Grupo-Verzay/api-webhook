@@ -234,6 +234,72 @@ export class WhatsAppController {
     return { ok: true };
   }
 
+  /** POST /whatsapp/baileys/send-media-channel/:instanceName
+   *  Envío manual de multimedia para canales no-Evolution (Telegram, Meta).
+   *  Sube el archivo a almacenamiento y lo envía por el adaptador del canal.
+   *  Devuelve la URL pública para que el frontend la persista y la muestre. */
+  @Post('send-media-channel/:instanceName')
+  async sendMediaChannel(
+    @Param('instanceName') instanceName: string,
+    @Body() body: {
+      remoteJid: string;
+      mediatype: string;
+      mediaUrl: string;
+      mimetype?: string;
+      fileName?: string;
+      caption?: string;
+      ptt?: boolean;
+    },
+    @Headers() headers: Record<string, string>,
+  ) {
+    this.authorize(headers);
+    if (!body?.remoteJid || !body?.mediaUrl) throw new BadRequestException('remoteJid y mediaUrl son requeridos.');
+
+    const instance = await this.prisma.instancia.findFirst({
+      where: { instanceName },
+      select: { instanceType: true, metaAccessToken: true, metaPhoneNumberId: true, metaPageId: true },
+    });
+    if (!instance) throw new NotFoundException(`Instancia "${instanceName}" no encontrada.`);
+
+    // Subir el archivo (data URL/base64) a almacenamiento y obtener URL pública.
+    const dataUrl = body.mediaUrl;
+    const commaIdx = dataUrl.indexOf(',');
+    const base64Pure = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+    const mimeFromDataUrl = commaIdx >= 0 ? dataUrl.slice(5, dataUrl.indexOf(';')) : '';
+    const mimetype = body.mimetype || mimeFromDataUrl || 'application/octet-stream';
+
+    const extMap: Record<string, string> = {
+      'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
+      'video/mp4': 'mp4', 'video/quicktime': 'mov',
+      'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a',
+      'application/pdf': 'pdf',
+    };
+    const fileNameExt = body.fileName?.includes('.') ? body.fileName.split('.').pop()!.toLowerCase() : '';
+    const ext = fileNameExt || extMap[mimetype] || mimetype.split('/')[1] || 'bin';
+
+    const buffer = Buffer.from(base64Pure, 'base64');
+    const key = `channel-ui/${instanceName}/${body.remoteJid.replace(/[@:]/g, '_')}/${Date.now()}.${ext}`;
+    const publicUrl = await this.mediaStorage.uploadBuffer(buffer, key, mimetype);
+
+    // Credenciales por canal
+    const apikey = instance.metaAccessToken ?? undefined;
+    const channelServerUrl =
+      instance.instanceType === 'telegram'
+        ? 'telegram'
+        : instance.instanceType === 'meta'
+          ? (instance.metaPhoneNumberId ?? instance.metaPageId ?? undefined)
+          : undefined;
+
+    const sender = this.senderFactory.getSenderSync(instance.instanceType);
+    const isAudio = body.ptt || body.mediatype === 'audio';
+    const ok = isAudio
+      ? await sender.sendAudio(instanceName, body.remoteJid, publicUrl, channelServerUrl, apikey)
+      : await sender.sendMedia(instanceName, body.remoteJid, body.mediatype, body.caption ?? '', publicUrl, channelServerUrl, apikey);
+
+    if (!ok) throw new BadRequestException(`No se pudo enviar el archivo para "${instanceName}".`);
+    return { ok: true, mediaUrl: publicUrl };
+  }
+
   /** GET /whatsapp/baileys/chats/:instanceName
    *  Lista de chats (contactos con último mensaje) almacenados para la instancia. */
   @Get('chats/:instanceName')

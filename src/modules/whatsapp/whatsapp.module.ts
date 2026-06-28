@@ -23,6 +23,6 @@ import { WorkflowModule } from 'src/modules/workflow/workflow.module';
     TelegramSenderAdapter,
     WhatsAppSenderFactory,
   ],
-  exports: [WhatsAppSenderFactory, BaileysSessionManager, BaileysMessageStore, BaileysSenderAdapter, TelegramSenderAdapter],
+  exports: [WhatsAppSenderFactory, BaileysSessionManager, BaileysMessageStore, BaileysSenderAdapter, TelegramSenderAdapter, MediaStorageService],
 })
 export class WhatsAppModule {}

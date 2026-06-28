@@ -1,17 +1,51 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AiAgentService } from 'src/modules/ai-agent/ai-agent.service'; // Para usar OpenAI
 import { WebhookDataDto } from '../../dto/webhook-body';
+import { MediaStorageService } from 'src/modules/whatsapp/adapters/baileys/media-storage.service';
 // refactorizacion
 import axios from 'axios';
 import { Buffer } from 'buffer';
 
 const PDF_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
+const MIME_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
+  'video/mp4': 'mp4', 'video/quicktime': 'mov',
+  'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/wav': 'wav',
+  'application/pdf': 'pdf',
+};
+
 @Injectable()
 export class MessageTypeHandlerService {
   private readonly logger = new Logger(MessageTypeHandlerService.name);
 
-  constructor(private readonly aiAgentService: AiAgentService) {}
+  constructor(
+    private readonly aiAgentService: AiAgentService,
+    private readonly mediaStorage: MediaStorageService,
+  ) {}
+
+  /**
+   * Descarga el media y, además, lo sube a almacenamiento para poder mostrarlo en
+   * el panel. Deja la URL pública en `data.message.mediaUrl` (reemplaza el esquema
+   * interno telegram-file:// / meta-media://). La subida es best-effort.
+   */
+  private async storeIncomingMedia(
+    base64: string,
+    mimetype: string,
+    data: WebhookDataDto,
+  ): Promise<void> {
+    try {
+      const buffer = Buffer.from(base64, 'base64');
+      const ext = MIME_EXT[mimetype] || (mimetype.split('/')[1] ?? 'bin');
+      const instanceName = data?.instanceId || 'channel';
+      const jid = (data?.key?.remoteJid || 'chat').replace(/[@:]/g, '_');
+      const key = `incoming/${instanceName}/${jid}/${data?.key?.id ?? Date.now()}.${ext}`;
+      const url = await this.mediaStorage.uploadBuffer(buffer, key, mimetype || 'application/octet-stream');
+      if (data.message) (data.message as any).mediaUrl = url;
+    } catch (err: any) {
+      this.logger.warn(`[Media] No se pudo almacenar el media entrante: ${err?.message}`);
+    }
+  }
 
   /** Parsea un esquema interno `xxx://<id>?token=<token>` → { id, token }. */
   private parseInternalMediaUrl(mediaUrl: string, scheme: string): { id: string; token: string } | null {
@@ -171,6 +205,7 @@ export class MessageTypeHandlerService {
           if (media) {
             audioBase64 = media.base64;
             audioType = audioType || media.mimetype;
+            await this.storeIncomingMedia(media.base64, audioType || 'audio/ogg', data);
           }
         }
 
@@ -207,6 +242,7 @@ export class MessageTypeHandlerService {
           const media = await this.fetchMediaAsBase64(data.message.mediaUrl);
           if (!media) return '[IMAGE_DOWNLOAD_FAILED]';
           const imageType = data.message?.imageMessage?.mimetype || media.mimetype || 'image/jpeg';
+          await this.storeIncomingMedia(media.base64, imageType, data);
           return await this.aiAgentService.describeImage(
             data,
             media.base64,
@@ -244,6 +280,7 @@ export class MessageTypeHandlerService {
           if (data?.message?.mediaUrl) {
             const media = await this.fetchMediaAsBase64(data.message.mediaUrl);
             if (!media) return `${header}\n[Error descargando el PDF]`;
+            await this.storeIncomingMedia(media.base64, docMimetype || media.mimetype || 'application/pdf', data);
             const text = await this.extractPdfText(media.base64);
             return text ? `${header}\n\n${text}` : `${header}\n[No se pudo extraer texto del PDF]`;
           }

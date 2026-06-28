@@ -89,6 +89,17 @@ export class ChatStoreService {
         CREATE UNIQUE INDEX IF NOT EXISTS "chat_conversations_user_instance_jid_unique"
         ON "chat_conversations" ("userId", "instanceName", "remoteJid")
       `;
+      // Mapeo lid -> remoteJid (número), aprendido de los mensajes entrantes, para
+      // resolver el "from" de las llamadas (que llega como @lid) al chat correcto.
+      await this.prisma.$executeRaw`
+        CREATE TABLE IF NOT EXISTS "chat_lid_map" (
+          "userId" TEXT NOT NULL,
+          "lid" TEXT NOT NULL,
+          "remoteJid" TEXT NOT NULL,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY ("userId", "lid")
+        )
+      `;
     })().catch((err) => {
       this.ensurePromise = null;
       throw err;
@@ -175,6 +186,45 @@ export class ChatStoreService {
       `;
     } catch (err: any) {
       this.logger.error(`[ChatStore] Error persistiendo mensaje: ${err?.message}`);
+    }
+  }
+
+  /** Normaliza un lid quitando sufijo de dispositivo (:NN) y asegurando @lid. */
+  private normLid(value: string): string {
+    const digits = (value || '').split('@')[0].split(':')[0].trim();
+    return digits ? `${digits}@lid` : '';
+  }
+
+  /** Aprende el mapeo lid -> número (remoteJid) desde un mensaje entrante. */
+  async rememberLid(userId: string, lidRaw: string, remoteJid: string): Promise<void> {
+    const lid = this.normLid(lidRaw);
+    if (!userId || !lid || !remoteJid) return;
+    if (remoteJid.includes('@lid')) return; // el destino debe ser el número, no otro lid
+    try {
+      await this.ensureTables();
+      await this.prisma.$executeRaw`
+        INSERT INTO "chat_lid_map" ("userId", "lid", "remoteJid", "updatedAt")
+        VALUES (${userId}, ${lid}, ${remoteJid}, NOW())
+        ON CONFLICT ("userId", "lid")
+        DO UPDATE SET "remoteJid" = EXCLUDED."remoteJid", "updatedAt" = NOW()
+      `;
+    } catch (err: any) {
+      this.logger.error(`[ChatStore] Error guardando lid: ${err?.message}`);
+    }
+  }
+
+  /** Resuelve un lid a su número (remoteJid) si fue aprendido antes. */
+  async resolveLid(userId: string, lidRaw: string): Promise<string | null> {
+    const lid = this.normLid(lidRaw);
+    if (!userId || !lid) return null;
+    try {
+      await this.ensureTables();
+      const rows = await this.prisma.$queryRaw<{ remoteJid: string }[]>`
+        SELECT "remoteJid" FROM "chat_lid_map" WHERE "userId" = ${userId} AND "lid" = ${lid} LIMIT 1
+      `;
+      return rows[0]?.remoteJid ?? null;
+    } catch {
+      return null;
     }
   }
 }

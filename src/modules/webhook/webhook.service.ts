@@ -200,7 +200,13 @@ export class WebhookService {
       const userId = prismaInstancia?.userId ?? '';
       if (!userId) return;
 
-      const remoteJid = from.includes('@') ? from : `${from}@s.whatsapp.net`;
+      // El "from" de la llamada llega como @lid. Si conocemos su número (aprendido
+      // de mensajes previos), usamos ese para que la perdida caiga en el chat real.
+      let remoteJid = from.includes('@') ? from : `${from}@s.whatsapp.net`;
+      if (from.includes('@lid')) {
+        const resolved = await this.chatStore.resolveLid(userId, from);
+        if (resolved) remoteJid = resolved;
+      }
       const isVideo = Boolean(call.isVideo);
       const callId = String(call.id || `${from}_${call.date ?? ''}`);
       const ts =
@@ -223,7 +229,7 @@ export class WebhookService {
 
       this.chatEvents.emitChatChanged({ userId, remoteJid, instanceName });
       this.logger.log(
-        `[CALL] perdida I=${instanceName} from=${from} video=${isVideo} status=${call.status ?? '-'}`,
+        `[CALL] perdida I=${instanceName} from=${from} -> ${remoteJid} video=${isVideo} status=${call.status ?? '-'}`,
       );
     } catch (err: unknown) {
       void this.logger.error(
@@ -292,6 +298,12 @@ export class WebhookService {
     const prismaInstancia = await this.instancesService.getUserId(instanceName);
     const userId = prismaInstancia?.userId ?? '';
     const instanceId = prismaInstancia?.instanceId ?? '';
+
+    // Aprender el mapeo lid -> número, para luego resolver el "from" de las
+    // llamadas entrantes (que llega como @lid) al chat correcto del contacto.
+    if (userId && rawSenderLid && remoteJid.includes('@s.whatsapp.net')) {
+      void this.chatStore.rememberLid(userId, rawSenderLid, remoteJid);
+    }
 
     // Tiempo real: notificar que este chat cambió en cuanto sabemos a qué
     // usuario/instancia pertenece. Cubre mensajes entrantes (y los echos

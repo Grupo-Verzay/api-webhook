@@ -49,7 +49,6 @@ import { ConnectionCheckService } from './services/connection-check/connection-c
 import { ConnectionCheckSchedulerService } from './services/connection-check/connection-check.scheduler.service';
 import { TrialFollowUpCronService } from './services/trial-followup-cron/trial-followup-cron.service';
 import { TrialFollowUpCronSchedulerService } from './services/trial-followup-cron/trial-followup-cron.scheduler.service';
-import { AstraCallsSyncSchedulerService } from './services/astracalls-sync/astracalls-sync.scheduler.service';
 
 @Module({
   imports: [HttpModule, WorkflowModule, AiAgentModule, LeadFunnelModule, PaymentReceiptModule, WhatsAppModule],
@@ -101,7 +100,6 @@ import { AstraCallsSyncSchedulerService } from './services/astracalls-sync/astra
     ConnectionCheckSchedulerService,
     TrialFollowUpCronService,
     TrialFollowUpCronSchedulerService,
-    AstraCallsSyncSchedulerService,
   ],
 })
 export class WebhookModule {}

@@ -252,6 +252,13 @@ export class MetaWebhookNormalizerService {
           ? `meta-media://${msg.document.id}?token=${ctx.accessToken}`
           : '';
         message.conversation = msg.document?.caption ?? msg.document?.filename ?? '';
+        // Campos que usa MessageTypeHandlerService para extraer texto del PDF.
+        (message as any).mediaMimetype = msg.document?.mime_type ?? '';
+        (message as any).documentMessage = {
+          fileName: msg.document?.filename ?? 'documento',
+          mimetype: msg.document?.mime_type ?? '',
+          caption: msg.document?.caption ?? '',
+        };
         break;
       case 'interactive':
         messageType = 'interactiveResponseMessage';

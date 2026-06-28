@@ -3224,7 +3224,7 @@ export class AiAgentService {
     }
   }
 
-  // Transcribe audio (usado por message-type-handler)
+  // Transcribe audio desde una URL descargable (usado por message-type-handler)
   async transcribeAudio(
     audioUrl: string,
     audioType: string,
@@ -3233,13 +3233,37 @@ export class AiAgentService {
     defaultModel: string,
     defaultProvider: string,
   ): Promise<string> {
-    const logger = this.scopedLogger({}); // sin contexto disponible en firma
+    const logger = this.scopedLogger({});
     try {
-      const axiosRes = await axios.get(audioUrl, {
-        responseType: 'arraybuffer',
-      });
-      const audioBuffer = Buffer.from(axiosRes.data);
+      const axiosRes = await axios.get(audioUrl, { responseType: 'arraybuffer' });
       const base64Audio = Buffer.from(axiosRes.data).toString('base64');
+      return await this.transcribeAudioFromBase64(
+        base64Audio,
+        audioType,
+        apikeyOpenAi,
+        defaultModel,
+        defaultProvider,
+      );
+    } catch (error: any) {
+      logger.error(
+        'Error descargando audio para transcripción.',
+        error?.response?.data || error?.message,
+      );
+      return '[ERROR_TRANSCRIBING_AUDIO]';
+    }
+  }
+
+  // Transcribe audio ya descargado en base64 (canales con descarga autenticada, p.ej. Meta)
+  async transcribeAudioFromBase64(
+    base64Audio: string,
+    audioType: string,
+    apikeyOpenAi: string,
+    defaultModel: string,
+    defaultProvider: string,
+  ): Promise<string> {
+    const logger = this.scopedLogger({});
+    try {
+      const audioBuffer = Buffer.from(base64Audio, 'base64');
       const audioStream = Readable.from(audioBuffer);
       (audioStream as any).path = 'audio.ogg';
 

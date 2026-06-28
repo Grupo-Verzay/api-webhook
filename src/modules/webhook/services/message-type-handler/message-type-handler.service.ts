@@ -13,36 +13,96 @@ export class MessageTypeHandlerService {
 
   constructor(private readonly aiAgentService: AiAgentService) {}
 
-  /**
-   * Resuelve una URL interna `telegram-file://<file_id>?token=<botToken>` a la
-   * URL de descarga real de Telegram, vía el endpoint getFile.
-   * Si no es una URL de Telegram, devuelve la URL sin cambios.
-   */
-  private async resolveMediaUrl(mediaUrl?: string): Promise<string | undefined> {
-    if (!mediaUrl || !mediaUrl.startsWith('telegram-file://')) return mediaUrl;
-
-    const withoutScheme = mediaUrl.slice('telegram-file://'.length);
+  /** Parsea un esquema interno `xxx://<id>?token=<token>` → { id, token }. */
+  private parseInternalMediaUrl(mediaUrl: string, scheme: string): { id: string; token: string } | null {
+    const withoutScheme = mediaUrl.slice(scheme.length);
     const sep = withoutScheme.indexOf('?token=');
-    if (sep === -1) {
+    if (sep === -1) return null;
+    return {
+      id: withoutScheme.slice(0, sep),
+      token: withoutScheme.slice(sep + '?token='.length),
+    };
+  }
+
+  /**
+   * Resuelve `telegram-file://<file_id>?token=<botToken>` a la URL de descarga
+   * real de Telegram vía getFile.
+   */
+  private async resolveTelegramFileUrl(mediaUrl: string): Promise<string | undefined> {
+    const parsed = this.parseInternalMediaUrl(mediaUrl, 'telegram-file://');
+    if (!parsed) {
       this.logger.warn(`[Telegram] mediaUrl malformada: ${mediaUrl.slice(0, 40)}...`);
       return undefined;
     }
-    const fileId = withoutScheme.slice(0, sep);
-    const botToken = withoutScheme.slice(sep + '?token='.length);
-
     try {
-      const info = await axios.get(`https://api.telegram.org/bot${botToken}/getFile`, {
-        params: { file_id: fileId },
+      const info = await axios.get(`https://api.telegram.org/bot${parsed.token}/getFile`, {
+        params: { file_id: parsed.id },
       });
       const filePath = info.data?.result?.file_path;
       if (!filePath) {
-        this.logger.warn(`[Telegram] getFile sin file_path para ${fileId}`);
+        this.logger.warn(`[Telegram] getFile sin file_path para ${parsed.id}`);
         return undefined;
       }
-      return `https://api.telegram.org/file/bot${botToken}/${filePath}`;
+      return `https://api.telegram.org/file/bot${parsed.token}/${filePath}`;
     } catch (err: any) {
       this.logger.error(`[Telegram] Error en getFile: ${err?.message}`);
       return undefined;
+    }
+  }
+
+  /**
+   * Descarga un medio entrante y lo devuelve en base64, sin importar el canal:
+   * - `telegram-file://` → getFile + descarga directa.
+   * - `meta-media://`    → Graph API en 2 pasos con Bearer (WhatsApp Cloud).
+   * - URL http(s)        → descarga directa (Evolution, Facebook/Instagram CDN).
+   */
+  private async fetchMediaAsBase64(
+    mediaUrl?: string,
+  ): Promise<{ base64: string; mimetype: string } | null> {
+    if (!mediaUrl) return null;
+    try {
+      // Telegram
+      if (mediaUrl.startsWith('telegram-file://')) {
+        const real = await this.resolveTelegramFileUrl(mediaUrl);
+        if (!real) return null;
+        const res = await axios.get(real, { responseType: 'arraybuffer' });
+        return {
+          base64: Buffer.from(res.data).toString('base64'),
+          mimetype: (res.headers['content-type'] as string) ?? '',
+        };
+      }
+
+      // Meta WhatsApp Cloud: flujo Graph de 2 pasos, ambos con Bearer.
+      if (mediaUrl.startsWith('meta-media://')) {
+        const parsed = this.parseInternalMediaUrl(mediaUrl, 'meta-media://');
+        if (!parsed) {
+          this.logger.warn(`[Meta] mediaUrl malformada: ${mediaUrl.slice(0, 40)}...`);
+          return null;
+        }
+        const auth = { Authorization: `Bearer ${parsed.token}` };
+        const meta = await axios.get(`https://graph.facebook.com/v21.0/${parsed.id}`, { headers: auth });
+        const downloadUrl: string | undefined = meta.data?.url;
+        const mimeType: string = meta.data?.mime_type ?? '';
+        if (!downloadUrl) {
+          this.logger.warn(`[Meta] Sin url de descarga para media ${parsed.id}`);
+          return null;
+        }
+        const bin = await axios.get(downloadUrl, { responseType: 'arraybuffer', headers: auth });
+        return {
+          base64: Buffer.from(bin.data).toString('base64'),
+          mimetype: mimeType || ((bin.headers['content-type'] as string) ?? ''),
+        };
+      }
+
+      // URL directa (Evolution, Facebook/Instagram)
+      const res = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
+      return {
+        base64: Buffer.from(res.data).toString('base64'),
+        mimetype: (res.headers['content-type'] as string) ?? '',
+      };
+    } catch (err: any) {
+      this.logger.error(`[Media] Error descargando media: ${err?.message}`);
+      return null;
     }
   }
 
@@ -98,21 +158,33 @@ export class MessageTypeHandlerService {
             ?.paramsJson ?? ''
         );
 
-      case 'audioMessage':
-        const audioUrl = await this.resolveMediaUrl(data?.message?.mediaUrl);
-        const audioType = data?.message?.audioMessage?.mimetype ?? '';
+      case 'audioMessage': {
+        // Baileys entrega base64 directo; otros canales se descargan.
+        const audioBase64Direct: string | undefined = (data?.message as any)?.mediaBase64;
+        let audioBase64 = audioBase64Direct;
+        let audioType =
+          data?.message?.audioMessage?.mimetype ??
+          (data?.message as any)?.mediaMimetype ?? '';
 
-        if (audioUrl) {
-          return await this.aiAgentService.transcribeAudio(
-            audioUrl,
+        if (!audioBase64) {
+          const media = await this.fetchMediaAsBase64(data?.message?.mediaUrl);
+          if (media) {
+            audioBase64 = media.base64;
+            audioType = audioType || media.mimetype;
+          }
+        }
+
+        if (audioBase64) {
+          return await this.aiAgentService.transcribeAudioFromBase64(
+            audioBase64,
             audioType,
             userApiKey,
-            data,
             defaultAiModel,
             defaultProvider,
           );
         }
         return '[AUDIO_MESSAGE_NOT_FOUND]';
+      }
 
       case 'imageMessage':
         // Baileys inyecta mediaBase64 directamente (no hay mediaUrl como en Evolution API)
@@ -130,25 +202,19 @@ export class MessageTypeHandlerService {
           );
         }
 
-        // Evolution API / Telegram: descargar desde mediaUrl
-        const imageUrl = await this.resolveMediaUrl(data?.message?.mediaUrl);
-        if (imageUrl) {
-          try {
-            const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-            const imageBuffer = Buffer.from(response.data);
-            const base64Image = imageBuffer.toString('base64');
-            const imageType = data.message?.imageMessage?.mimetype ?? 'image/jpeg';
-            return await this.aiAgentService.describeImage(
-              data,
-              base64Image,
-              imageType,
-              userApiKey,
-              defaultAiModel,
-              defaultProvider,
-            );
-          } catch (error) {
-            return '[IMAGE_DOWNLOAD_FAILED]';
-          }
+        // Evolution / Telegram / Meta: descargar desde mediaUrl
+        if (data?.message?.mediaUrl) {
+          const media = await this.fetchMediaAsBase64(data.message.mediaUrl);
+          if (!media) return '[IMAGE_DOWNLOAD_FAILED]';
+          const imageType = data.message?.imageMessage?.mimetype || media.mimetype || 'image/jpeg';
+          return await this.aiAgentService.describeImage(
+            data,
+            media.base64,
+            imageType,
+            userApiKey,
+            defaultAiModel,
+            defaultProvider,
+          );
         }
         return '[IMAGE_MESSAGE_NOT_FOUND]';
 
@@ -174,17 +240,12 @@ export class MessageTypeHandlerService {
             return text ? `${header}\n\n${text}` : `${header}\n[No se pudo extraer texto del PDF]`;
           }
 
-          // Evolution API / Telegram: descargar desde mediaUrl
-          const docUrl: string | undefined = await this.resolveMediaUrl(data?.message?.mediaUrl);
-          if (docUrl) {
-            try {
-              const response = await axios.get(docUrl, { responseType: 'arraybuffer' });
-              const base64 = Buffer.from(response.data).toString('base64');
-              const text = await this.extractPdfText(base64);
-              return text ? `${header}\n\n${text}` : `${header}\n[No se pudo extraer texto del PDF]`;
-            } catch {
-              return `${header}\n[Error descargando el PDF]`;
-            }
+          // Evolution / Telegram / Meta: descargar desde mediaUrl
+          if (data?.message?.mediaUrl) {
+            const media = await this.fetchMediaAsBase64(data.message.mediaUrl);
+            if (!media) return `${header}\n[Error descargando el PDF]`;
+            const text = await this.extractPdfText(media.base64);
+            return text ? `${header}\n\n${text}` : `${header}\n[No se pudo extraer texto del PDF]`;
           }
         }
 

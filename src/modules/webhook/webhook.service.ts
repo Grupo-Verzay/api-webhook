@@ -23,6 +23,7 @@ import {
 import { AntifloodService } from './services/antiflood/antiflood.service';
 import { executeWorkflow } from 'src/utils/execute-workflow';
 import {
+  isRegisterableContactJid,
   pickExplicitWhatsAppPhoneJid,
   pickObservedAlternateRemoteJid,
   pickPreferredWhatsAppRemoteJid,
@@ -287,6 +288,20 @@ export class WebhookService {
       '';
     const remoteJidAlt =
       pickObservedAlternateRemoteJid(remoteJid, observedJids) || '';
+
+    // 🚫 Descarta eventos que NO son contactos 1:1 reales: grupos (@g.us),
+    // estados/difusiones (status@broadcast, @broadcast), newsletters y JIDs
+    // vacíos o sin número válido. Sin esto se creaban "leads basura" (+0 / Você)
+    // en la cuenta. Los salientes (fromMe) a un número real SÍ pasan y crean lead.
+    if (
+      !isRegisterableContactJid(remoteJid) &&
+      !isRegisterableContactJid(remoteJidAlt)
+    ) {
+      this.logger.log(
+        `[WEBHOOK] Evento ignorado: JID no registrable como lead (rJid="${remoteJid || '-'}" rJidAlt="${remoteJidAlt || '-'}" I=${instanceName}).`,
+      );
+      return;
+    }
 
     const fromMe = data?.key?.fromMe ?? false;
     const incomingPushName = (data?.pushName ?? '').trim();

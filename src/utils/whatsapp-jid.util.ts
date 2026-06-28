@@ -2,7 +2,11 @@ const WHATSAPP_USER_JID_SUFFIX = '@s.whatsapp.net';
 const WHATSAPP_LID_JID_SUFFIX = '@lid';
 const WHATSAPP_GROUP_JID_SUFFIX = '@g.us';
 const WHATSAPP_BROADCAST_JID_SUFFIX = '@broadcast';
+const WHATSAPP_NEWSLETTER_JID_SUFFIX = '@newsletter';
 const STATUS_BROADCAST_JID = 'status@broadcast';
+// Mínimo de dígitos para considerar un JID como un número/contacto válido.
+// Evita registrar leads basura como "0" → que la tabla mostraba como "+0".
+const MIN_CONTACT_DIGITS = 6;
 
 function cleanValue(value?: string | null) {
   return value?.trim() ?? '';
@@ -20,6 +24,35 @@ function isBroadcastJid(value?: string | null) {
   return cleanValue(value)
     .toLowerCase()
     .endsWith(WHATSAPP_BROADCAST_JID_SUFFIX);
+}
+
+function isNewsletterJid(value?: string | null) {
+  return cleanValue(value)
+    .toLowerCase()
+    .endsWith(WHATSAPP_NEWSLETTER_JID_SUFFIX);
+}
+
+/**
+ * Determina si un JID corresponde a un contacto real 1:1 que debe registrarse
+ * como lead. Descarta vacíos, grupos, difusiones/estados, newsletters y JIDs
+ * sin un número válido (que producían "leads basura" como "+0" o "Você").
+ */
+export function isRegisterableContactJid(value?: string | null): boolean {
+  const raw = cleanValue(value);
+  if (!raw) {
+    return false;
+  }
+
+  if (
+    isStatusBroadcastJid(raw) ||
+    isGroupJid(raw) ||
+    isBroadcastJid(raw) ||
+    isNewsletterJid(raw)
+  ) {
+    return false;
+  }
+
+  return raw.replace(/[^\d]/g, '').length >= MIN_CONTACT_DIGITS;
 }
 
 export function extractWhatsAppDigits(value?: string | null) {

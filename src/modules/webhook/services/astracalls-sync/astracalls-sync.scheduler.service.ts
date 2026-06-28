@@ -22,15 +22,22 @@ export class AstraCallsSyncSchedulerService
   ) {}
 
   private getBaseUrl(): string {
-    // Reutiliza la misma base que el cron de billing (ya apunta a producción).
-    // NEXTAUTH_URL suele ser localhost, así que va al final como fallback.
-    const raw =
+    // Reutiliza la misma URL que el cron de billing (ya apunta a producción),
+    // pero tomando solo el ORIGIN, porque BILLING_CRON_ENDPOINT_URL trae la ruta
+    // completa (.../api/cron/billing). NEXTAUTH_URL (localhost) va de fallback.
+    const raw = (
       this.configService.get<string>('ASTRACALLS_SYNC_ENDPOINT_URL') ||
       this.configService.get<string>('BILLING_CRON_ENDPOINT_URL') ||
       this.configService.get<string>('NEXTAUTH_URL') ||
       this.configService.get<string>('NEXTJS_URL') ||
-      '';
-    return raw.trim().replace(/\/+$/, '');
+      ''
+    ).trim();
+    if (!raw) return '';
+    try {
+      return new URL(raw).origin; // p.ej. https://agente.ia-app.com
+    } catch {
+      return raw.replace(/\/+$/, '');
+    }
   }
 
   private getSecret(): string {

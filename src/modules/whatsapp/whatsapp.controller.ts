@@ -7,6 +7,7 @@ import { BaileysMessageStore } from './adapters/baileys/baileys-message.store';
 import { BaileysSenderAdapter } from './adapters/baileys/baileys-sender.adapter';
 import { MediaStorageService } from './adapters/baileys/media-storage.service';
 import { WhatsAppSenderFactory } from './whatsapp-sender.factory';
+import { MetaCloudApiSenderAdapter } from './adapters/meta-cloud-api.adapter';
 import { PrismaService } from 'src/database/prisma.service';
 import { LoggerService } from 'src/core/logger/logger.service';
 
@@ -18,6 +19,7 @@ export class WhatsAppController {
     private readonly sender: BaileysSenderAdapter,
     private readonly mediaStorage: MediaStorageService,
     private readonly senderFactory: WhatsAppSenderFactory,
+    private readonly metaAdapter: MetaCloudApiSenderAdapter,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly logger: LoggerService,
@@ -201,19 +203,32 @@ export class WhatsAppController {
     });
     if (!instance) throw new NotFoundException(`Instancia "${instanceName}" no encontrada.`);
 
-    const sender = this.senderFactory.getSenderSync(instance.instanceType);
+    const apikey = instance.metaAccessToken ?? undefined;
 
-    // Credenciales por canal
-    let serverUrl: string | undefined;
-    let apikey: string | undefined;
-    if (instance.instanceType === 'telegram') {
-      serverUrl = 'telegram';
-      apikey = instance.metaAccessToken ?? undefined;
-    } else if (instance.instanceType === 'meta') {
-      serverUrl = instance.metaPhoneNumberId ?? instance.metaPageId ?? undefined;
-      apikey = instance.metaAccessToken ?? undefined;
+    // Meta: usa el resultado detallado para distinguir el caso "fuera de ventana de 24h".
+    // En Facebook/Instagram envía como agente humano (HUMAN_AGENT → ventana de 7 días).
+    if (instance.instanceType === 'meta') {
+      const serverUrl = instance.metaPhoneNumberId ?? instance.metaPageId ?? undefined;
+      const res = await this.metaAdapter.sendTextDetailed(
+        instanceName,
+        body.remoteJid,
+        body.text,
+        serverUrl,
+        apikey,
+        { humanAgent: true },
+      );
+      if (!res.ok) {
+        const msg = res.outsideWindow
+          ? 'Fuera de la ventana de 24h de Meta: el cliente debe escribir primero (o usar una plantilla aprobada en WhatsApp).'
+          : (res.error ?? `No se pudo enviar el mensaje para "${instanceName}".`);
+        throw new BadRequestException(msg);
+      }
+      return { ok: true };
     }
 
+    // Telegram (y otros canales del factory)
+    const serverUrl = instance.instanceType === 'telegram' ? 'telegram' : undefined;
+    const sender = this.senderFactory.getSenderSync(instance.instanceType);
     const ok = await sender.sendText(instanceName, body.remoteJid, body.text, serverUrl, apikey);
     if (!ok) throw new BadRequestException(`No se pudo enviar el mensaje para "${instanceName}".`);
     return { ok: true };

@@ -177,11 +177,9 @@ export class TelegramWebhookNormalizerService {
         caption,
       };
     } else if (msg.video) {
-      // El video no se analiza (ningún canal lo procesa). Se entrega como nota de texto.
-      messageType = 'conversation';
-      message.conversation = caption
-        ? `[Video recibido] ${caption}`
-        : '[Video recibido]';
+      messageType = 'videoMessage';
+      message.mediaUrl = this.fileUrl(msg.video.file_id, ctx.botToken);
+      message.conversation = caption;
     } else {
       this.logger.warn(
         `[Telegram] Mensaje sin contenido soportado ignorado. chat=${msg.chat?.id}`,

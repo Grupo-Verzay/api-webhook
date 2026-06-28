@@ -5,6 +5,10 @@ import { MediaStorageService } from 'src/modules/whatsapp/adapters/baileys/media
 // refactorizacion
 import axios from 'axios';
 import { Buffer } from 'buffer';
+import { spawn } from 'child_process';
+import { writeFile, unlink } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 const PDF_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
@@ -140,6 +144,55 @@ export class MessageTypeHandlerService {
     }
   }
 
+  /**
+   * Extrae la pista de audio de un video (vía ffmpeg) y la devuelve como MP3 base64
+   * para transcribir. Best-effort: si ffmpeg falla, devuelve null.
+   */
+  private async extractAudioFromVideo(
+    videoBase64: string,
+    ext = 'mp4',
+  ): Promise<{ base64: string; mimetype: string } | null> {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const ffmpegPath = require('ffmpeg-static') as string | null;
+    if (!ffmpegPath) {
+      this.logger.warn('[Video] ffmpeg no disponible; se omite la transcripción.');
+      return null;
+    }
+
+    const tmpIn = join(tmpdir(), `vid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`);
+    try {
+      await writeFile(tmpIn, Buffer.from(videoBase64, 'base64'));
+      const audioBuffer = await new Promise<Buffer>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        const errChunks: string[] = [];
+        const proc = spawn(ffmpegPath, [
+          '-i', tmpIn,
+          '-vn',                 // sin video
+          '-ac', '1',            // mono
+          '-ar', '16000',        // 16 kHz (óptimo para Whisper)
+          '-c:a', 'libmp3lame',
+          '-f', 'mp3',
+          'pipe:1',
+        ]);
+        proc.stdout.on('data', (d: Buffer) => chunks.push(d));
+        proc.stderr.on('data', (d: Buffer) => errChunks.push(d.toString()));
+        proc.on('error', reject);
+        proc.on('close', (code) =>
+          code === 0
+            ? resolve(Buffer.concat(chunks))
+            : reject(new Error(errChunks.join('').slice(-400))),
+        );
+      });
+      if (!audioBuffer.length) return null;
+      return { base64: audioBuffer.toString('base64'), mimetype: 'audio/mpeg' };
+    } catch (err: any) {
+      this.logger.error(`[Video] Error extrayendo audio: ${err?.message}`);
+      return null;
+    } finally {
+      void unlink(tmpIn).catch(() => {});
+    }
+  }
+
   private async extractPdfText(base64: string): Promise<string | null> {
     try {
       const buffer = Buffer.from(base64, 'base64');
@@ -253,6 +306,35 @@ export class MessageTypeHandlerService {
           );
         }
         return '[IMAGE_MESSAGE_NOT_FOUND]';
+
+      case 'videoMessage': {
+        const caption = (data?.message?.conversation ?? '').trim();
+        if (!data?.message?.mediaUrl) return caption || '[Video recibido]';
+
+        const media = await this.fetchMediaAsBase64(data.message.mediaUrl);
+        if (!media) return caption || '[Video recibido]';
+
+        // Guardar el video para mostrarlo en el panel.
+        const videoMime = data.message?.imageMessage?.mimetype || media.mimetype || 'video/mp4';
+        await this.storeIncomingMedia(media.base64, videoMime, data);
+
+        // Extraer el audio y transcribirlo (la IA "entiende" el video hablado).
+        const ext = MIME_EXT[videoMime] || 'mp4';
+        const audio = await this.extractAudioFromVideo(media.base64, ext);
+        if (!audio) return caption || '[Video recibido]';
+
+        const transcript = await this.aiAgentService.transcribeAudioFromBase64(
+          audio.base64,
+          audio.mimetype,
+          userApiKey,
+          defaultAiModel,
+          defaultProvider,
+        );
+        const clean = transcript && !transcript.startsWith('[') ? transcript.trim() : '';
+        if (caption && clean) return `${caption}\n\n[Transcripción del video]: ${clean}`;
+        if (clean) return `[Transcripción del video]: ${clean}`;
+        return caption || '[Video recibido]';
+      }
 
       case 'documentMessage': {
         const docMimetype: string =

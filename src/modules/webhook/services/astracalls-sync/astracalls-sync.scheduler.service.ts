@@ -22,8 +22,11 @@ export class AstraCallsSyncSchedulerService
   ) {}
 
   private getBaseUrl(): string {
+    // Reutiliza la misma base que el cron de billing (ya apunta a producción).
+    // NEXTAUTH_URL suele ser localhost, así que va al final como fallback.
     const raw =
       this.configService.get<string>('ASTRACALLS_SYNC_ENDPOINT_URL') ||
+      this.configService.get<string>('BILLING_CRON_ENDPOINT_URL') ||
       this.configService.get<string>('NEXTAUTH_URL') ||
       this.configService.get<string>('NEXTJS_URL') ||
       '';

@@ -19,6 +19,16 @@ interface MetaSendResult {
   outsideWindow?: boolean;
 }
 
+export interface MetaTemplate {
+  name: string;
+  language: string;
+  category: string;
+  /** Texto del cuerpo (con placeholders {{1}}, {{2}}…). */
+  bodyText: string;
+  /** Cantidad de parámetros que requiere el cuerpo. */
+  paramCount: number;
+}
+
 // Códigos de error de Meta que indican "fuera de la ventana de 24h".
 const META_WINDOW_ERROR_CODES = new Set([131047, 131051, 470, 131026]);
 const META_WINDOW_ERROR_SUBCODES = new Set([2018278]);
@@ -207,5 +217,64 @@ export class MetaCloudApiSenderAdapter implements IWhatsAppSender {
 
     const res = await this.post(serverUrl!, apikey!, to, channel, messageBody);
     return res.ok;
+  }
+
+  /* ── Plantillas de WhatsApp Cloud ── */
+
+  /** Lista las plantillas APROBADAS de la WABA. */
+  async listApprovedTemplates(wabaId: string, accessToken: string): Promise<MetaTemplate[]> {
+    if (!wabaId || !accessToken) return [];
+    try {
+      const url = `${META_GRAPH_URL}/${wabaId}/message_templates?status=APPROVED&limit=200`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!res.ok) {
+        this.logger.error(`[Meta/templates] error ${res.status}: ${await res.text()}`);
+        return [];
+      }
+      const json = await res.json();
+      const items: any[] = json?.data ?? [];
+      return items.map((t) => {
+        const body = (t.components ?? []).find((c: any) => c.type === 'BODY');
+        const bodyText: string = body?.text ?? '';
+        const matches = bodyText.match(/\{\{\s*\d+\s*\}\}/g) ?? [];
+        return {
+          name: t.name,
+          language: t.language,
+          category: t.category,
+          bodyText,
+          paramCount: matches.length,
+        } as MetaTemplate;
+      });
+    } catch (e) {
+      this.logger.error(`[Meta/templates] request failed: ${e}`);
+      return [];
+    }
+  }
+
+  /** Envía un mensaje de plantilla (permitido fuera de la ventana de 24h). */
+  async sendTemplate(
+    phoneNumberId: string,
+    accessToken: string,
+    remoteJid: string,
+    templateName: string,
+    languageCode: string,
+    bodyParams: string[] = [],
+  ): Promise<MetaSendResult> {
+    this.requireCredentials(phoneNumberId, accessToken);
+    const { to } = this.normalizeJid(remoteJid);
+
+    const components =
+      bodyParams.length > 0
+        ? [{ type: 'body', parameters: bodyParams.map((text) => ({ type: 'text', text })) }]
+        : [];
+
+    return this.post(phoneNumberId, accessToken, to, 'whatsapp', {
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: languageCode },
+        ...(components.length ? { components } : {}),
+      },
+    });
   }
 }

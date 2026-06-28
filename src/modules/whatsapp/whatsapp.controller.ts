@@ -300,6 +300,62 @@ export class WhatsAppController {
     return { ok: true, mediaUrl: publicUrl };
   }
 
+  /** GET /whatsapp/baileys/meta-templates/:instanceName
+   *  Lista las plantillas APROBADAS de la WABA de una instancia Meta. */
+  @Get('meta-templates/:instanceName')
+  async listMetaTemplates(
+    @Param('instanceName') instanceName: string,
+    @Headers() headers: Record<string, string>,
+  ) {
+    this.authorize(headers);
+    const instance = await this.prisma.instancia.findFirst({
+      where: { instanceName, instanceType: 'meta' },
+      select: { metaWabaId: true, metaAccessToken: true },
+    });
+    if (!instance?.metaWabaId || !instance.metaAccessToken) {
+      return { templates: [] };
+    }
+    const templates = await this.metaAdapter.listApprovedTemplates(
+      instance.metaWabaId,
+      instance.metaAccessToken,
+    );
+    return { templates };
+  }
+
+  /** POST /whatsapp/baileys/send-template/:instanceName
+   *  Envía un mensaje de plantilla de WhatsApp Cloud (válido fuera de 24h). */
+  @Post('send-template/:instanceName')
+  async sendMetaTemplate(
+    @Param('instanceName') instanceName: string,
+    @Body() body: { remoteJid: string; name: string; language: string; params?: string[] },
+    @Headers() headers: Record<string, string>,
+  ) {
+    this.authorize(headers);
+    if (!body?.remoteJid || !body?.name || !body?.language) {
+      throw new BadRequestException('remoteJid, name e language son requeridos.');
+    }
+    const instance = await this.prisma.instancia.findFirst({
+      where: { instanceName, instanceType: 'meta' },
+      select: { metaPhoneNumberId: true, metaAccessToken: true },
+    });
+    if (!instance?.metaPhoneNumberId || !instance.metaAccessToken) {
+      throw new NotFoundException(`Instancia WhatsApp Cloud "${instanceName}" no encontrada.`);
+    }
+
+    const res = await this.metaAdapter.sendTemplate(
+      instance.metaPhoneNumberId,
+      instance.metaAccessToken,
+      body.remoteJid,
+      body.name,
+      body.language,
+      body.params ?? [],
+    );
+    if (!res.ok) {
+      throw new BadRequestException(res.error ?? `No se pudo enviar la plantilla para "${instanceName}".`);
+    }
+    return { ok: true };
+  }
+
   /** GET /whatsapp/baileys/chats/:instanceName
    *  Lista de chats (contactos con último mensaje) almacenados para la instancia. */
   @Get('chats/:instanceName')

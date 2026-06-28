@@ -170,10 +170,80 @@ export class WebhookService {
   }
 
   /**
+   * Procesa el evento 'call' de Evolution: registra una llamada entrante perdida
+   * como burbuja en los Chats (tabla unificada chat_messages). Como el número de
+   * WhatsApp del agente no puede contestar voz por Evolution, toda entrante se
+   * registra como "perdida". El dedupe por messageId (call_<id>) evita duplicados
+   * cuando Evolution emite varios eventos para la misma llamada.
+   */
+  private async handleCallEvent(body: WebhookBodyDto): Promise<void> {
+    try {
+      const instanceName = body.instance;
+      const rawData = (body as unknown as { data?: unknown }).data;
+      const call = (Array.isArray(rawData) ? rawData[0] : rawData) as
+        | {
+            id?: string;
+            from?: string;
+            chatId?: string;
+            status?: string;
+            isVideo?: boolean;
+            date?: number;
+          }
+        | undefined;
+      if (!call) return;
+
+      const from = call.from || call.chatId || '';
+      if (!from) return;
+
+      const prismaInstancia =
+        await this.instancesService.getUserId(instanceName);
+      const userId = prismaInstancia?.userId ?? '';
+      if (!userId) return;
+
+      const remoteJid = from.includes('@') ? from : `${from}@s.whatsapp.net`;
+      const isVideo = Boolean(call.isVideo);
+      const callId = String(call.id || `${from}_${call.date ?? ''}`);
+      const ts =
+        typeof call.date === 'number'
+          ? call.date
+          : Math.floor(Date.now() / 1000);
+
+      await this.chatStore.persistMessage({
+        userId,
+        instanceName,
+        instanceType: 'evolution',
+        remoteJid,
+        messageId: `call_${callId}`,
+        fromMe: false,
+        messageType: 'call',
+        content: isVideo ? 'Videollamada perdida' : 'Llamada perdida',
+        raw: { call: { direction: 'incoming', isVideo, status: call.status ?? '' } },
+        messageTimestamp: ts,
+      });
+
+      this.chatEvents.emitChatChanged({ userId, remoteJid, instanceName });
+      this.logger.log(
+        `[CALL] perdida I=${instanceName} from=${from} video=${isVideo} status=${call.status ?? '-'}`,
+      );
+    } catch (err: unknown) {
+      void this.logger.error(
+        `[CALL] error procesando llamada: ${JSON.stringify(err)}`,
+      );
+    }
+  }
+
+  /**
    * Procesa un webhook recibido de Evolution API.
    */
   async processWebhook(body: WebhookBodyDto): Promise<void> {
     const { instance: instanceName, server_url, apikey, data } = body;
+
+    // Evento de LLAMADA (Evolution event 'call'): se registra como burbuja en el
+    // chat (llamada perdida) y no sigue el flujo normal de mensajes.
+    if (body.event === 'call') {
+      await this.handleCallEvent(body);
+      return;
+    }
 
     const msgId = this.messageDeduplication.getMessageId(data);
     if (msgId) {

@@ -90,13 +90,15 @@ export class VoicebotService {
 
   private buildVoiceInstructions(promptText: string, business: string): string {
     const voice = [
-      `Eres un asistente de voz que atiende llamadas telefónicas de ${business} en español.`,
-      `Habla de forma natural, cálida y con frases CORTAS (es una conversación hablada, no texto).`,
-      `No leas listas largas ni enlaces. Si no entiendes, pide amablemente que repitan.`,
-      `Si te piden hablar con una persona o no puedes resolver algo, ofrécete a tomar el recado y los datos de contacto.`,
+      `Eres un asistente de VOZ que atiende llamadas telefónicas de ${business} en español. Estás HABLANDO por teléfono, no escribiendo.`,
+      `Habla de forma natural, cálida y con frases CORTAS.`,
+      `NO leas firmas, despedidas escritas, nombres entre corchetes [ ], emojis ni datos de contacto que aparezcan en las instrucciones: eso es solo para mensajes de texto, no para hablar.`,
+      `Di los PRECIOS y NÚMEROS de forma hablada y natural (ejemplo: "$1.500.000" se dice "un millón quinientos mil pesos"; "10:30" se dice "diez y media"). Nunca leas símbolos, puntos ni comas.`,
+      `NO leas URLs ni enlaces en voz alta. Si el cliente necesita un enlace, un archivo o una imagen, dile que se lo enviarás por WhatsApp.`,
+      `Si no entiendes, pide amablemente que repitan. Si no puedes resolver algo, ofrécete a tomar el recado y los datos de contacto.`,
     ].join(' ');
     return promptText?.trim()
-      ? `${voice}\n\n--- INFORMACIÓN DEL NEGOCIO ---\n${promptText.trim()}`
+      ? `${voice}\n\n--- INFORMACIÓN DEL NEGOCIO (adáptala a una conversación hablada) ---\n${promptText.trim()}`
       : voice;
   }
 }

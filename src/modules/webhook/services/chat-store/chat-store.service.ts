@@ -213,6 +213,63 @@ export class ChatStoreService {
     }
   }
 
+  /**
+   * Crea una tarea interna de "devolver llamada perdida" para el asesor, en la
+   * tabla `tasks` (mismo sistema que el panel de Tareas del frontend). Hace
+   * dedupe: no crea otra si ya hay una pendiente para el mismo contacto en las
+   * últimas 6 horas. Best-effort: nunca lanza.
+   */
+  async createMissedCallTask(input: {
+    userId: string;
+    remoteJid: string;
+    contactName?: string | null;
+  }): Promise<void> {
+    const { userId, remoteJid } = input;
+    if (!userId || !remoteJid) return;
+    try {
+      // Dedupe: ¿ya hay una tarea de llamada pendiente reciente para este contacto?
+      const existing = await this.prisma.$queryRaw<{ n: bigint }[]>`
+        SELECT COUNT(*)::bigint AS n
+        FROM "tasks"
+        WHERE "ownerId" = ${userId}
+          AND "contactJid" = ${remoteJid}
+          AND "type" = 'Llamada'
+          AND "status" = 'pending'
+          AND "createdAt" > NOW() - INTERVAL '6 hours'
+      `;
+      if (Number(existing[0]?.n ?? 0) > 0) return;
+
+      // Enlazar con la sesión/lead si existe (opcional).
+      const sessionRows = await this.prisma.$queryRaw<{ id: number }[]>`
+        SELECT "id" FROM "Session"
+        WHERE "userId" = ${userId} AND "remoteJid" = ${remoteJid}
+        ORDER BY "updatedAt" DESC
+        LIMIT 1
+      `;
+      const sessionId = sessionRows[0]?.id ?? null;
+
+      const name = input.contactName?.trim() || null;
+      const phone = remoteJid.split('@')[0];
+      const title = `Devolver llamada perdida a ${name || `+${phone}`}`;
+
+      await this.prisma.$executeRaw`
+        INSERT INTO "tasks" (
+          "ownerId", "assignedToId", "assignedToName", "sessionId", "contactName",
+          "contactJid", "title", "type", "dueDate", "status", "createdById",
+          "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${userId}, ${userId}, ${null}, ${sessionId}, ${name},
+          ${remoteJid}, ${title}, 'Llamada', NOW(), 'pending', ${userId},
+          NOW(), NOW()
+        )
+      `;
+      this.logger.log(`[CALL] tarea de devolución creada user=${userId} jid=${remoteJid}`);
+    } catch (err: any) {
+      this.logger.error(`[ChatStore] Error creando tarea de llamada perdida: ${err?.message}`);
+    }
+  }
+
   /** Resuelve un lid a su número (remoteJid) si fue aprendido antes. */
   async resolveLid(userId: string, lidRaw: string): Promise<string | null> {
     const lid = this.normLid(lidRaw);

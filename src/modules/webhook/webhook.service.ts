@@ -229,6 +229,11 @@ export class WebhookService {
       });
 
       this.chatEvents.emitChatChanged({ userId, remoteJid, instanceName });
+
+      // Alerta automática al asesor: tarea interna "devolver llamada perdida"
+      // (con dedupe de 6h). Best-effort, no rompe el procesamiento de la llamada.
+      await this.chatStore.createMissedCallTask({ userId, remoteJid });
+
       this.logger.log(
         `[CALL] perdida I=${instanceName} from=${from} -> ${remoteJid} video=${isVideo} status=${call.status ?? '-'}`,
       );

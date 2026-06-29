@@ -44,6 +44,7 @@ interface getSessionInterface {
 export class WorkflowService implements OnModuleInit {
   private aiAgentService!: AiAgentService;
   private whatsAppSenderFactory!: any;
+  private chatStore!: any;
 
   constructor(
     private prisma: PrismaService,
@@ -64,6 +65,46 @@ export class WorkflowService implements OnModuleInit {
       this.whatsAppSenderFactory = this.moduleRef.get(WhatsAppSenderFactory, { strict: false });
     } catch {
       // WhatsApp module no disponible
+    }
+    try {
+      const { ChatStoreService } = require('../../webhook/services/chat-store/chat-store.service');
+      this.chatStore = this.moduleRef.get(ChatStoreService, { strict: false });
+    } catch {
+      // Store unificado no disponible
+    }
+  }
+
+  /**
+   * Persiste un mensaje multimedia saliente de un flujo en el store unificado
+   * (chat_messages) para que el panel de Chats lo muestre. Evolution no reenvía
+   * por webhook los salientes (fromMe) con su mediaUrl, así que sin esto el video/
+   * imagen/documento/audio que envía el flujo nunca aparece en la conversación.
+   * Nunca lanza: un fallo al persistir jamás debe romper el envío.
+   */
+  private async persistFlowOutboundMedia(
+    ctx: NodeExecCtx,
+    node: WorkflowNode,
+    channel: 'evolution' | 'baileys',
+  ): Promise<void> {
+    try {
+      if (!this.chatStore || !ctx.userId) return;
+      const mediaUrl = (node.url ?? '').toString().trim();
+      if (!mediaUrl) return;
+      const messageType = `${node.tipo}Message`; // image|video|document|audio -> *Message
+      const caption = this.resolveNodeText(node.message, ctx.pushName).trim();
+      await this.chatStore.persistMessage({
+        userId: ctx.userId,
+        instanceName: ctx.instanceName,
+        instanceType: channel,
+        remoteJid: ctx.remoteJid,
+        fromMe: true,
+        messageType,
+        content: caption || null,
+        mediaUrl,
+        messageTimestamp: Math.floor(Date.now() / 1000),
+      });
+    } catch {
+      // nunca romper el envío por un fallo de persistencia
     }
   }
 
@@ -497,13 +538,19 @@ export class WorkflowService implements OnModuleInit {
       }
       if (node.tipo === 'audio') {
         const url = (node.url ?? '').trim();
-        if (url) await sender.sendAudio(instanceName, remoteJid, url).catch(() => {});
+        if (url) {
+          await sender.sendAudio(instanceName, remoteJid, url).catch(() => {});
+          await this.persistFlowOutboundMedia(ctx, node, 'baileys');
+        }
         return;
       }
       if (['image', 'video', 'document'].includes(node.tipo)) {
         const url = (node.url ?? '').trim();
         const caption = this.resolveNodeText(node.message, pushName).trim();
-        if (url) await sender.sendMedia(instanceName, remoteJid, node.tipo, caption, url).catch(() => {});
+        if (url) {
+          await sender.sendMedia(instanceName, remoteJid, node.tipo, caption, url).catch(() => {});
+          await this.persistFlowOutboundMedia(ctx, node, 'baileys');
+        }
         return;
       }
     }
@@ -521,7 +568,7 @@ export class WorkflowService implements OnModuleInit {
 
     if (['image', 'video', 'document'].includes(node.tipo)) {
       const url = `${urlevo}/message/sendMedia/${instanceName}`;
-      await this.nodeSenderService.sendMediaNode(
+      const ok = await this.nodeSenderService.sendMediaNode(
         url,
         apikey,
         remoteJid,
@@ -529,17 +576,19 @@ export class WorkflowService implements OnModuleInit {
         this.resolveNodeText(node.message, pushName),
         node.url as string,
       );
+      if (ok) await this.persistFlowOutboundMedia(ctx, node, 'evolution');
       return;
     }
 
     if (node.tipo === 'audio') {
       const url = `${urlevo}/message/sendWhatsAppAudio/${instanceName}`;
-      await this.nodeSenderService.sendAudioNode(
+      const ok = await this.nodeSenderService.sendAudioNode(
         url,
         apikey,
         remoteJid,
         node.url as string,
       );
+      if (ok) await this.persistFlowOutboundMedia(ctx, node, 'evolution');
       return;
     }
 

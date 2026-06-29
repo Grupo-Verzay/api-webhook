@@ -13,6 +13,7 @@ import { ChatHistoryModule } from './modules/chat-history/chat-history.module';
 import { GoogleSheetsModule } from './modules/google-sheets/google-sheets.module';
 import { StageAutomationModule } from './modules/stage-automation/stage-automation.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
+import { VoicebotModule } from './modules/voicebot/voicebot.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -33,6 +34,7 @@ import { HealthController } from './health/health.controller';
     GoogleSheetsModule,
     StageAutomationModule,
     RealtimeModule,
+    VoicebotModule,
   ],
   providers: [
     ServicesService,

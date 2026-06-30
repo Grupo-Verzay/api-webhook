@@ -2730,12 +2730,19 @@ export class AiAgentService {
         }),
       ]);
       // Intercepción pre-LLM: palabras clave con respuesta directa
-      const keywordRules: Array<{ keywords: string[]; response: string; action: string }> =
+      const keywordRules: Array<{ keywords: string[]; response: string; action: string; matchType?: string }> =
         ((agentPromptForHours?.sections as any)?.keywords?.rules) ?? [];
       if (keywordRules.length > 0) {
         const msgLower = input.toLowerCase();
+        const msgExact = msgLower.trim();
         for (const rule of keywordRules) {
-          const matched = rule.keywords.some((kw: string) => msgLower.includes(kw.toLowerCase()));
+          // 'exact' = el mensaje es exactamente la palabra/frase; 'contains'
+          // (default) = el mensaje contiene la palabra clave.
+          const exact = rule.matchType === 'exact';
+          const matched = rule.keywords.some((kw: string) => {
+            const k = kw.toLowerCase().trim();
+            return exact ? msgExact === k : msgLower.includes(k);
+          });
           if (matched) {
             if (rule.action === 'escalar') {
               return 'En este momento voy a transferirte con uno de nuestros asesores para que te puedan ayudar mejor. Por favor espera un momento. 🙏';

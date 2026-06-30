@@ -4,6 +4,7 @@ import { AiCreditsService } from '../ai-credits/ai-credits.service';
 
 export interface VoicebotResolveResult {
   enabled: boolean;
+  reason?: string; // por qué está deshabilitado: disabled | no_credits | no_openai_key | no_account
   instructions?: string;
   voice?: string;
   greeting?: string;
@@ -37,7 +38,7 @@ export class VoicebotService {
         SELECT "id" FROM "User" WHERE "astra_calls_sid" = ${sid} LIMIT 1
       `;
       const userId = users[0]?.id;
-      if (!userId) return { enabled: false };
+      if (!userId) return { enabled: false, reason: 'no_account' };
 
       // 2) Config del bot en la instancia de WhatsApp (columnas creadas por la app).
       const insts = await this.prisma.$queryRaw<
@@ -50,7 +51,7 @@ export class VoicebotService {
         LIMIT 1
       `;
       const inst = insts[0];
-      if (!inst || !inst.enabled) return { enabled: false };
+      if (!inst || !inst.enabled) return { enabled: false, reason: 'disabled' };
 
       // 3) Clave OpenAI (Realtime es exclusivo de OpenAI).
       const provider = await this.prisma.aiProvider.findFirst({
@@ -65,16 +66,19 @@ export class VoicebotService {
         });
         if (cfg?.apiKey && cfg.apiKey.startsWith('sk-')) openaiKey = cfg.apiKey;
       }
-      if (!openaiKey) return { enabled: false };
+      if (!openaiKey) return { enabled: false, reason: 'no_openai_key' };
 
       // 3b) Créditos: si el usuario no tiene créditos disponibles, no se activa.
-      const credit = await this.prisma.iaCredit.findUnique({
-        where: { userId },
-        select: { total: true, used: true },
-      });
-      if (credit && credit.used >= credit.total) {
-        this.logger.log(`[voicebot] sin créditos disponibles userId=${userId}`);
-        return { enabled: false };
+      // Se puede desactivar el bloqueo con VOICEBOT_ENFORCE_CREDITS=false (pruebas).
+      if (process.env.VOICEBOT_ENFORCE_CREDITS !== 'false') {
+        const credit = await this.prisma.iaCredit.findUnique({
+          where: { userId },
+          select: { total: true, used: true },
+        });
+        if (credit && credit.used >= credit.total) {
+          this.logger.log(`[voicebot] sin créditos disponibles userId=${userId}`);
+          return { enabled: false, reason: 'no_credits' };
+        }
       }
 
       // 4) Instrucciones: el prompt compilado del agente + envoltura de voz.

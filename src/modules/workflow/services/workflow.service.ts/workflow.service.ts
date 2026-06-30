@@ -11,6 +11,7 @@ import { ChatHistoryService } from '../../../chat-history/chat-history.service';
 import { buildChatHistorySessionId } from '../../../chat-history/chat-history-session.helper';
 import type { AiAgentService } from '../../../ai-agent/ai-agent.service';
 import { NotificationContactsService } from 'src/modules/ai-agent/services/notificacionService/notification-contacts.service';
+import { normalizeContactFieldsConfig } from './contact-fields.helper';
 
 
 type NodeDB = WorkflowNode;
@@ -45,6 +46,8 @@ export class WorkflowService implements OnModuleInit {
   private aiAgentService!: AiAgentService;
   private whatsAppSenderFactory!: any;
   private chatStore!: any;
+  private externalClientDataService!: any;
+  private googleSheetsService!: any;
 
   constructor(
     private prisma: PrismaService,
@@ -71,6 +74,18 @@ export class WorkflowService implements OnModuleInit {
       this.chatStore = this.moduleRef.get(ChatStoreService, { strict: false });
     } catch {
       // Store unificado no disponible
+    }
+    try {
+      const { ExternalClientDataService } = require('../../external-client-data/external-client-data.service');
+      this.externalClientDataService = this.moduleRef.get(ExternalClientDataService, { strict: false });
+    } catch {
+      // Módulo de datos externos no disponible
+    }
+    try {
+      const { GoogleSheetsService } = require('../../google-sheets/google-sheets.service');
+      this.googleSheetsService = this.moduleRef.get(GoogleSheetsService, { strict: false });
+    } catch {
+      // Módulo de Google Sheets no disponible
     }
   }
 
@@ -510,6 +525,195 @@ export class WorkflowService implements OnModuleInit {
     return cleaned.length > 0 ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1) : cleaned;
   }
 
+  /**
+   * Ejecuta el nodo "Guardar ficha + Sheets": toma los datos conocidos del lead,
+   * opcionalmente extrae con IA los campos configurados de la ficha desde la
+   * conversación, los guarda (merge) en ExternalClientData y los sincroniza a
+   * Google Sheets. Nunca lanza: un fallo aquí no debe romper el flujo.
+   */
+  private async executeGuardarFichaNode(node: WorkflowNode, ctx: NodeExecCtx): Promise<void> {
+    const { instanceName, remoteJid, userId, pushName } = ctx;
+    try {
+      if (!userId || !remoteJid) return;
+
+      const phone = remoteJid.split('@')[0].split(':')[0].replace(/\D/g, '');
+      const session = await this.getSession({ remoteJid, instanceName, userId }).catch(() => null);
+      const name = (
+        (session as any)?.customName ||
+        pushName ||
+        (session as any)?.pushName ||
+        ''
+      )
+        .toString()
+        .trim();
+
+      // Campos configurados (habilitados) de la ficha de la cuenta.
+      const fields = await this.getEnabledContactFields(userId);
+
+      // Extracción IA opcional (cuando el nodo tiene aiEnabled).
+      let extracted: Record<string, unknown> = {};
+      if (node.aiEnabled && fields.length && this.aiAgentService) {
+        extracted = await this.extractContactFields(
+          userId,
+          instanceName,
+          remoteJid,
+          fields,
+          node.message,
+        );
+      }
+
+      // Ficha a guardar = extraídos + teléfono (siempre conocido).
+      const fichaData: Record<string, unknown> = { ...extracted };
+      if (phone && !fichaData['telefono']) fichaData['telefono'] = phone;
+
+      // 1. Guardar/fusionar en la ficha (ExternalClientData).
+      if (this.externalClientDataService) {
+        await this.externalClientDataService.upsert(userId, remoteJid, fichaData, 'flujo');
+      }
+
+      // 2. Sincronizar a Google Sheets (no bloquea el flujo).
+      void this.syncFichaToSheets(userId, phone, name, fields, fichaData);
+
+      this.logger.log(
+        `[guardar-ficha] Ficha actualizada (userId=${userId}, tel=${phone}, ia=${!!node.aiEnabled}, campos=${Object.keys(fichaData).length})`,
+        'WorkflowService',
+      );
+    } catch (err: any) {
+      this.logger.error(
+        `[guardar-ficha] Error: ${err?.message ?? err}`,
+        undefined,
+        'WorkflowService',
+      );
+    }
+  }
+
+  /** Lee los campos de contacto habilitados de la cuenta (config en User). */
+  private async getEnabledContactFields(
+    userId: string,
+  ): Promise<{ key: string; label: string }[]> {
+    let raw: unknown = null;
+    try {
+      const rows = await this.prisma.$queryRaw<Array<{ contactFieldsConfig: unknown }>>`
+        SELECT "contactFieldsConfig" FROM "User" WHERE id = ${userId} LIMIT 1
+      `;
+      raw = rows?.[0]?.contactFieldsConfig ?? null;
+    } catch {
+      // sin config: se usan los defaults
+    }
+    return normalizeContactFieldsConfig(raw)
+      .filter((f) => f.enabled)
+      .sort((a, b) => a.order - b.order)
+      .map((f) => ({ key: f.key, label: f.label }));
+  }
+
+  /** Extrae con IA los campos pedidos desde la conversación reciente. */
+  private async extractContactFields(
+    userId: string,
+    instanceName: string,
+    remoteJid: string,
+    fields: { key: string; label: string }[],
+    customInstruction?: string | null,
+  ): Promise<Record<string, unknown>> {
+    try {
+      const sessionHistoryId = buildChatHistorySessionId(instanceName, remoteJid);
+      const history = await this.chatHistoryService.getChatHistory(sessionHistoryId);
+      const recent = history
+        .slice(-15)
+        .map((t) => (t ?? '').trim())
+        .filter(Boolean)
+        .join('\n');
+      if (!recent) return {};
+
+      const fieldList = fields.map((f) => `- ${f.key}: ${f.label}`).join('\n');
+      const extra = (customInstruction ?? '').trim();
+      const systemPrompt = [
+        'Eres un extractor de datos. A partir de la conversación entre un negocio y un cliente, extrae SOLO los siguientes campos del CLIENTE (la clave es la parte antes de los dos puntos):',
+        fieldList,
+        '',
+        'Reglas estrictas:',
+        '- Devuelve un objeto JSON cuyas claves sean EXACTAMENTE las claves listadas.',
+        '- Si un dato NO fue dicho explícitamente por el cliente, NO incluyas esa clave (no inventes ni supongas).',
+        '- Todos los valores como string.',
+        '- No incluyas el teléfono (ya lo tenemos).',
+        extra ? `\nContexto del negocio: ${extra}` : '',
+      ].join('\n');
+
+      const result = await this.aiAgentService.extractJson({
+        userId,
+        systemPrompt,
+        userJson: { conversacion: recent },
+      });
+      if (!result) return {};
+
+      const validKeys = new Set(fields.map((f) => f.key));
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(result)) {
+        if (k === 'telefono') continue;
+        if (validKeys.has(k) && v != null && String(v).trim() !== '') {
+          out[k] = String(v).trim();
+        }
+      }
+      return out;
+    } catch (err: any) {
+      this.logger.warn(
+        `[guardar-ficha] Extracción IA falló: ${err?.message ?? err}`,
+        'WorkflowService',
+      );
+      return {};
+    }
+  }
+
+  /** Sincroniza la ficha a Google Sheets (mismas columnas que el panel de Chats). */
+  private async syncFichaToSheets(
+    userId: string,
+    phone: string,
+    name: string,
+    fields: { key: string; label: string }[],
+    fichaData: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      if (!this.googleSheetsService || !phone) return;
+
+      let config: string | null = null;
+      try {
+        const rows = await this.prisma.$queryRaw<Array<{ googleSheetsWebhookUrl: string | null }>>`
+          SELECT "googleSheetsWebhookUrl" FROM "User" WHERE id = ${userId} LIMIT 1
+        `;
+        config = rows?.[0]?.googleSheetsWebhookUrl ?? null;
+      } catch {
+        return;
+      }
+      if (!config) return;
+
+      const spreadsheetId = this.extractSheetId(config);
+      if (!spreadsheetId) return;
+
+      const headers = ['Teléfono', 'Nombre', ...fields.map((f) => f.label), 'Actualizado'];
+      const row = [
+        phone,
+        name ?? '',
+        ...fields.map((f) => String(fichaData[f.key] ?? '')),
+        new Date().toLocaleString('es-CO'),
+      ];
+
+      await this.googleSheetsService.upsertContactRow(spreadsheetId, headers, phone, row);
+    } catch (err: any) {
+      this.logger.warn(
+        `[guardar-ficha] Sync a Sheets falló: ${err?.message ?? err}`,
+        'WorkflowService',
+      );
+    }
+  }
+
+  /** Extrae el spreadsheetId de una URL de Google Sheets o lo devuelve si ya es id. */
+  private extractSheetId(input: string): string | null {
+    if (!input) return null;
+    const m = input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    if (m) return m[1];
+    if (/^[a-zA-Z0-9_-]{30,}$/.test(input.trim())) return input.trim();
+    return null;
+  }
+
   private async sendNodeCommon(
     node: WorkflowNode,
     ctx: NodeExecCtx,
@@ -525,6 +729,13 @@ export class WorkflowService implements OnModuleInit {
         'WorkflowService',
       );
       await new Promise((res) => setTimeout(res, Number(delayTime)));
+      return;
+    }
+
+    // Nodo "Guardar ficha + Sheets": no envía nada al cliente; captura datos,
+    // los guarda en la ficha (ExternalClientData) y los sincroniza a Google Sheets.
+    if (node.tipo === 'guardar-ficha') {
+      await this.executeGuardarFichaNode(node, ctx);
       return;
     }
 

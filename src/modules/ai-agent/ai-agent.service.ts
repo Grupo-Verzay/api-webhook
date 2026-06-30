@@ -3574,6 +3574,56 @@ Si la imagen NO es un comprobante de pago, descríbela brevemente en texto natur
     }
   }
 
+  /**
+   * Llamada LLM "one-shot" que devuelve un objeto JSON parseado (o null).
+   * Usada para extraer campos de la conversación (nodo de flujo "Guardar ficha +
+   * Sheets"). Reutiliza el modelo/proveedor del usuario (típicamente un modelo
+   * económico tipo gpt-4o-mini / gemini-flash).
+   */
+  async extractJson(args: {
+    userId: string;
+    systemPrompt: string;
+    userJson: any;
+  }): Promise<Record<string, unknown> | null> {
+    const { userId, systemPrompt, userJson } = args;
+    const logger = this.scopedLogger({ userId });
+
+    try {
+      const client = await this.getClientForUser(userId);
+
+      const res = await client.invoke([
+        new SystemMessage({ content: [{ type: 'text', text: systemPrompt }] }),
+        new SystemMessage({
+          content: [
+            {
+              type: 'text',
+              text: 'Devuelve SOLO un objeto JSON válido con los campos pedidos. Sin texto extra, sin markdown.',
+            },
+          ],
+        }),
+        new HumanMessage({
+          content: [{ type: 'text', text: JSON.stringify(userJson) }],
+        }),
+      ]);
+
+      const content = (res?.content ?? '').toString();
+      const jsonStr = content.match(/\{[\s\S]*\}/)?.[0];
+      if (!jsonStr) return null;
+
+      try {
+        const parsed = JSON.parse(jsonStr);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : null;
+      } catch {
+        return null;
+      }
+    } catch (e: any) {
+      logger.warn(`extractJson error: ${e?.message ?? e}`);
+      return null;
+    }
+  }
+
   async generateFollowUpMessage(args: {
     userId: string;
     sessionId: string;

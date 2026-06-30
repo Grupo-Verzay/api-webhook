@@ -97,6 +97,61 @@ export class ExternalClientDataService implements IExternalClientDataProvider {
   }
 
   /**
+   * Crea o actualiza (merge) los datos externos de un cliente. Fusiona el JSON
+   * sin pisar valores existentes con vacíos: solo escribe los campos provistos
+   * que tengan valor. Usado por el nodo de flujo "Guardar ficha + Sheets".
+   * Nunca lanza: devuelve true si guardó algo, false si no.
+   */
+  async upsert(
+    userId: string,
+    remoteJid: string,
+    partialData: Record<string, unknown>,
+    source = 'flujo',
+  ): Promise<boolean> {
+    if (!userId || !remoteJid) return false;
+
+    // Descarta null/undefined/'' para no pisar valores existentes con vacío.
+    const clean: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(partialData ?? {})) {
+      if (v === null || v === undefined) continue;
+      const val = typeof v === 'string' ? v.trim() : v;
+      if (val === '') continue;
+      clean[k] = val;
+    }
+    if (Object.keys(clean).length === 0) return false;
+
+    try {
+      const candidates = buildWhatsAppJidCandidates(remoteJid);
+      const existing = await this.prisma.externalClientData.findFirst({
+        where: { userId, remoteJid: { in: candidates } },
+      });
+
+      if (existing) {
+        const prev =
+          existing.data && typeof existing.data === 'object'
+            ? (existing.data as Record<string, unknown>)
+            : {};
+        await this.prisma.externalClientData.update({
+          where: { id: existing.id },
+          data: { data: { ...prev, ...clean } as Prisma.InputJsonValue },
+        });
+      } else {
+        await this.prisma.externalClientData.create({
+          data: { userId, remoteJid, data: clean as Prisma.InputJsonValue, source },
+        });
+      }
+      return true;
+    } catch (error: any) {
+      this.logger.error(
+        `[ExternalClientData] Error en upsert para remoteJid=${remoteJid}`,
+        error?.message,
+        'ExternalClientDataService',
+      );
+      return false;
+    }
+  }
+
+  /**
    * Obtiene todas las herramientas dinámicas configuradas para un usuario.
    * Se usan para generar tools de LangChain en tiempo de ejecución.
    */

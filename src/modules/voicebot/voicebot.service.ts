@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
+import { LLAMADAS_AGENT_ID } from '../../types/channel-agent-ids';
 
 export interface VoicebotResolveResult {
   enabled: boolean;
@@ -86,16 +87,28 @@ export class VoicebotService {
         }
       }
 
-      // 4) Instrucciones: el prompt compilado del agente + envoltura de voz.
-      const ap = await this.prisma.agentPrompt.findFirst({
-        where: { userId },
-        orderBy: { updatedAt: 'desc' },
-        select: { promptText: true, businessName: true },
-      });
-      const business = ap?.businessName?.trim() || 'nuestra empresa';
-      // Prompt PROPIO del agente de llamadas (separado del de chat). Si está vacío,
-      // se usa el prompt del agente de chat como respaldo.
-      const callPrompt = (inst.prompt || '').trim() || ap?.promptText || '';
+      // 4) Instrucciones: el entrenamiento del agente de LLAMADAS (mismo editor
+      // que los demás canales) + envoltura de voz. Prioridad: AgentPrompt de
+      // Llamadas → voicebot_prompt (legacy) → entrenamiento base de chat.
+      const [callAp, baseAp] = await Promise.all([
+        this.prisma.agentPrompt.findFirst({
+          where: { userId, agentId: LLAMADAS_AGENT_ID },
+          orderBy: { updatedAt: 'desc' },
+          select: { promptText: true, businessName: true },
+        }),
+        this.prisma.agentPrompt.findFirst({
+          where: { userId, agentId: 'system-prompt-ai' },
+          orderBy: { updatedAt: 'desc' },
+          select: { promptText: true, businessName: true },
+        }),
+      ]);
+      const business =
+        (callAp?.businessName || baseAp?.businessName || '').trim() || 'nuestra empresa';
+      const callPrompt =
+        (callAp?.promptText || '').trim() ||
+        (inst.prompt || '').trim() ||
+        baseAp?.promptText ||
+        '';
       const instructions = this.buildVoiceInstructions(callPrompt, business, voiceInstructions);
       // Llamada SALIENTE: es el bot quien llama al cliente. Debe presentarse,
       // NO decir "gracias por llamar".

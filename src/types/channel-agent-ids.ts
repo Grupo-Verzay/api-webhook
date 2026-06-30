@@ -10,6 +10,10 @@ export const CHANNEL_AGENT_IDS = {
   telegram: 'system-prompt-ai-telegram',
 } as const;
 
+// agentId del entrenamiento del agente de LLAMADAS (voz). No es un canal de
+// mensajería (resolveChannelKey nunca lo devuelve); lo usa el voicebot.
+export const LLAMADAS_AGENT_ID = 'system-prompt-ai-llamadas';
+
 export type ChannelKey = keyof typeof CHANNEL_AGENT_IDS;
 
 export const BASE_CHANNEL_AGENT_ID = CHANNEL_AGENT_IDS.whatsapp_qr;

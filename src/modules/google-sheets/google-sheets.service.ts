@@ -85,6 +85,85 @@ export class GoogleSheetsService implements OnModuleInit {
     }
   }
 
+  /** Convierte un índice de columna (1-based) a letra A1 (1→A, 27→AA…). */
+  private columnLetter(n: number): string {
+    let s = '';
+    let x = n;
+    while (x > 0) {
+      const m = (x - 1) % 26;
+      s = String.fromCharCode(65 + m) + s;
+      x = Math.floor((x - 1) / 26);
+    }
+    return s || 'A';
+  }
+
+  /**
+   * Sincroniza la ficha de un contacto replicando el formato del panel de Chats:
+   * escribe los encabezados (fila 1), busca la fila por teléfono (columna A) y la
+   * actualiza; si no existe, la inserta. `headers` y `row` deben tener igual largo.
+   * Mismo comportamiento que syncContactToGoogleSheets del frontend.
+   */
+  async upsertContactRow(
+    spreadsheetId: string,
+    headers: string[],
+    phone: string,
+    row: string[],
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!this.sheets) {
+      return { success: false, error: 'Google Sheets no inicializado. Revisa GOOGLE_SHEETS_CREDENTIALS.' };
+    }
+    if (!spreadsheetId || !phone) {
+      return { success: false, error: 'Faltan spreadsheetId o teléfono.' };
+    }
+
+    try {
+      const colEnd = this.columnLetter(headers.length);
+
+      // 1. Escribir/actualizar SIEMPRE los encabezados (reflejan la config actual).
+      await this.sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `A1:${colEnd}1`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [headers] },
+      });
+
+      // 2. Buscar fila existente por teléfono (columna A = clave de match).
+      const existing = await this.sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: 'A:A',
+      });
+      const phones = (existing.data.values ?? []).flat();
+      const rowIdx = phones.findIndex((p, i) => i > 0 && p === phone);
+
+      if (rowIdx > 0) {
+        await this.sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `A${rowIdx + 1}:${colEnd}${rowIdx + 1}`,
+          valueInputOption: 'RAW',
+          requestBody: { values: [row] },
+        });
+      } else {
+        await this.sheets.spreadsheets.values.append({
+          spreadsheetId,
+          range: `A:${colEnd}`,
+          valueInputOption: 'RAW',
+          insertDataOption: 'INSERT_ROWS',
+          requestBody: { values: [row] },
+        });
+      }
+
+      this.logger.log(
+        `[GoogleSheets] Contacto sincronizado (tel=${phone}) en ${spreadsheetId}`,
+        'GoogleSheetsService',
+      );
+      return { success: true };
+    } catch (err: unknown) {
+      const msg = (err as any)?.message ?? String(err);
+      this.logger.error(`[GoogleSheets] Error al sincronizar contacto: ${msg}`, 'GoogleSheetsService');
+      return { success: false, error: msg };
+    }
+  }
+
   async updateRow(
     spreadsheetId: string,
     sheetName: string,

@@ -2745,6 +2745,43 @@ export class AiAgentService {
           });
           if (matched) {
             if (rule.action === 'escalar') {
+              // Handoff REAL: pausa la IA en esta conversación y avisa al asesor.
+              try {
+                if (sessionData?.id) {
+                  await this.prisma.session.update({
+                    where: { id: sessionData.id },
+                    data: { agentDisabled: true },
+                  });
+                }
+              } catch (e: any) {
+                this.scopedLogger({ userId, instanceName, remoteJid }).warn(
+                  `[keywords] no se pudo pausar el agente: ${e?.message ?? e}`,
+                );
+              }
+              try {
+                const { notifUrl, notifApikey } = await this.resolveNotifSender(
+                  userId,
+                  `${server_url}/message/sendText/${instanceName}`,
+                  apikey,
+                );
+                const phones = await this.agentNotificationService.getNotificationPhones(userId, remoteJid);
+                if (phones.length > 0) {
+                  const clientPhone = remoteJid.split('@')[0];
+                  const who = sessionData?.customName || pushName || `+${clientPhone}`;
+                  const msg =
+                    `🙋 *Solicitud de asesor* (palabra clave)\n\n` +
+                    `El cliente *${who}* (+${clientPhone}) pidió hablar con un asesor.\n` +
+                    `La IA quedó *pausada* en esa conversación.\n\n` +
+                    `👉 agente.ia-app.com/chats`;
+                  await Promise.all(
+                    phones.map((p) => this.nodeSenderService.sendTextNode(notifUrl, notifApikey, p, msg)),
+                  );
+                }
+              } catch (e: any) {
+                this.scopedLogger({ userId, instanceName, remoteJid }).warn(
+                  `[keywords] no se pudo notificar al asesor: ${e?.message ?? e}`,
+                );
+              }
               return 'En este momento voy a transferirte con uno de nuestros asesores para que te puedan ayudar mejor. Por favor espera un momento. 🙏';
             }
             return rule.response;

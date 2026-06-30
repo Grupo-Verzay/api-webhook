@@ -795,6 +795,8 @@ export class WorkflowService implements OnModuleInit {
   ) {
     const { urlevo, apikey, instanceName, remoteJid, userId, pushName } = ctx;
 
+    this.logger.log(`[nodo] ejecutando tipo="${node.tipo}" id="${node.id}"`, 'WorkflowService');
+
     if (node.tipo === 'delay') {
       const delayTime = node?.delay || 15000;
       this.logger.log(

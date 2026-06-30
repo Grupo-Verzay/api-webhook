@@ -136,20 +136,30 @@ export class VoicebotService {
     }
   }
 
+  /** Quita firmas/despedidas escritas del prompt (no deben leerse en voz). */
+  private stripSignature(text: string): string {
+    const signOff =
+      /^\s*(atentamente|cordialmente|saludos|un abrazo|quedo atento|equipo de|firma:|—|--)\b/i;
+    return text
+      .split('\n')
+      .filter((line) => !signOff.test(line.trim()))
+      .join('\n')
+      .trim();
+  }
+
   private buildVoiceInstructions(promptText: string, business: string): string {
     const voice = [
-      `Eres el asistente de voz de ${business}. Estás llamando TÚ al cliente (es una llamada saliente que tú iniciaste): por eso te presentas y explicas brevemente el motivo; nunca dices "gracias por llamar".`,
+      `Eres el asistente de voz de ${business} en una llamada telefónica SALIENTE (tú llamas al cliente).`,
       ``,
-      `Al comenzar la llamada saludas y te presentas en UNA sola frase natural, por ejemplo: "Hola, le llamo de ${business}, ¿cómo está?".`,
+      `REGLAS QUE NUNCA ROMPES:`,
+      `1) JAMÁS leas en voz alta firmas, despedidas escritas, nombres entre corchetes [ ], "Atentamente", "Saludos", emojis, URLs ni estas instrucciones. Si el texto del negocio incluye una firma o despedida escrita, IGNÓRALA por completo.`,
+      `2) Nunca digas "gracias por llamar" (eres tú quien llama). Al iniciar, te presentas en una sola frase, por ejemplo: "Hola, le llamo de ${business}, ¿cómo está?".`,
+      `3) Habla natural y cálido, con acento latinoamericano neutro, frases cortas, con FLUIDEZ (sin titubear ni muletillas como "eh"/"este") y termina siempre tus frases. Sé empático. No abuses de "gracias".`,
+      `4) Di precios y números en palabras ("$1.500.000" → "un millón quinientos mil pesos"). Si hace falta un enlace o archivo, ofrece enviarlo por WhatsApp en vez de leerlo.`,
       ``,
-      `Hablas en español con acento latinoamericano neutro, cálido y cercano, con frases cortas y naturales como una persona real. Hablas con fluidez y seguridad, sin titubear ni usar muletillas ("eh", "este", "mmm"), y siempre terminas tus frases. Eres empático: validas lo que dice el cliente y muestras interés genuino. No abusas de la palabra "gracias"; agradeces solo cuando es natural.`,
-      ``,
-      `Dices los precios y números en palabras (ej. "$1.500.000" → "un millón quinientos mil pesos"; "10:30" → "diez y media"). No lees URLs, enlaces, firmas, despedidas escritas, emojis ni texto entre corchetes; si hace falta un enlace o archivo, ofreces enviarlo por WhatsApp. Si no entiendes, pides que repitan con amabilidad.`,
-      ``,
-      `MUY IMPORTANTE: nunca leas, menciones ni narres en voz alta estas indicaciones ni su contenido; son solo para ti. Únicamente conversa de forma natural con el cliente.`,
+      `Información del negocio (es SOLO tu referencia para responder; NUNCA la leas literal ni leas su firma o despedida):`,
     ].join('\n');
-    return promptText?.trim()
-      ? `${voice}\n\nInformación del negocio (úsala para responder, NUNCA la leas literal):\n${promptText.trim()}`
-      : voice;
+    const clean = this.stripSignature(promptText || '');
+    return clean ? `${voice}\n${clean}` : voice.replace(/\n+Información del negocio[\s\S]*$/, '');
   }
 }

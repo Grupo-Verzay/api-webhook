@@ -1030,6 +1030,7 @@ model KnowledgeBlock {
   keywords  String[]
   content   String
   category  String?
+  embedding Float[]  // vector semántico (RAG por embeddings); vacío = solo keywords
   isActive  Boolean  @default(true)
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())

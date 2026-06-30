@@ -411,7 +411,45 @@ export class AiAgentService {
     'scrape_web',
     'crear_recordatorio',
     'notificacion_asesor',
+    'ejecutar_flujos',
+    'listar_workflows',
+    'etiquetar_contacto',
+    'registrar_nota_seguimiento',
+    'buscar_plantilla',
+    'consultar_inventario',
   ]);
+
+  /** Genera el embedding (text-embedding-3-small) de un texto. Best-effort. */
+  private async embedText(apiKey: string, text: string): Promise<number[] | null> {
+    const clean = (text || '').trim();
+    if (!apiKey || !clean) return null;
+    try {
+      const openai = new OpenAI({ apiKey });
+      const r = await openai.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: clean.slice(0, 8000),
+      });
+      return r.data?.[0]?.embedding ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Similitud coseno entre dos vectores. */
+  private cosineSim(a: number[], b: number[]): number {
+    const n = Math.min(a.length, b.length);
+    if (n === 0) return 0;
+    let dot = 0;
+    let na = 0;
+    let nb = 0;
+    for (let i = 0; i < n; i++) {
+      dot += a[i] * b[i];
+      na += a[i] * a[i];
+      nb += b[i] * b[i];
+    }
+    if (na === 0 || nb === 0) return 0;
+    return dot / (Math.sqrt(na) * Math.sqrt(nb));
+  }
 
   /**
    * Resuelve el agentId del entrenamiento a usar para el CANAL de este mensaje.
@@ -2861,7 +2899,7 @@ export class AiAgentService {
       try {
         const knowledgeBlocks = await this.prisma.knowledgeBlock.findMany({
           where: { userId, isActive: true },
-          select: { keywords: true, content: true, title: true },
+          select: { keywords: true, content: true, title: true, embedding: true },
         });
         if (knowledgeBlocks.length > 0) {
           const ragNorm = (s: string) =>
@@ -2875,7 +2913,7 @@ export class AiAgentService {
             .filter((t) => t.length > 3)
             .map(ragNorm);
 
-          const relevant = knowledgeBlocks.filter((block) => {
+          const relevantKw = knowledgeBlocks.filter((block) => {
             // 1. Keyword match normalizado (tildes, guiones, mayúsculas)
             if (block.keywords.some((kw) => msgNorm.includes(ragNorm(kw)))) return true;
             // 2. Título: algún token del mensaje aparece en el título normalizado
@@ -2884,6 +2922,40 @@ export class AiAgentService {
             // 3. Contenido: tokens significativos (>4 chars) aparecen en el contenido
             const contentNorm = ragNorm(block.content);
             return msgTokens.filter((t) => t.length > 4).some((t) => contentNorm.includes(t));
+          });
+
+          // RAG SEMÁNTICO (embeddings): entiende el significado, no solo palabras.
+          // Best-effort: requiere clave OpenAI y bloques con embedding. Se UNE con
+          // el match por keywords; si algo falla, queda solo keywords.
+          let relevantSem: typeof knowledgeBlocks = [];
+          try {
+            if (apikeyOpenAi && apikeyOpenAi.startsWith('sk-')) {
+              const withEmb = knowledgeBlocks.filter(
+                (b) => Array.isArray(b.embedding) && b.embedding.length > 0,
+              );
+              if (withEmb.length > 0) {
+                const qEmb = await this.embedText(apikeyOpenAi, input);
+                if (qEmb && qEmb.length > 0) {
+                  relevantSem = withEmb
+                    .map((b) => ({ b, score: this.cosineSim(qEmb, b.embedding as number[]) }))
+                    .filter((x) => x.score >= 0.3)
+                    .sort((a, c) => c.score - a.score)
+                    .slice(0, 4)
+                    .map((x) => x.b);
+                }
+              }
+            }
+          } catch {
+            // semántico best-effort
+          }
+
+          // Unión: semántico primero (más preciso), luego keywords; dedupe.
+          const seenRag = new Set<string>();
+          const relevant = [...relevantSem, ...relevantKw].filter((b) => {
+            const k = `${b.title}|${b.content.slice(0, 64)}`;
+            if (seenRag.has(k)) return false;
+            seenRag.add(k);
+            return true;
           });
           if (relevant.length > 0) {
             knowledgeContext =

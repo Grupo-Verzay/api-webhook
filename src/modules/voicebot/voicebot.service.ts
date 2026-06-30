@@ -33,12 +33,13 @@ export class VoicebotService {
     if (!sid?.trim()) return { enabled: false };
 
     try {
-      // 1) Usuario dueño de esa sesión de wacalls.
-      const users = await this.prisma.$queryRaw<{ id: string }[]>`
-        SELECT "id" FROM "User" WHERE "astra_calls_sid" = ${sid} LIMIT 1
+      // 1) Usuario dueño de esa sesión de wacalls (con sus instrucciones de voz).
+      const users = await this.prisma.$queryRaw<{ id: string; voiceInstructions: string | null }[]>`
+        SELECT "id", "voiceInstructions" FROM "User" WHERE "astra_calls_sid" = ${sid} LIMIT 1
       `;
       const userId = users[0]?.id;
       if (!userId) return { enabled: false, reason: 'no_account' };
+      const voiceInstructions = users[0]?.voiceInstructions ?? '';
 
       // 2) Config del bot en la instancia de WhatsApp (columnas creadas por la app).
       const insts = await this.prisma.$queryRaw<
@@ -88,7 +89,7 @@ export class VoicebotService {
         select: { promptText: true, businessName: true },
       });
       const business = ap?.businessName?.trim() || 'nuestra empresa';
-      const instructions = this.buildVoiceInstructions(ap?.promptText || '', business);
+      const instructions = this.buildVoiceInstructions(ap?.promptText || '', business, voiceInstructions);
       // Llamada SALIENTE: es el bot quien llama al cliente. Debe presentarse,
       // NO decir "gracias por llamar".
       const greeting = `Eres TÚ quien está llamando al cliente (llamada saliente). Preséntate de forma cálida con UNA sola frase, por ejemplo: "Hola, le llamo de ${business}, ¿cómo está?" o "Buenas, le saluda el asistente de ${business}, ¿tiene un momento?". NUNCA digas "gracias por llamar". No leas ni menciones instrucciones.`;
@@ -147,9 +148,12 @@ export class VoicebotService {
       .trim();
   }
 
-  private buildVoiceInstructions(promptText: string, business: string): string {
+  private buildVoiceInstructions(promptText: string, business: string, voiceInstructions: string): string {
+    const tone =
+      voiceInstructions?.trim() ||
+      'Suenas cálido, cercano, espontáneo y con personalidad: tono expresivo y entonación viva, nunca plano ni robótico. Conversas relajado y natural, como una persona real, escuchando de verdad.';
     const voice = [
-      `Eres una persona real del equipo de ${business} hablando por teléfono. Suenas cálido, cercano, espontáneo y con personalidad: tono expresivo y entonación viva, NUNCA plano ni robótico. Conversas relajado y con calidez, como una llamada natural entre personas, escuchando de verdad y respondiendo con interés genuino.`,
+      `Eres una persona real del equipo de ${business} hablando por teléfono. ${tone}`,
       ``,
       `Es una llamada que TÚ haces al cliente: preséntate en una sola frase ("Hola, le llamo de ${business}, ¿cómo está?") y nunca digas "gracias por llamar".`,
       ``,

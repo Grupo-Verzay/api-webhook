@@ -10,9 +10,10 @@ export class VoicebotController {
   @Get('resolve')
   resolve(
     @Query('sid') sid: string,
+    @Query('from') from?: string,
     @Headers('x-voicebot-secret') secret?: string,
   ) {
-    return this.service.resolve(sid, secret);
+    return this.service.resolve(sid, from, secret);
   }
 
   // Reportado por wacalls al terminar una llamada del bot, para descontar

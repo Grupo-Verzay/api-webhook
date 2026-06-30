@@ -31,6 +31,7 @@ import { AgentNotificationService } from './services/notificacionService/notific
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { z } from 'zod';
 import { tool } from '@langchain/core/tools';
+import { convertToOpenAITool } from '@langchain/core/utils/function_calling';
 import { PrismaService } from 'src/database/prisma.service';
 import { systemPromptWorkflow } from './utils/rulesPrompt';
 import OpenAI from 'openai';
@@ -385,6 +386,130 @@ export class AiAgentService {
     tools.push(this.buildMarcarDescartadoTool(params));
 
     return tools;
+  }
+
+  // toolTypes apropiados para una llamada de voz en tiempo real (voicebot).
+  // Excluye herramientas de chat/meta (marcar_descartado, ejecutar_flujos, etc.)
+  // que no aplican o serían confusas habladas. Citas, productos, cotización,
+  // datos de cliente, agenda y notificación al asesor sí son útiles por voz.
+  private static readonly VOICEBOT_TOOL_TYPES = new Set<string>([
+    'listar_servicios_agenda',
+    'consultar_slots_disponibles',
+    'crear_cita',
+    'listar_servicios_booking',
+    'consultar_slots_booking',
+    'crear_cita_booking',
+    'buscar_producto',
+    'listar_productos',
+    'consultar_inventario',
+    'crear_cotizacion',
+    'buscar_cliente_por_dato',
+    'consultar_datos_cliente',
+    'search_by_field',
+    'leer_google_sheets',
+    'scrape_web',
+    'crear_recordatorio',
+    'notificacion_asesor',
+  ]);
+
+  /** Deriva server_url/apikey/instanceName de WhatsApp de la cuenta (como el webhook). */
+  private async resolveInstanceCreds(
+    userId: string,
+  ): Promise<{ server_url: string; apikey: string; instanceName: string } | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        apiKey: { select: { url: true } },
+        instancias: {
+          where: { instanceType: 'Whatsapp' },
+          select: { instanceName: true, instanceId: true },
+          take: 1,
+        },
+      },
+    });
+    const inst = user?.instancias?.[0];
+    const url = user?.apiKey?.url?.trim();
+    if (!inst || !url) return null;
+    const base = (/^https?:\/\//i.test(url) ? url : `https://${url}`).replace(/\/+$/, '');
+    return { server_url: base, apikey: inst.instanceId, instanceName: inst.instanceName };
+  }
+
+  /**
+   * Puente para el VOICEBOT: arma las MISMAS herramientas habilitadas de la cuenta
+   * (según permisos/config) en formato OpenAI Realtime, y devuelve un `invoke` que
+   * las ejecuta (reusando la lógica del agente de chat: citas reales, productos,
+   * cotizaciones, etc.). Best-effort: ante cualquier fallo devuelve sin herramientas.
+   */
+  async buildVoicebotToolset(
+    userId: string,
+    remoteJid: string,
+    pushName: string,
+  ): Promise<{ defs: any[]; invoke: (name: string, argsJson: string) => Promise<string> }> {
+    const empty = { defs: [] as any[], invoke: async () => 'Acción no disponible.' };
+    try {
+      const creds = await this.resolveInstanceCreds(userId);
+      if (!creds) return empty;
+      const client = await this.getClientForUser(userId).catch(() => null);
+      if (!client) return empty;
+      const allConfigs = await this.externalClientDataService
+        .getToolConfigs(userId)
+        .catch(() => [] as any[]);
+
+      const params = {
+        userId,
+        sessionId: '',
+        server_url: creds.server_url,
+        apikey: creds.apikey,
+        instanceName: creds.instanceName,
+        remoteJid,
+        pushName: pushName ?? '',
+        client,
+      };
+
+      const notif = { value: false };
+      const byName = new Map<string, any>();
+      const defs: any[] = [];
+      for (const cfg of allConfigs) {
+        if (!cfg?.isEnabled) continue;
+        if (!AiAgentService.VOICEBOT_TOOL_TYPES.has(cfg.toolType)) continue;
+        const t = this.buildToolFromConfig(cfg, params as any, notif);
+        if (!t || !t.name) continue;
+        byName.set(t.name, t);
+        try {
+          const oa: any = convertToOpenAITool(t);
+          if (oa?.function?.name) {
+            defs.push({
+              type: 'function',
+              name: oa.function.name,
+              description: oa.function.description ?? '',
+              parameters: oa.function.parameters ?? { type: 'object', properties: {} },
+            });
+          }
+        } catch {
+          /* esquema no convertible — omitir esa tool */
+        }
+      }
+
+      const invoke = async (name: string, argsJson: string): Promise<string> => {
+        const t = byName.get(name);
+        if (!t) return 'Acción no disponible.';
+        let args: any = {};
+        try { args = JSON.parse(argsJson || '{}'); } catch { /* args vacíos */ }
+        try {
+          const r = await t.invoke(args);
+          return typeof r === 'string' ? r : JSON.stringify(r);
+        } catch (e: any) {
+          this.scopedLogger({ userId, instanceName: creds.instanceName, remoteJid }).warn(
+            `[voicebot] tool "${name}" falló: ${e?.message ?? e}`,
+          );
+          return 'No pude completar esa acción en este momento.';
+        }
+      };
+
+      return { defs, invoke };
+    } catch {
+      return empty;
+    }
   }
 
   /**

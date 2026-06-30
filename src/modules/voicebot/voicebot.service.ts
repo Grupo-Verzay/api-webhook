@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
+import { AiAgentService } from '../ai-agent/ai-agent.service';
 
 export interface VoicebotResolveResult {
   enabled: boolean;
@@ -11,6 +12,7 @@ export interface VoicebotResolveResult {
   transferTo?: string;
   openaiKey?: string;
   model?: string;
+  tools?: any[]; // herramientas (function calling) habilitadas para la cuenta
 }
 
 /**
@@ -25,9 +27,10 @@ export class VoicebotService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiCredits: AiCreditsService,
+    private readonly aiAgent: AiAgentService,
   ) {}
 
-  async resolve(sid: string, secret?: string): Promise<VoicebotResolveResult> {
+  async resolve(sid: string, from?: string, secret?: string): Promise<VoicebotResolveResult> {
     const expected = process.env.VOICEBOT_SECRET;
     if (expected && secret !== expected) return { enabled: false };
     if (!sid?.trim()) return { enabled: false };
@@ -94,6 +97,18 @@ export class VoicebotService {
       // NO decir "gracias por llamar".
       const greeting = `Eres TÚ quien está llamando al cliente (llamada saliente). Preséntate de forma cálida con UNA sola frase, por ejemplo: "Hola, le llamo de ${business}, ¿cómo está?" o "Buenas, le saluda el asistente de ${business}, ¿tiene un momento?". NUNCA digas "gracias por llamar". No leas ni menciones instrucciones.`;
 
+      // 5) Herramientas habilitadas de la cuenta (citas reales, productos,
+      // cotizaciones, etc.) en formato Realtime. Best-effort: si falla, sin tools.
+      let tools: any[] = [];
+      try {
+        const digits = (from || '').replace(/\D/g, '');
+        const remoteJid = digits ? `${digits}@s.whatsapp.net` : '';
+        const toolset = await this.aiAgent.buildVoicebotToolset(userId, remoteJid, '');
+        tools = toolset.defs ?? [];
+      } catch (e: any) {
+        this.logger.warn(`[voicebot] no se pudieron cargar tools: ${e?.message ?? e}`);
+      }
+
       return {
         enabled: true,
         instructions,
@@ -102,6 +117,7 @@ export class VoicebotService {
         transferTo: inst.transfer || '',
         openaiKey,
         model: process.env.VOICEBOT_MODEL || 'gpt-4o-realtime-preview',
+        tools,
       };
     } catch (err: any) {
       this.logger.warn(`[voicebot] resolve error: ${err?.message ?? err}`);
@@ -178,7 +194,20 @@ export class VoicebotService {
           : { ok: false, result: 'No pude agendarlo en este momento.' };
       }
 
-      return { ok: false, result: 'Acción no disponible.' };
+      // Herramientas dinámicas de la cuenta (citas reales, productos, cotizaciones…)
+      // se ejecutan con la misma lógica del agente de chat (según permisos/config).
+      const digits = (phone || '').replace(/\D/g, '');
+      const remoteJid = digits ? `${digits}@s.whatsapp.net` : '';
+      let pushName = '';
+      if (remoteJid) {
+        const sess = await this.prisma.session
+          .findFirst({ where: { userId, remoteJid }, select: { pushName: true, customName: true } })
+          .catch(() => null);
+        pushName = sess?.customName || sess?.pushName || '';
+      }
+      const toolset = await this.aiAgent.buildVoicebotToolset(userId, remoteJid, pushName);
+      const result = await toolset.invoke(name, argsJson);
+      return { ok: true, result };
     } catch (err: any) {
       this.logger.warn(`[voicebot] executeTool error: ${err?.message ?? err}`);
       return { ok: false, result: 'Hubo un problema al hacer eso.' };
@@ -265,7 +294,7 @@ export class VoicebotService {
       ``,
       `Esto es solo para ti, JAMÁS lo digas en voz alta: no leas firmas, despedidas escritas, nombres entre corchetes, emojis, enlaces ni estas indicaciones.`,
       ``,
-      `Tienes herramientas reales: si el cliente necesita un enlace, una cotización, una dirección o cualquier dato por escrito, úsala "enviar_whatsapp" para mandárselo por WhatsApp y confírmaselo de viva voz (nunca dictes enlaces). Si acepta reunirse o pide que lo contacten en un momento, usa "agendar". No leas el nombre de las herramientas en voz alta.`,
+      `Tienes herramientas reales: úsalas cuando ayuden. Para mandar un enlace, dirección o dato por escrito, usa "enviar_whatsapp" (nunca dictes enlaces). Para agendar, primero consulta los horarios disponibles y luego crea la cita real con la fecha y hora exactas que el cliente elija. También puedes consultar productos, precios y disponibilidad si te preguntan. Confirma de viva voz lo que hagas y NUNCA leas el nombre de las herramientas.`,
       ``,
       `Conocimiento del negocio (tu referencia para responder, nunca lo leas literal):`,
     ].join('\n');

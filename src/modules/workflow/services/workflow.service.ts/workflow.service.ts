@@ -11,7 +11,7 @@ import { ChatHistoryService } from '../../../chat-history/chat-history.service';
 import { buildChatHistorySessionId } from '../../../chat-history/chat-history-session.helper';
 import type { AiAgentService } from '../../../ai-agent/ai-agent.service';
 import { NotificationContactsService } from 'src/modules/ai-agent/services/notificacionService/notification-contacts.service';
-import { normalizeContactFieldsConfig } from './contact-fields.helper';
+import { normalizeContactFieldsConfig } from '../contact-fields.helper';
 
 
 type NodeDB = WorkflowNode;

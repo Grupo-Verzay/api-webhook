@@ -213,6 +213,18 @@ export class RemindersRunnerService {
         const sender = await this.factory.getSender(instanceName);
 
         for (const remoteJid of targets) {
+          // Gate por canal: los recordatorios proactivos solo van a WhatsApp. En
+          // FB/IG y otros canales la ventana de 24h de Meta no permite escribir
+          // primero, así que se omiten.
+          const jid = (remoteJid ?? '').toLowerCase();
+          const isWhatsapp =
+            jid.endsWith('@s.whatsapp.net') || jid.endsWith('@c.us') || jid.endsWith('@lid');
+          if (!isWhatsapp) {
+            this.logger.warn(
+              `[reminders] omitido canal no-WhatsApp (sin envío proactivo) jid=${remoteJid}`,
+            );
+            continue;
+          }
           if (message) {
             const ok = await sender.sendText(instanceName, remoteJid, message, serverUrl, apikey);
             if (!ok) {

@@ -30,6 +30,21 @@ export class CrmFollowUpRunnerService {
     return buildWhatsAppJidCandidates((remoteJid ?? '').trim());
   }
 
+  /**
+   * ¿El canal admite mensajes PROACTIVOS (seguimientos)? Solo WhatsApp. En redes
+   * (Facebook @messenger / Instagram @instagram) y otros canales, la política de
+   * Meta (ventana de 24h) no permite escribir primero, así que no se les envían
+   * seguimientos automáticos.
+   */
+  private isWhatsappChannel(remoteJid?: string): boolean {
+    const jid = (remoteJid ?? '').toLowerCase();
+    return (
+      jid.endsWith('@s.whatsapp.net') ||
+      jid.endsWith('@c.us') ||
+      jid.endsWith('@lid')
+    );
+  }
+
   private normalizeServerUrl(serverUrl: string) {
     const trimmed = (serverUrl ?? '').trim().replace(/\/+$/, '');
     if (!trimmed) return '';
@@ -281,6 +296,22 @@ export class CrmFollowUpRunnerService {
           allowedWeekdays,
           sendStartTime,
           sendEndTime,
+        });
+        summary.skipped += 1;
+        continue;
+      }
+
+      // Gate por canal: los seguimientos proactivos solo aplican a WhatsApp.
+      // En FB/IG/otros se cancela (no se reintenta) en vez de fallar.
+      if (!this.isWhatsappChannel(followUp.session.remoteJid)) {
+        await this.prisma.crmFollowUp.update({
+          where: { id: followUp.id },
+          data: {
+            status: CrmFollowUpStatus.CANCELLED,
+            cancelledAt: new Date(),
+            errorReason: 'Canal sin seguimientos proactivos (solo WhatsApp).',
+            lastProcessedAt: new Date(),
+          },
         });
         summary.skipped += 1;
         continue;

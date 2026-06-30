@@ -208,6 +208,14 @@ export class WebhookService {
         const resolved = await this.chatStore.resolveLid(userId, from);
         if (resolved) remoteJid = resolved;
       }
+      // Si acabamos de hacer una llamada SALIENTE a este número (p. ej. el
+      // voicebot), este evento es el "eco" y NO debe registrarse como perdida.
+      const phoneDigits = remoteJid.split('@')[0].split(':')[0];
+      if (await this.chatStore.recentOutgoingCallExists(userId, phoneDigits)) {
+        this.logger.log(`[CALL] eco de saliente ignorado (no perdida) jid=${remoteJid}`);
+        return;
+      }
+
       const isVideo = Boolean(call.isVideo);
       const callId = String(call.id || `${from}_${call.date ?? ''}`);
       const ts =

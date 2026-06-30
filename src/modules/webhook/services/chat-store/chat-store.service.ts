@@ -270,6 +270,27 @@ export class ChatStoreService {
     }
   }
 
+  /**
+   * ¿Hicimos una llamada SALIENTE a este número en los últimos minutos? Se usa
+   * para no registrar como "perdida" el eco de una llamada que iniciamos
+   * nosotros (p. ej. las del voicebot). Compara por dígitos del número.
+   */
+  async recentOutgoingCallExists(userId: string, phoneDigits: string): Promise<boolean> {
+    if (!userId || !phoneDigits) return false;
+    try {
+      const rows = await this.prisma.$queryRaw<{ n: bigint }[]>`
+        SELECT COUNT(*)::bigint AS n FROM "chat_messages"
+        WHERE "userId" = ${userId}
+          AND "messageType" = 'call' AND "fromMe" = true
+          AND split_part("remoteJid", '@', 1) = ${phoneDigits}
+          AND "messageTimestamp" > NOW() - INTERVAL '3 minutes'
+      `;
+      return Number(rows[0]?.n ?? 0) > 0;
+    } catch {
+      return false;
+    }
+  }
+
   /** Resuelve un lid a su número (remoteJid) si fue aprendido antes. */
   async resolveLid(userId: string, lidRaw: string): Promise<string | null> {
     const lid = this.normLid(lidRaw);

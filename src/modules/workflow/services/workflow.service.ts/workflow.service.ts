@@ -559,6 +559,7 @@ export class WorkflowService implements OnModuleInit {
           remoteJid,
           fields,
           node.message,
+          (session as any)?.id ?? null,
         );
       }
 
@@ -608,6 +609,70 @@ export class WorkflowService implements OnModuleInit {
       .map((f) => ({ key: f.key, label: f.label }));
   }
 
+  /**
+   * Construye la conversación para la extracción combinando: (1) las respuestas
+   * capturadas en los flujos de preguntas (SessionWorkflowState.intentionData:
+   * lastQuestion + finalText) — clave porque los flujos guionados NO siempre
+   * pasan por el agente IA / n8nChatHistory — y (2) el historial del agente IA.
+   */
+  private async buildConversationForExtraction(
+    sessionId: number | null | undefined,
+    instanceName: string,
+    remoteJid: string,
+  ): Promise<string> {
+    const parts: string[] = [];
+
+    if (sessionId) {
+      try {
+        const states = await this.prisma.sessionWorkflowState.findMany({
+          where: { sessionId },
+          orderBy: { updatedAt: 'asc' },
+          select: { intentionData: true },
+        });
+        for (const st of states) {
+          const d = ((st.intentionData as any) ?? {}) as {
+            lastQuestion?: string;
+            finalText?: string;
+            recentUserTexts?: unknown;
+          };
+          const q = (d.lastQuestion ?? '').toString().trim();
+          const a = (d.finalText ?? '').toString().trim();
+          if (q) parts.push(`Negocio: ${q}`);
+          if (a) parts.push(`Cliente: ${a}`);
+          if (Array.isArray(d.recentUserTexts)) {
+            for (const r of d.recentUserTexts) {
+              const t = (r ?? '').toString().trim();
+              if (t && t !== a) parts.push(`Cliente: ${t}`);
+            }
+          }
+        }
+      } catch {
+        // sin estados de workflow
+      }
+    }
+
+    try {
+      const sessionHistoryId = buildChatHistorySessionId(instanceName, remoteJid);
+      const history = await this.chatHistoryService.getChatHistory(sessionHistoryId);
+      for (const t of history.slice(-20)) {
+        const s = (t ?? '').toString().trim();
+        if (s) parts.push(s);
+      }
+    } catch {
+      // sin historial del agente
+    }
+
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const p of parts) {
+      if (!seen.has(p)) {
+        seen.add(p);
+        out.push(p);
+      }
+    }
+    return out.slice(-40).join('\n').trim();
+  }
+
   /** Extrae con IA los campos pedidos desde la conversación reciente. */
   private async extractContactFields(
     userId: string,
@@ -615,21 +680,16 @@ export class WorkflowService implements OnModuleInit {
     remoteJid: string,
     fields: { key: string; label: string }[],
     customInstruction?: string | null,
+    sessionId?: number | null,
   ): Promise<Record<string, unknown>> {
     try {
-      const sessionHistoryId = buildChatHistorySessionId(instanceName, remoteJid);
-      const history = await this.chatHistoryService.getChatHistory(sessionHistoryId);
-      const recent = history
-        .slice(-15)
-        .map((t) => (t ?? '').trim())
-        .filter(Boolean)
-        .join('\n');
+      const recent = await this.buildConversationForExtraction(sessionId, instanceName, remoteJid);
       this.logger.log(
-        `[guardar-ficha] extracción: sessionId="${sessionHistoryId}" mensajes=${history.length} historialChars=${recent.length} campos=${fields.length}`,
+        `[guardar-ficha] extracción: chars=${recent.length} campos=${fields.length} sessionId=${sessionId ?? '-'}`,
         'WorkflowService',
       );
       if (!recent) {
-        this.logger.warn('[guardar-ficha] Historial vacío: no hay conversación para extraer.', 'WorkflowService');
+        this.logger.warn('[guardar-ficha] Sin conversación para extraer (historial e intenciones vacíos).', 'WorkflowService');
         return {};
       }
 

@@ -37,6 +37,7 @@ import { systemPromptWorkflow } from './utils/rulesPrompt';
 import OpenAI from 'openai';
 import { toFile } from 'openai/uploads';
 import { CRM_AGENT_PROMPT_IDS } from '../../types/CRM_AGENT_PROMPT_IDS';
+import { BASE_CHANNEL_AGENT_ID, CHANNEL_AGENT_IDS, resolveChannelKey } from '../../types/channel-agent-ids';
 
 // Mapa código de país → timezone (prefijos más largos primero para evitar coincidencias parciales)
 const COUNTRY_TZ_MAP: [string, string][] = [
@@ -411,6 +412,30 @@ export class AiAgentService {
     'crear_recordatorio',
     'notificacion_asesor',
   ]);
+
+  /**
+   * Resuelve el agentId del entrenamiento a usar para el CANAL de este mensaje.
+   * Mira la instancia (instanceType + metaChannel) y devuelve el agentId del canal
+   * SOLO si existe un AgentPrompt propio para él; si no, cae al base (WhatsApp QR).
+   */
+  private async resolveChannelPromptAgentId(userId: string, instanceName: string): Promise<string> {
+    if (!instanceName) return BASE_CHANNEL_AGENT_ID;
+    try {
+      const inst = await this.prisma.instancia.findFirst({
+        where: { instanceName },
+        select: { instanceType: true, metaChannel: true },
+      });
+      const key = resolveChannelKey(inst?.instanceType, inst?.metaChannel);
+      const channelAgentId = CHANNEL_AGENT_IDS[key];
+      if (channelAgentId === BASE_CHANNEL_AGENT_ID) return BASE_CHANNEL_AGENT_ID;
+      const count = await this.prisma.agentPrompt.count({
+        where: { userId, agentId: channelAgentId },
+      });
+      return count > 0 ? channelAgentId : BASE_CHANNEL_AGENT_ID;
+    } catch {
+      return BASE_CHANNEL_AGENT_ID;
+    }
+  }
 
   /** Deriva server_url/apikey/instanceName de WhatsApp de la cuenta (como el webhook). */
   private async resolveInstanceCreds(
@@ -2582,8 +2607,13 @@ export class AiAgentService {
       // Inicializar LLM (LangChain client) — local a esta llamada para evitar race conditions
       const client = this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
 
+      // Entrenamiento POR CANAL: cada canal (WhatsApp QR/Cloud, Facebook,
+      // Instagram, Telegram) puede tener su PROPIO AgentPrompt. Si el canal de
+      // este mensaje no tiene entrenamiento propio, cae al de WhatsApp QR (base),
+      // así no cambia el comportamiento de quien no lo separó.
+      const promptAgentId = await this.resolveChannelPromptAgentId(userId, instanceName);
       const systemPrompt = await this.promptService
-        .getPromptUserId(userId, CRM_AGENT_PROMPT_IDS.systemPrompAI)
+        .getPromptUserId(userId, promptAgentId)
         .catch(() => '');
 
       //logger.log('PROMPT:', systemPrompt);

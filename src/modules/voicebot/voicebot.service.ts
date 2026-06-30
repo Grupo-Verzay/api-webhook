@@ -137,6 +137,110 @@ export class VoicebotService {
     }
   }
 
+  /**
+   * Ejecuta una herramienta solicitada por el bot durante la llamada
+   * (function calling). Devuelve un texto de resultado que el bot dirá.
+   */
+  async executeTool(
+    sid: string,
+    phone: string,
+    name: string,
+    argsJson: string,
+    secret?: string,
+  ): Promise<{ ok: boolean; result: string }> {
+    const expected = process.env.VOICEBOT_SECRET;
+    if (expected && secret !== expected) return { ok: false, result: 'No autorizado.' };
+    try {
+      const users = await this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "User" WHERE "astra_calls_sid" = ${sid} LIMIT 1
+      `;
+      const userId = users[0]?.id;
+      if (!userId) return { ok: false, result: 'Cuenta no encontrada.' };
+
+      let args: any = {};
+      try { args = JSON.parse(argsJson || '{}'); } catch { /* ignore */ }
+
+      if (name === 'enviar_whatsapp') {
+        const msg = String(args.mensaje || args.texto || '').trim();
+        if (!msg) return { ok: false, result: 'Falta el mensaje.' };
+        const sent = await this.sendWhatsapp(userId, phone, msg);
+        return sent
+          ? { ok: true, result: 'Listo, ya se lo envié por WhatsApp.' }
+          : { ok: false, result: 'No pude enviarlo por WhatsApp en este momento.' };
+      }
+
+      if (name === 'agendar') {
+        const when = String(args.fecha_hora || args.cuando || '').trim();
+        const motivo = String(args.motivo || 'Reunión').trim();
+        const ok = await this.createReunionTask(userId, phone, when, motivo);
+        return ok
+          ? { ok: true, result: 'Perfecto, ya quedó agendado.' }
+          : { ok: false, result: 'No pude agendarlo en este momento.' };
+      }
+
+      return { ok: false, result: 'Acción no disponible.' };
+    } catch (err: any) {
+      this.logger.warn(`[voicebot] executeTool error: ${err?.message ?? err}`);
+      return { ok: false, result: 'Hubo un problema al hacer eso.' };
+    }
+  }
+
+  /** Envía un texto/enlace por WhatsApp (Evolution) al cliente de la llamada. */
+  private async sendWhatsapp(userId: string, phone: string, text: string): Promise<boolean> {
+    const digits = (phone || '').replace(/\D/g, '');
+    if (!digits) return false;
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          apiKey: { select: { url: true } },
+          instancias: {
+            where: { instanceType: 'Whatsapp' },
+            select: { instanceName: true, instanceId: true },
+            take: 1,
+          },
+        },
+      });
+      const inst = user?.instancias?.[0];
+      const srv = user?.apiKey?.url?.trim();
+      if (!inst || !srv) return false;
+      const base = (/^https?:\/\//i.test(srv) ? srv : `https://${srv}`).replace(/\/+$/, '');
+      const url = `${base}/message/sendText/${encodeURIComponent(inst.instanceName)}`;
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: inst.instanceId },
+        body: JSON.stringify({ number: digits, text }),
+      });
+      return r.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Crea una tarea interna de "Reunión" para el asesor (con lo dicho en la llamada). */
+  private async createReunionTask(userId: string, phone: string, when: string, motivo: string): Promise<boolean> {
+    const digits = (phone || '').replace(/\D/g, '');
+    const contactJid = digits ? `${digits}@s.whatsapp.net` : null;
+    const title = `Reunión: ${motivo}${when ? ` (${when})` : ''}`.slice(0, 250);
+    try {
+      await this.prisma.$executeRaw`
+        INSERT INTO "tasks" (
+          "ownerId", "assignedToId", "assignedToName", "sessionId", "contactName",
+          "contactJid", "title", "type", "dueDate", "status", "createdById",
+          "createdAt", "updatedAt"
+        ) VALUES (
+          ${userId}, ${userId}, ${null}, ${null}, ${null},
+          ${contactJid}, ${title}, 'Reunión', NOW(), 'pending', ${userId},
+          NOW(), NOW()
+        )
+      `;
+      return true;
+    } catch (err: any) {
+      this.logger.warn(`[voicebot] createReunionTask error: ${err?.message ?? err}`);
+      return false;
+    }
+  }
+
   /** Quita firmas/despedidas escritas del prompt (no deben leerse en voz). */
   private stripSignature(text: string): string {
     const signOff =

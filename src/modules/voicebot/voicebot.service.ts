@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
+import { AiCreditsService } from '../ai-credits/ai-credits.service';
 
 export interface VoicebotResolveResult {
   enabled: boolean;
@@ -20,7 +21,10 @@ export interface VoicebotResolveResult {
 export class VoicebotService {
   private readonly logger = new Logger(VoicebotService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly aiCredits: AiCreditsService,
+  ) {}
 
   async resolve(sid: string, secret?: string): Promise<VoicebotResolveResult> {
     const expected = process.env.VOICEBOT_SECRET;
@@ -63,6 +67,16 @@ export class VoicebotService {
       }
       if (!openaiKey) return { enabled: false };
 
+      // 3b) Créditos: si el usuario no tiene créditos disponibles, no se activa.
+      const credit = await this.prisma.iaCredit.findUnique({
+        where: { userId },
+        select: { total: true, used: true },
+      });
+      if (credit && credit.used >= credit.total) {
+        this.logger.log(`[voicebot] sin créditos disponibles userId=${userId}`);
+        return { enabled: false };
+      }
+
       // 4) Instrucciones: el prompt compilado del agente + envoltura de voz.
       const ap = await this.prisma.agentPrompt.findFirst({
         where: { userId },
@@ -85,6 +99,34 @@ export class VoicebotService {
     } catch (err: any) {
       this.logger.warn(`[voicebot] resolve error: ${err?.message ?? err}`);
       return { enabled: false };
+    }
+  }
+
+  /**
+   * Descuenta créditos por el uso del voicebot. wacalls reporta los tokens
+   * consumidos por la llamada; se cobran del mismo contador que los mensajes
+   * (trackTokens), con un multiplicador opcional (VOICEBOT_TOKEN_MULTIPLIER).
+   */
+  async chargeUsage(sid: string, tokens: number, secret?: string): Promise<{ ok: boolean }> {
+    const expected = process.env.VOICEBOT_SECRET;
+    if (expected && secret !== expected) return { ok: false };
+    if (!sid?.trim() || !tokens || tokens <= 0) return { ok: false };
+
+    try {
+      const users = await this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "User" WHERE "astra_calls_sid" = ${sid} LIMIT 1
+      `;
+      const userId = users[0]?.id;
+      if (!userId) return { ok: false };
+
+      const multiplier = Number(process.env.VOICEBOT_TOKEN_MULTIPLIER || '1') || 1;
+      const credits = Math.ceil(tokens * multiplier);
+      await this.aiCredits.trackTokens(userId, credits);
+      this.logger.log(`[voicebot] cobrados ${credits} créditos (tokens=${tokens} x${multiplier}) userId=${userId}`);
+      return { ok: true };
+    } catch (err: any) {
+      this.logger.warn(`[voicebot] chargeUsage error: ${err?.message ?? err}`);
+      return { ok: false };
     }
   }
 

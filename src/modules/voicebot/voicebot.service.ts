@@ -46,9 +46,10 @@ export class VoicebotService {
 
       // 2) Config del bot en la instancia de WhatsApp (columnas creadas por la app).
       const insts = await this.prisma.$queryRaw<
-        { enabled: boolean; voice: string | null; transfer: string | null }[]
+        { enabled: boolean; voice: string | null; transfer: string | null; prompt: string | null }[]
       >`
-        SELECT "voicebot_enabled" AS enabled, "voicebot_voice" AS voice, "voicebot_transfer_to" AS transfer
+        SELECT "voicebot_enabled" AS enabled, "voicebot_voice" AS voice,
+               "voicebot_transfer_to" AS transfer, "voicebot_prompt" AS prompt
         FROM "Instancias"
         WHERE "userId" = ${userId} AND ("instanceType" = 'Whatsapp' OR "instanceType" = 'whatsapp')
         ORDER BY "id" ASC
@@ -92,7 +93,10 @@ export class VoicebotService {
         select: { promptText: true, businessName: true },
       });
       const business = ap?.businessName?.trim() || 'nuestra empresa';
-      const instructions = this.buildVoiceInstructions(ap?.promptText || '', business, voiceInstructions);
+      // Prompt PROPIO del agente de llamadas (separado del de chat). Si está vacío,
+      // se usa el prompt del agente de chat como respaldo.
+      const callPrompt = (inst.prompt || '').trim() || ap?.promptText || '';
+      const instructions = this.buildVoiceInstructions(callPrompt, business, voiceInstructions);
       // Llamada SALIENTE: es el bot quien llama al cliente. Debe presentarse,
       // NO decir "gracias por llamar".
       const greeting = `Eres TÚ quien está llamando al cliente (llamada saliente). Preséntate de forma cálida con UNA sola frase, por ejemplo: "Hola, le llamo de ${business}, ¿cómo está?" o "Buenas, le saluda el asistente de ${business}, ¿tiene un momento?". NUNCA digas "gracias por llamar". No leas ni menciones instrucciones.`;

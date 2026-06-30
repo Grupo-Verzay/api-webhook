@@ -89,7 +89,9 @@ export class VoicebotService {
       });
       const business = ap?.businessName?.trim() || 'nuestra empresa';
       const instructions = this.buildVoiceInstructions(ap?.promptText || '', business);
-      const greeting = `Saluda de forma natural y cálida con UNA sola frase hablada, por ejemplo: "Hola, gracias por llamar a ${business}, ¿en qué puedo ayudarte?". No leas ni menciones instrucciones.`;
+      // Llamada SALIENTE: es el bot quien llama al cliente. Debe presentarse,
+      // NO decir "gracias por llamar".
+      const greeting = `Eres TÚ quien está llamando al cliente (llamada saliente). Preséntate de forma cálida con UNA sola frase, por ejemplo: "Hola, le llamo de ${business}, ¿cómo está?" o "Buenas, le saluda el asistente de ${business}, ¿tiene un momento?". NUNCA digas "gracias por llamar". No leas ni menciones instrucciones.`;
 
       return {
         enabled: true,
@@ -137,7 +139,7 @@ export class VoicebotService {
   private buildVoiceInstructions(promptText: string, business: string): string {
     const voice = [
       `# IDENTIDAD`,
-      `Eres el asistente de voz de ${business} y estás en una llamada telefónica real con un cliente.`,
+      `Eres el asistente de voz de ${business}. ESTÁS LLAMANDO TÚ al cliente (llamada saliente que tú iniciaste): por eso debes presentarte y explicar brevemente el motivo; nunca digas "gracias por llamar".`,
       ``,
       `# CÓMO HABLAS`,
       `- Español con acento latinoamericano neutro, cálido y cercano, a ritmo natural.`,

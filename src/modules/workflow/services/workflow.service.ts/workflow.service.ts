@@ -575,7 +575,9 @@ export class WorkflowService implements OnModuleInit {
       void this.syncFichaToSheets(userId, phone, name, fields, fichaData);
 
       this.logger.log(
-        `[guardar-ficha] Ficha actualizada (userId=${userId}, tel=${phone}, ia=${!!node.aiEnabled}, campos=${Object.keys(fichaData).length})`,
+        `[guardar-ficha] OK userId=${userId} tel=${phone} ia=${!!node.aiEnabled} ` +
+          `camposConfig=${fields.length} extraidos=[${Object.keys(extracted).join(',') || 'ninguno'}] ` +
+          `guardados=${Object.keys(fichaData).length} extSvc=${!!this.externalClientDataService} aiSvc=${!!this.aiAgentService}`,
         'WorkflowService',
       );
     } catch (err: any) {
@@ -622,7 +624,14 @@ export class WorkflowService implements OnModuleInit {
         .map((t) => (t ?? '').trim())
         .filter(Boolean)
         .join('\n');
-      if (!recent) return {};
+      this.logger.log(
+        `[guardar-ficha] extracción: sessionId="${sessionHistoryId}" mensajes=${history.length} historialChars=${recent.length} campos=${fields.length}`,
+        'WorkflowService',
+      );
+      if (!recent) {
+        this.logger.warn('[guardar-ficha] Historial vacío: no hay conversación para extraer.', 'WorkflowService');
+        return {};
+      }
 
       const fieldList = fields.map((f) => `- ${f.key}: ${f.label}`).join('\n');
       const extra = (customInstruction ?? '').trim();
@@ -643,6 +652,10 @@ export class WorkflowService implements OnModuleInit {
         systemPrompt,
         userJson: { conversacion: recent },
       });
+      this.logger.log(
+        `[guardar-ficha] extractJson => ${result ? JSON.stringify(result).slice(0, 300) : 'null (modelo del usuario sin configurar o respuesta inválida)'}`,
+        'WorkflowService',
+      );
       if (!result) return {};
 
       const validKeys = new Set(fields.map((f) => f.key));

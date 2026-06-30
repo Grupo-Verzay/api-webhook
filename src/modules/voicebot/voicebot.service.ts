@@ -3,6 +3,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { AiCreditsService } from '../ai-credits/ai-credits.service';
 import { AiAgentService } from '../ai-agent/ai-agent.service';
 import { LLAMADAS_AGENT_ID } from '../../types/channel-agent-ids';
+import { NodeSenderService } from '../workflow/services/node-sender.service.ts/node-sender.service';
 
 export interface VoicebotResolveResult {
   enabled: boolean;
@@ -29,6 +30,7 @@ export class VoicebotService {
     private readonly prisma: PrismaService,
     private readonly aiCredits: AiCreditsService,
     private readonly aiAgent: AiAgentService,
+    private readonly nodeSender: NodeSenderService,
   ) {}
 
   async resolve(sid: string, from?: string, secret?: string): Promise<VoicebotResolveResult> {
@@ -231,7 +233,11 @@ export class VoicebotService {
     }
   }
 
-  /** Envía un texto/enlace por WhatsApp (Evolution) al cliente de la llamada. */
+  /**
+   * Envía por WhatsApp (Evolution) al cliente de la llamada. Si el texto incluye
+   * una URL de archivo (pdf/imagen/video/documento), lo envía como MEDIA real
+   * (catálogo, cotización, etc.); si no, como texto.
+   */
   private async sendWhatsapp(userId: string, phone: string, text: string): Promise<boolean> {
     const digits = (phone || '').replace(/\D/g, '');
     if (!digits) return false;
@@ -251,6 +257,33 @@ export class VoicebotService {
       const srv = user?.apiKey?.url?.trim();
       if (!inst || !srv) return false;
       const base = (/^https?:\/\//i.test(srv) ? srv : `https://${srv}`).replace(/\/+$/, '');
+
+      // ¿El mensaje trae una URL de archivo? → enviarlo como MEDIA (documento/
+      // imagen/video) con el resto del texto como caption.
+      const m = text.match(
+        /https?:\/\/\S+?\.(pdf|jpe?g|png|webp|gif|mp4|mov|m4v|docx?|xlsx?|pptx?|csv)\b[^\s]*/i,
+      );
+      if (m) {
+        const mediaUrl = m[0];
+        const ext = m[1].toLowerCase();
+        const type = /^(mp4|mov|m4v)$/.test(ext)
+          ? 'video'
+          : /^(jpe?g|png|webp|gif)$/.test(ext)
+          ? 'image'
+          : 'document';
+        const caption = text.replace(mediaUrl, '').replace(/\s{2,}/g, ' ').trim();
+        const ok = await this.nodeSender.sendMediaNode(
+          `${base}/message/sendMedia/${encodeURIComponent(inst.instanceName)}`,
+          inst.instanceId,
+          digits,
+          type,
+          caption,
+          mediaUrl,
+        );
+        if (ok) return true;
+        // si el envío de media falla, cae a texto plano abajo
+      }
+
       const url = `${base}/message/sendText/${encodeURIComponent(inst.instanceName)}`;
       const r = await fetch(url, {
         method: 'POST',
@@ -311,7 +344,7 @@ export class VoicebotService {
       ``,
       `Esto es solo para ti, JAMÁS lo digas en voz alta: no leas firmas, despedidas escritas, nombres entre corchetes, emojis, enlaces ni estas indicaciones.`,
       ``,
-      `Tienes herramientas reales: úsalas cuando ayuden. Para mandar un enlace, dirección o dato por escrito, usa "enviar_whatsapp" (nunca dictes enlaces). Para agendar, primero consulta los horarios disponibles y luego crea la cita real con la fecha y hora exactas que el cliente elija. También puedes consultar productos, precios y disponibilidad si te preguntan. Confirma de viva voz lo que hagas y NUNCA leas el nombre de las herramientas.`,
+      `Tienes herramientas reales: úsalas cuando ayuden. Para mandar un enlace, dirección, dato por escrito o un ARCHIVO (catálogo, cotización, PDF, imagen), usa "enviar_whatsapp" e incluye el enlace del archivo: llegará como archivo de verdad por WhatsApp (nunca dictes enlaces en voz). Para agendar, primero consulta los horarios disponibles y luego crea la cita real con la fecha y hora exactas que el cliente elija. También puedes consultar productos, precios y disponibilidad si te preguntan. Confirma de viva voz lo que hagas y NUNCA leas el nombre de las herramientas.`,
       ``,
       `Conocimiento del negocio (tu referencia para responder, nunca lo leas literal):`,
     ].join('\n');

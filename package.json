@@ -18,7 +18,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "legacy:workflow-follow-up:cleanup": "ts-node -r tsconfig-paths/register src/scripts/legacy-workflow-follow-up-cleanup.ts"
+    "legacy:workflow-follow-up:cleanup": "ts-node -r tsconfig-paths/register src/scripts/legacy-workflow-follow-up-cleanup.ts",
+    "wa:import-session": "node scripts/import-wa-session.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1053.0",

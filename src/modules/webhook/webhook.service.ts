@@ -132,6 +132,8 @@ export class WebhookService {
           fromMe: true,
           messageType: 'conversation',
           content: text,
+          // Marca de "Agente IA" para el panel (respuesta del bot, no de un asesor).
+          raw: { sentByAi: true },
           messageTimestamp: Math.floor(Date.now() / 1000),
         });
       }

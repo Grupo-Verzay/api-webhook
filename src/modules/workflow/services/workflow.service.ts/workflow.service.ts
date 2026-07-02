@@ -228,6 +228,8 @@ export class WorkflowService implements OnModuleInit {
         messageType,
         content: caption || null,
         mediaUrl,
+        // Marca para que el panel muestre "Agente IA" (no "Asesor") en el saliente.
+        raw: { sentByAi: true },
         messageTimestamp: Math.floor(Date.now() / 1000),
       });
     } catch (e: any) {
@@ -260,6 +262,8 @@ export class WorkflowService implements OnModuleInit {
         fromMe: true,
         messageType: 'conversation',
         content: t,
+        // Marca para que el panel muestre "Agente IA" (no "Asesor") en el saliente.
+        raw: { sentByAi: true },
         messageTimestamp: Math.floor(Date.now() / 1000),
       });
     } catch (e: any) {

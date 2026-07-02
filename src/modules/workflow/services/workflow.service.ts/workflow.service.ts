@@ -843,14 +843,34 @@ export class WorkflowService implements OnModuleInit {
         return {};
       }
 
-      const fieldList = fields.map((f) => `- ${f.key}: ${f.label}`).join('\n');
+      // Normaliza un identificador (minúsculas, sin acentos ni espacios extra) para
+      // poder mapear lo que devuelva la IA sin importar mayúsculas/acentos.
+      const norm = (s: string) =>
+        (s ?? '')
+          .toString()
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[̀-ͯ]/g, '')
+          .trim();
+
+      // La clave de tus campos suele ser auto-generada (ej. "nuevo_campo_1"), que no
+      // significa nada para la IA → le pedimos que use la ETIQUETA legible ("Rubro")
+      // como clave del JSON, y luego mapeamos etiqueta→clave real. Aceptamos también
+      // que devuelva la clave cruda, por robustez.
+      const resolver = new Map<string, string>();
+      for (const f of fields) {
+        resolver.set(norm(f.label), f.key);
+        resolver.set(norm(f.key), f.key);
+      }
+
+      const fieldList = fields.map((f) => `- ${f.label}`).join('\n');
       const extra = (customInstruction ?? '').trim();
       const systemPrompt = [
-        'Eres un extractor de datos. A partir de la conversación entre un negocio y un cliente, extrae SOLO los siguientes campos del CLIENTE (la clave es la parte antes de los dos puntos):',
+        'Eres un extractor de datos. A partir de la conversación entre un negocio y un cliente, extrae SOLO los siguientes datos DEL CLIENTE:',
         fieldList,
         '',
         'Reglas estrictas:',
-        '- Devuelve un objeto JSON cuyas claves sean EXACTAMENTE las claves listadas.',
+        '- Devuelve un objeto JSON cuyas claves sean EXACTAMENTE las etiquetas listadas (tal cual, con sus tildes).',
         '- Si un dato NO fue dicho explícitamente por el cliente, NO incluyas esa clave (no inventes ni supongas).',
         '- Todos los valores como string.',
         '- No incluyas el teléfono (ya lo tenemos).',
@@ -868,12 +888,12 @@ export class WorkflowService implements OnModuleInit {
       );
       if (!result) return {};
 
-      const validKeys = new Set(fields.map((f) => f.key));
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(result)) {
-        if (k === 'telefono') continue;
-        if (validKeys.has(k) && v != null && String(v).trim() !== '') {
-          out[k] = String(v).trim();
+        const fieldKey = resolver.get(norm(k));
+        if (!fieldKey || fieldKey === 'telefono') continue;
+        if (v != null && String(v).trim() !== '') {
+          out[fieldKey] = String(v).trim();
         }
       }
       return out;

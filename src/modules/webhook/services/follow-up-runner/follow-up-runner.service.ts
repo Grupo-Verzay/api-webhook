@@ -59,8 +59,8 @@ export class FollowUpRunnerService {
 
     let win = {
       enabled: true,
-      startHour: 8,
-      endHour: 20,
+      startHour: 9,
+      endHour: 18,
       days: new Set([1, 2, 3, 4, 5, 6]),
       timezone: '',
     };
@@ -85,8 +85,8 @@ export class FollowUpRunnerService {
       if (r) {
         win = {
           enabled: r.enabled ?? true,
-          startHour: Number.isFinite(r.startHour as number) ? Number(r.startHour) : 8,
-          endHour: Number.isFinite(r.endHour as number) ? Number(r.endHour) : 20,
+          startHour: Number.isFinite(r.startHour as number) ? Number(r.startHour) : 9,
+          endHour: Number.isFinite(r.endHour as number) ? Number(r.endHour) : 18,
           days: new Set(
             (r.days ?? '1,2,3,4,5,6')
               .split(',')

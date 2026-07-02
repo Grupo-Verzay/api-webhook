@@ -28,6 +28,12 @@ type NodeExecCtx = {
   remoteJid: string;
   userId: string;
   pushName?: string;
+  /**
+   * Canal de la instancia ('evolution' | 'baileys' | 'meta' | 'telegram').
+   * Se usa para enrutar el envío de los nodos al adaptador correcto. Para
+   * meta/telegram, `urlevo` es el phoneNumberId/sentinel y `apikey` el token.
+   */
+  instanceType?: string;
 };
 
 type RunNodeOptions = {
@@ -96,10 +102,117 @@ export class WorkflowService implements OnModuleInit {
    * imagen/documento/audio que envía el flujo nunca aparece en la conversación.
    * Nunca lanza: un fallo al persistir jamás debe romper el envío.
    */
+  /**
+   * Resuelve el canal de una instancia por nombre (cacheado por ejecución vía el
+   * ctx). Devuelve 'evolution' por defecto si no se encuentra.
+   */
+  private async resolveInstanceType(instanceName: string, userId: string): Promise<string> {
+    try {
+      const inst = await this.prisma.instancia.findFirst({
+        where: { instanceName, userId },
+        select: { instanceType: true },
+      });
+      return inst?.instanceType ?? 'evolution';
+    } catch {
+      return 'evolution';
+    }
+  }
+
+  private isChannelType(instanceType?: string): boolean {
+    return instanceType === 'meta' || instanceType === 'telegram';
+  }
+
+  /**
+   * Envío de TEXTO de un nodo, enrutando por canal:
+   * meta/telegram → adaptador de canal (usa urlevo=serverUrl/apikey=token);
+   * baileys (sin urlevo) → adaptador baileys; en otro caso → Evolution API.
+   */
+  private async wfSendText(ctx: NodeExecCtx, remoteJid: string, text: string): Promise<void> {
+    const t = (text ?? '').trim();
+    if (!t) return;
+    const { instanceType, urlevo, apikey, instanceName } = ctx;
+    const factory = this.whatsAppSenderFactory;
+    if (this.isChannelType(instanceType) && factory) {
+      await factory
+        .getSenderSync(instanceType)
+        .sendText(instanceName, remoteJid, t, urlevo, apikey)
+        .catch(() => {});
+      return;
+    }
+    if (!urlevo && factory) {
+      await factory.getSenderSync('baileys').sendText(instanceName, remoteJid, t).catch(() => {});
+      return;
+    }
+    await this.nodeSenderService.sendTextNode(
+      `${urlevo}/message/sendText/${instanceName}`,
+      apikey,
+      remoteJid,
+      t,
+    );
+  }
+
+  /** Envío de MEDIA (image/video/document) de un nodo, enrutando por canal. */
+  private async wfSendMedia(
+    ctx: NodeExecCtx,
+    remoteJid: string,
+    type: string,
+    caption: string,
+    mediaUrl: string,
+  ): Promise<boolean> {
+    if (!mediaUrl) return false;
+    const { instanceType, urlevo, apikey, instanceName } = ctx;
+    const factory = this.whatsAppSenderFactory;
+    if (this.isChannelType(instanceType) && factory) {
+      return factory
+        .getSenderSync(instanceType)
+        .sendMedia(instanceName, remoteJid, type, caption, mediaUrl, urlevo, apikey)
+        .catch(() => false);
+    }
+    if (!urlevo && factory) {
+      return factory
+        .getSenderSync('baileys')
+        .sendMedia(instanceName, remoteJid, type, caption, mediaUrl)
+        .catch(() => false);
+    }
+    return this.nodeSenderService.sendMediaNode(
+      `${urlevo}/message/sendMedia/${instanceName}`,
+      apikey,
+      remoteJid,
+      type,
+      caption,
+      mediaUrl,
+    );
+  }
+
+  /** Envío de AUDIO de un nodo, enrutando por canal. */
+  private async wfSendAudio(ctx: NodeExecCtx, remoteJid: string, audioUrl: string): Promise<boolean> {
+    if (!audioUrl) return false;
+    const { instanceType, urlevo, apikey, instanceName } = ctx;
+    const factory = this.whatsAppSenderFactory;
+    if (this.isChannelType(instanceType) && factory) {
+      return factory
+        .getSenderSync(instanceType)
+        .sendAudio(instanceName, remoteJid, audioUrl, urlevo, apikey)
+        .catch(() => false);
+    }
+    if (!urlevo && factory) {
+      return factory
+        .getSenderSync('baileys')
+        .sendAudio(instanceName, remoteJid, audioUrl)
+        .catch(() => false);
+    }
+    return this.nodeSenderService.sendAudioNode(
+      `${urlevo}/message/sendWhatsAppAudio/${instanceName}`,
+      apikey,
+      remoteJid,
+      audioUrl,
+    );
+  }
+
   private async persistFlowOutboundMedia(
     ctx: NodeExecCtx,
     node: WorkflowNode,
-    channel: 'evolution' | 'baileys',
+    channel: string,
   ): Promise<void> {
     try {
       if (!this.chatStore || !ctx.userId) return;
@@ -182,6 +295,9 @@ export class WorkflowService implements OnModuleInit {
       );
       return { message: 'No session', workflow: result.name, totalNodes: 0 };
     }
+
+    // Canal de la instancia (para enrutar el envío de nodos al adaptador correcto).
+    const instanceType = await this.resolveInstanceType(instanceName, userId);
 
     // =========================
     // LOCK (CORRECTO)
@@ -576,14 +692,14 @@ export class WorkflowService implements OnModuleInit {
       void this.syncFichaToSheets(userId, phone, name, fields, fichaData);
 
       this.logger.log(
-        `[guardar-ficha] OK userId=${userId} tel=${phone} ia=${!!node.aiEnabled} ` +
+        `[UID=${userId}][I=${instanceName}][R=${remoteJid}] [guardar-ficha] OK tel=${phone} ia=${!!node.aiEnabled} ` +
           `camposConfig=${fields.length} extraidos=[${Object.keys(extracted).join(',') || 'ninguno'}] ` +
           `guardados=${Object.keys(fichaData).length} extSvc=${!!this.externalClientDataService} aiSvc=${!!this.aiAgentService}`,
         'WorkflowService',
       );
     } catch (err: any) {
       this.logger.error(
-        `[guardar-ficha] Error: ${err?.message ?? err}`,
+        `[UID=${userId}][I=${instanceName}][R=${remoteJid}] [guardar-ficha] Error: ${err?.message ?? err}`,
         undefined,
         'WorkflowService',
       );
@@ -597,7 +713,7 @@ export class WorkflowService implements OnModuleInit {
     let raw: unknown = null;
     try {
       const rows = await this.prisma.$queryRaw<Array<{ contactFieldsConfig: unknown }>>`
-        SELECT "contactFieldsConfig" FROM "User" WHERE id = ${userId} LIMIT 1
+        SELECT "contact_fields_config" AS "contactFieldsConfig" FROM "User" WHERE id = ${userId} LIMIT 1
       `;
       raw = rows?.[0]?.contactFieldsConfig ?? null;
     } catch {
@@ -685,7 +801,7 @@ export class WorkflowService implements OnModuleInit {
     try {
       const recent = await this.buildConversationForExtraction(sessionId, instanceName, remoteJid);
       this.logger.log(
-        `[guardar-ficha] extracción: chars=${recent.length} campos=${fields.length} sessionId=${sessionId ?? '-'}`,
+        `[I=${instanceName}][R=${remoteJid}] [guardar-ficha] extracción: chars=${recent.length} campos=${fields.length} sessionId=${sessionId ?? '-'}`,
         'WorkflowService',
       );
       if (!recent) {
@@ -713,7 +829,7 @@ export class WorkflowService implements OnModuleInit {
         userJson: { conversacion: recent },
       });
       this.logger.log(
-        `[guardar-ficha] extractJson => ${result ? JSON.stringify(result).slice(0, 300) : 'null (modelo del usuario sin configurar o respuesta inválida)'}`,
+        `[I=${instanceName}][R=${remoteJid}] [guardar-ficha] extractJson => ${result ? JSON.stringify(result).slice(0, 300) : 'null (modelo del usuario sin configurar o respuesta inválida)'}`,
         'WorkflowService',
       );
       if (!result) return {};
@@ -750,7 +866,7 @@ export class WorkflowService implements OnModuleInit {
       let config: string | null = null;
       try {
         const rows = await this.prisma.$queryRaw<Array<{ googleSheetsWebhookUrl: string | null }>>`
-          SELECT "googleSheetsWebhookUrl" FROM "User" WHERE id = ${userId} LIMIT 1
+          SELECT "google_sheets_webhook_url" AS "googleSheetsWebhookUrl" FROM "User" WHERE id = ${userId} LIMIT 1
         `;
         config = rows?.[0]?.googleSheetsWebhookUrl ?? null;
       } catch {
@@ -795,7 +911,7 @@ export class WorkflowService implements OnModuleInit {
   ) {
     const { urlevo, apikey, instanceName, remoteJid, userId, pushName } = ctx;
 
-    this.logger.log(`[nodo] ejecutando tipo="${node.tipo}" id="${node.id}"`, 'WorkflowService');
+    this.logger.log(`[UID=${userId}][I=${instanceName}][R=${remoteJid}] [nodo] ejecutando tipo="${node.tipo}" id="${node.id}"`, 'WorkflowService');
 
     if (node.tipo === 'delay') {
       const delayTime = node?.delay || 15000;
@@ -814,67 +930,25 @@ export class WorkflowService implements OnModuleInit {
       return;
     }
 
-    // Baileys: usar sender directo cuando no hay Evolution API URL
-    if (!urlevo && this.whatsAppSenderFactory) {
-      const sender = this.whatsAppSenderFactory.getSenderSync('baileys');
-      if (node.tipo === 'text') {
-        const text = this.resolveNodeText(node.message, pushName).trim();
-        if (text) await sender.sendText(instanceName, remoteJid, text).catch(() => {});
-        return;
-      }
-      if (node.tipo === 'audio') {
-        const url = (node.url ?? '').trim();
-        if (url) {
-          await sender.sendAudio(instanceName, remoteJid, url).catch(() => {});
-          await this.persistFlowOutboundMedia(ctx, node, 'baileys');
-        }
-        return;
-      }
-      if (['image', 'video', 'document'].includes(node.tipo)) {
-        const url = (node.url ?? '').trim();
-        const caption = this.resolveNodeText(node.message, pushName).trim();
-        if (url) {
-          await sender.sendMedia(instanceName, remoteJid, node.tipo, caption, url).catch(() => {});
-          await this.persistFlowOutboundMedia(ctx, node, 'baileys');
-        }
-        return;
-      }
-    }
-
+    // Envío enrutado por canal (meta/telegram → adaptador de canal; baileys →
+    // adaptador baileys; en otro caso → Evolution API). Ver wfSend* helpers.
     if (node.tipo === 'text') {
-      const url = `${urlevo}/message/sendText/${instanceName}`;
-      await this.nodeSenderService.sendTextNode(
-        url,
-        apikey,
-        remoteJid,
-        this.resolveNodeText(node.message, pushName),
-      );
+      await this.wfSendText(ctx, remoteJid, this.resolveNodeText(node.message, pushName));
       return;
     }
 
     if (['image', 'video', 'document'].includes(node.tipo)) {
-      const url = `${urlevo}/message/sendMedia/${instanceName}`;
-      const ok = await this.nodeSenderService.sendMediaNode(
-        url,
-        apikey,
-        remoteJid,
-        node.tipo,
-        this.resolveNodeText(node.message, pushName),
-        node.url as string,
-      );
-      if (ok) await this.persistFlowOutboundMedia(ctx, node, 'evolution');
+      const url = (node.url ?? '').trim();
+      const caption = this.resolveNodeText(node.message, pushName).trim();
+      const ok = await this.wfSendMedia(ctx, remoteJid, node.tipo, caption, url);
+      if (ok) await this.persistFlowOutboundMedia(ctx, node, ctx.instanceType ?? 'evolution');
       return;
     }
 
     if (node.tipo === 'audio') {
-      const url = `${urlevo}/message/sendWhatsAppAudio/${instanceName}`;
-      const ok = await this.nodeSenderService.sendAudioNode(
-        url,
-        apikey,
-        remoteJid,
-        node.url as string,
-      );
-      if (ok) await this.persistFlowOutboundMedia(ctx, node, 'evolution');
+      const url = (node.url ?? '').trim();
+      const ok = await this.wfSendAudio(ctx, remoteJid, url);
+      if (ok) await this.persistFlowOutboundMedia(ctx, node, ctx.instanceType ?? 'evolution');
       return;
     }
 

@@ -688,14 +688,6 @@ export class WorkflowService implements OnModuleInit {
 
       const phone = remoteJid.split('@')[0].split(':')[0].replace(/\D/g, '');
       const session = await this.getSession({ remoteJid, instanceName, userId }).catch(() => null);
-      const name = (
-        (session as any)?.customName ||
-        pushName ||
-        (session as any)?.pushName ||
-        ''
-      )
-        .toString()
-        .trim();
 
       // Campos configurados (habilitados) de la ficha de la cuenta.
       const fields = await this.getEnabledContactFields(userId);
@@ -713,9 +705,34 @@ export class WorkflowService implements OnModuleInit {
         );
       }
 
+      // Nombre: preferir el que el CLIENTE dio en la conversación; si no, el de
+      // WhatsApp/sesión (el pushName suele ser el nombre del negocio, no del cliente).
+      const extractedName = (extracted['__nombre'] ?? '').toString().trim();
+      delete extracted['__nombre'];
+      const name = (
+        extractedName ||
+        (session as any)?.customName ||
+        pushName ||
+        (session as any)?.pushName ||
+        ''
+      )
+        .toString()
+        .trim();
+
       // Ficha a guardar = extraídos + teléfono (siempre conocido).
       const fichaData: Record<string, unknown> = { ...extracted };
       if (phone && !fichaData['telefono']) fichaData['telefono'] = phone;
+
+      // Estado: el lead llegó hasta este nodo → marca de flujo completado.
+      const estadoKey = this.pickFieldKeyByLabels(fields, ['estado', 'status', 'etapa']);
+      if (estadoKey) fichaData[estadoKey] = 'Lead flujo completado';
+
+      // País: derivado del código del número de teléfono (no de lo que diga el cliente).
+      const paisKey = this.pickFieldKeyByLabels(fields, ['pais', 'country']);
+      if (paisKey) {
+        const country = this.countryFromPhone(phone);
+        if (country) fichaData[paisKey] = country;
+      }
 
       // 1. Guardar/fusionar en la ficha (ExternalClientData).
       if (this.externalClientDataService) {
@@ -757,6 +774,38 @@ export class WorkflowService implements OnModuleInit {
       .filter((f) => f.enabled)
       .sort((a, b) => a.order - b.order)
       .map((f) => ({ key: f.key, label: f.label }));
+  }
+
+  /** Devuelve la clave del primer campo cuya etiqueta (normalizada) coincida. */
+  private pickFieldKeyByLabels(
+    fields: { key: string; label: string }[],
+    candidates: string[],
+  ): string | null {
+    const norm = (s: string) =>
+      (s ?? '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const wanted = new Set(candidates.map(norm));
+    const found = fields.find((f) => wanted.has(norm(f.label)));
+    return found?.key ?? null;
+  }
+
+  /** Deriva el país a partir del código telefónico internacional del número. */
+  private countryFromPhone(phone: string): string {
+    const digits = (phone ?? '').replace(/\D/g, '');
+    if (!digits) return '';
+    // Prefijos ordenados de más largo a más corto para desambiguar (ej. 1809 vs 1).
+    const map: Array<[string, string]> = [
+      ['1809', 'R. Dominicana'], ['1829', 'R. Dominicana'], ['1849', 'R. Dominicana'],
+      ['591', 'Bolivia'], ['593', 'Ecuador'], ['595', 'Paraguay'], ['598', 'Uruguay'],
+      ['502', 'Guatemala'], ['503', 'El Salvador'], ['504', 'Honduras'], ['505', 'Nicaragua'],
+      ['506', 'Costa Rica'], ['507', 'Panamá'], ['509', 'Haití'],
+      ['51', 'Perú'], ['52', 'México'], ['53', 'Cuba'], ['54', 'Argentina'], ['55', 'Brasil'],
+      ['56', 'Chile'], ['57', 'Colombia'], ['58', 'Venezuela'],
+      ['34', 'España'], ['1', 'Estados Unidos'],
+    ];
+    for (const [prefix, country] of map) {
+      if (digits.startsWith(prefix)) return country;
+    }
+    return '';
   }
 
   /**
@@ -862,8 +911,12 @@ export class WorkflowService implements OnModuleInit {
         resolver.set(norm(f.label), f.key);
         resolver.set(norm(f.key), f.key);
       }
+      // Campo reservado: el NOMBRE que el cliente da en la conversación (no es un
+      // campo de la ficha, se usa como nombre del contacto en Sheets/ficha).
+      resolver.set(norm('Nombre del cliente'), '__nombre');
+      resolver.set(norm('nombre'), '__nombre');
 
-      const fieldList = fields.map((f) => `- ${f.label}`).join('\n');
+      const fieldList = ['- Nombre del cliente', ...fields.map((f) => `- ${f.label}`)].join('\n');
       const extra = (customInstruction ?? '').trim();
       const systemPrompt = [
         'Eres un extractor de datos. A partir de la conversación entre un negocio y un cliente, extrae SOLO los siguientes datos DEL CLIENTE:',
@@ -871,6 +924,7 @@ export class WorkflowService implements OnModuleInit {
         '',
         'Reglas estrictas:',
         '- Devuelve un objeto JSON cuyas claves sean EXACTAMENTE las etiquetas listadas (tal cual, con sus tildes).',
+        '- "Nombre del cliente" es el nombre de la PERSONA. "Empresa" es solo el nombre del negocio/compañía si lo menciona; NUNCA pongas el nombre de la persona en Empresa.',
         '- Si un dato NO fue dicho explícitamente por el cliente, NO incluyas esa clave (no inventes ni supongas).',
         '- Todos los valores como string.',
         '- No incluyas el teléfono (ya lo tenemos).',

@@ -35,6 +35,112 @@ export class FollowUpRunnerService {
     return (value ?? '').trim();
   }
 
+  /**
+   * Ventana de envío por cuenta (horario + días) leída de columnas de User.
+   * Se cachea por ejecución del runner para no repetir queries por seguimiento.
+   * Los campos no viven en el modelo Prisma del backend → SQL crudo snake_case.
+   */
+  private sendWindowCache = new Map<
+    string,
+    {
+      enabled: boolean;
+      startHour: number;
+      endHour: number;
+      days: Set<number>;
+      timezone: string;
+    }
+  >();
+
+  private async getUserSendWindow(userId: string) {
+    const key = this.clean(userId);
+    if (!key) return null;
+    const cached = this.sendWindowCache.get(key);
+    if (cached) return cached;
+
+    let win = {
+      enabled: true,
+      startHour: 8,
+      endHour: 20,
+      days: new Set([1, 2, 3, 4, 5, 6]),
+      timezone: '',
+    };
+    try {
+      const rows = await this.prisma.$queryRaw<
+        Array<{
+          enabled: boolean | null;
+          startHour: number | null;
+          endHour: number | null;
+          days: string | null;
+          timezone: string | null;
+        }>
+      >`
+        SELECT "follow_up_window_enabled" AS "enabled",
+               "follow_up_send_start_hour" AS "startHour",
+               "follow_up_send_end_hour" AS "endHour",
+               "follow_up_send_days" AS "days",
+               "timezone" AS "timezone"
+        FROM "User" WHERE id = ${key} LIMIT 1
+      `;
+      const r = rows?.[0];
+      if (r) {
+        win = {
+          enabled: r.enabled ?? true,
+          startHour: Number.isFinite(r.startHour as number) ? Number(r.startHour) : 8,
+          endHour: Number.isFinite(r.endHour as number) ? Number(r.endHour) : 20,
+          days: new Set(
+            (r.days ?? '1,2,3,4,5,6')
+              .split(',')
+              .map((d) => Number.parseInt(d.trim(), 10))
+              .filter((d) => Number.isFinite(d)),
+          ),
+          timezone: this.clean(r.timezone),
+        };
+      }
+    } catch {
+      // columnas ausentes (aún no migradas) → ventana por defecto activa
+    }
+    this.sendWindowCache.set(key, win);
+    return win;
+  }
+
+  /** Hora (0-23) y día de semana (0=Dom..6=Sáb) actuales en una zona horaria IANA. */
+  private nowInTimezone(timezone: string): { hour: number; day: number } {
+    const tz = this.clean(timezone) || undefined;
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz,
+        hour12: false,
+        weekday: 'short',
+        hour: '2-digit',
+      }).formatToParts(new Date());
+      const hourStr = parts.find((p) => p.type === 'hour')?.value ?? '0';
+      const wdStr = parts.find((p) => p.type === 'weekday')?.value ?? 'Sun';
+      let hour = Number.parseInt(hourStr, 10);
+      if (!Number.isFinite(hour) || hour === 24) hour = 0;
+      const map: Record<string, number> = {
+        Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+      };
+      return { hour, day: map[wdStr] ?? 0 };
+    } catch {
+      // Zona horaria inválida → usar hora del servidor
+      const now = new Date();
+      return { hour: now.getHours(), day: now.getDay() };
+    }
+  }
+
+  /**
+   * ¿El momento actual está dentro de la ventana de envío de la cuenta?
+   * Si la cuenta no tiene ventana activa (o userId vacío) → siempre true.
+   */
+  private async isWithinSendWindow(userId: string): Promise<boolean> {
+    const win = await this.getUserSendWindow(userId);
+    if (!win || !win.enabled) return true;
+    const { hour, day } = this.nowInTimezone(win.timezone);
+    if (win.days.size && !win.days.has(day)) return false;
+    // Ventana [start, end): 8..20 => envía de 8:00 a 19:59.
+    return hour >= win.startHour && hour < win.endHour;
+  }
+
   private buildRemoteJidCandidates(
     remoteJid: string,
     extras: Array<string | null | undefined> = [],
@@ -492,6 +598,10 @@ export class FollowUpRunnerService {
     limit = 25,
     scope?: { userId?: string; instanceId?: string; remoteJid?: string },
   ) {
+    // Refresca la config de ventana por cuenta en cada corrida (evita cache stale
+    // si el usuario cambia su horario en Ajustes).
+    this.sendWindowCache.clear();
+
     const take = Math.max(limit * 20, 500);
     let scopedWhere:
       | {
@@ -675,6 +785,27 @@ export class FollowUpRunnerService {
       const effectiveRemoteJid = session?.remoteJid ?? (seguimiento.remoteJid ?? '').trim();
       const effectiveUserId = session?.userId ?? '';
       const effectiveInstanceId = session?.instanceId ?? (seguimiento.instancia ?? '').trim();
+
+      // Ventana de envío por cuenta (horario + días en su zona horaria). Solo aplica a
+      // seguimientos de FLUJO/workflow; los recordatorios y campañas tienen una hora
+      // exacta elegida por el usuario y NO se posponen. Si estamos fuera de la franja,
+      // se libera el lock (vuelve a 'pending') y se reintenta en la próxima corrida del
+      // runner que caiga dentro del horario. No cuenta intento.
+      const idNodo = (seguimiento.idNodo ?? '').trim();
+      const isExplicitReminder =
+        idNodo.startsWith('reminder-') || /^camping-/.test(idNodo);
+      if (!isExplicitReminder && !(await this.isWithinSendWindow(effectiveUserId))) {
+        await this.prisma.seguimiento.updateMany({
+          where: { id: seguimiento.id, followUpStatus: 'processing' },
+          data: { followUpStatus: 'pending' },
+        });
+        summary.skipped++;
+        this.logger.log(
+          `${loggerCtx} fuera de la ventana de envío de la cuenta → pospuesto.`,
+          'FollowUpRunnerService',
+        );
+        continue;
+      }
 
       try {
         const finalMessage = await this.resolveFollowUpMessage(

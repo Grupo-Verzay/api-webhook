@@ -21,16 +21,19 @@ export class AntifloodService implements OnModuleInit, OnModuleDestroy {
   private readonly minRequired = 3;
   private readonly minSimilarCount = 4;
 
-  // 🔧 Ventana de alta frecuencia (AI-to-AI): 6 msgs en 60s
+  // 🔧 Ventana de alta frecuencia (AI-to-AI): 12 msgs en 60s
+  // Un humano enganchado envía varios mensajes cortos por minuto; un loop
+  // AI-to-AI genera decenas. Subimos el umbral para no bloquear humanos.
   private readonly windowMs = 60_000;
-  private readonly maxMsgInWindow = 6;
+  private readonly maxMsgInWindow = 12;
 
-  // 🔧 Ventana de media frecuencia: 5 msgs en 2 min (loops lentos AI-to-AI)
+  // 🔧 Ventana de media frecuencia: 12 msgs en 2 min (loops lentos AI-to-AI)
+  // Antes 5/2min disparaba falsos positivos con clientes que escriben rápido.
   private readonly mediumWindowMs = 120_000;
-  private readonly maxMsgInMediumWindow = 5;
+  private readonly maxMsgInMediumWindow = 12;
 
-  // 🔧 Cooldown tras detección: 30 min para dar tiempo a intervención manual
-  private readonly cooldownMs = 30 * 60_000;
+  // 🔧 Cooldown tras detección: 10 min (recuperación rápida ante falsos positivos)
+  private readonly cooldownMs = 10 * 60_000;
 
   // 🔧 Cleanup de entradas inactivas
   private readonly staleThresholdMs = 5 * 60_000;

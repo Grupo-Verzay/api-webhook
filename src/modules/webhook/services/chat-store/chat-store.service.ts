@@ -132,8 +132,10 @@ export class ChatStoreService {
         `${input.fromMe ? 'out' : 'in'}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       const ts = this.toDate(input.messageTimestamp);
       const messageType = input.messageType ?? 'conversation';
-      const rawValue: Prisma.InputJsonValue | typeof Prisma.JsonNull =
-        input.raw ?? Prisma.JsonNull;
+      // IMPORTANTE: $executeRaw NO serializa objetos JS a JSONB (quedan como `{}`),
+      // perdiendo el marcador { sentByAi: true }. Se pasa el JSON como texto y se
+      // castea con ::jsonb en el VALUES.
+      const rawJson: string | null = input.raw ? JSON.stringify(input.raw) : null;
 
       await this.prisma.$executeRaw`
         INSERT INTO "chat_messages" (
@@ -145,7 +147,7 @@ export class ChatStoreService {
           ${input.userId}, ${input.instanceName}, ${input.instanceType ?? null}, ${input.remoteJid},
           ${input.remoteJidAlt ?? null}, ${input.senderPn ?? null}, ${messageId}, ${input.fromMe},
           ${input.pushName ?? null}, ${messageType}, ${input.content ?? null},
-          ${input.mediaUrl ?? null}, ${rawValue}, ${ts}, NOW(), NOW()
+          ${input.mediaUrl ?? null}, ${rawJson}::jsonb, ${ts}, NOW(), NOW()
         )
         ON CONFLICT ("userId", "instanceName", "remoteJid", "messageId", "fromMe")
         DO UPDATE SET
@@ -167,7 +169,7 @@ export class ChatStoreService {
           ${input.userId}, ${input.instanceName}, ${input.instanceType ?? null}, ${input.remoteJid},
           ${input.remoteJidAlt ?? null}, ${input.senderPn ?? null}, ${input.pushName ?? null},
           ${messageId}, ${input.fromMe}, ${messageType},
-          ${input.content ?? null}, ${input.mediaUrl ?? null}, ${rawValue},
+          ${input.content ?? null}, ${input.mediaUrl ?? null}, ${rawJson}::jsonb,
           ${ts}, NOW(), NOW()
         )
         ON CONFLICT ("userId", "instanceName", "remoteJid")

@@ -320,9 +320,16 @@ export class WebhookService {
 
     const fromMe = data?.key?.fromMe ?? false;
     const incomingPushName = (data?.pushName ?? '').trim();
+    // Nombres que WhatsApp asigna a mensajes propios/salientes según el idioma del
+    // dispositivo ("Você"=tú en portugués, "You", "Tú"...). No son el nombre del
+    // contacto → no los guardamos como tal (quedaría un lead llamado "Você").
+    const SELF_PUSHNAMES = new Set(['você', 'voce', 'tú', 'tu', 'you', 'yo']);
+    const isSelfPushName = SELF_PUSHNAMES.has(incomingPushName.toLowerCase());
     // Outbound webhooks often carry the business display name, not the contact name.
     const pushName =
-      !fromMe && incomingPushName ? incomingPushName : 'Desconocido';
+      !fromMe && incomingPushName && !isSelfPushName
+        ? incomingPushName
+        : 'Desconocido';
 
     // Buscar userId por instancia
     const prismaInstancia = await this.instancesService.getUserId(instanceName);

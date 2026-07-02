@@ -33,6 +33,16 @@ function isNewsletterJid(value?: string | null) {
 }
 
 /**
+ * JID con esquema "LID" de WhatsApp (`@lid`): identificador de PRIVACIDAD, NO es
+ * un número de teléfono. Sus dígitos parecen un número (15+), pero no lo son.
+ * Un `@lid` por sí solo no es un contacto registrable; el teléfono real (cuando
+ * WhatsApp lo entrega) viene en otro campo (senderPn/remoteJidAlt @s.whatsapp.net).
+ */
+export function isLidJid(value?: string | null) {
+  return cleanValue(value).toLowerCase().endsWith(WHATSAPP_LID_JID_SUFFIX);
+}
+
+/**
  * Determina si un JID corresponde a un contacto real 1:1 que debe registrarse
  * como lead. Descarta vacíos, grupos, difusiones/estados, newsletters y JIDs
  * sin un número válido (que producían "leads basura" como "+0" o "Você").
@@ -47,7 +57,11 @@ export function isRegisterableContactJid(value?: string | null): boolean {
     isStatusBroadcastJid(raw) ||
     isGroupJid(raw) ||
     isBroadcastJid(raw) ||
-    isNewsletterJid(raw)
+    isNewsletterJid(raw) ||
+    // Un @lid NO es un teléfono real: si el JID quedó como @lid es porque no se
+    // pudo resolver el número (sus dígitos son un ID de privacidad, no un tel).
+    // Evita crear "sesiones fantasma" sin teléfono (mostradas como "Você").
+    isLidJid(raw)
   ) {
     return false;
   }

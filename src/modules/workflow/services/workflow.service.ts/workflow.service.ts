@@ -76,19 +76,19 @@ export class WorkflowService implements OnModuleInit {
       // WhatsApp module no disponible
     }
     try {
-      const { ChatStoreService } = require('../../webhook/services/chat-store/chat-store.service');
+      const { ChatStoreService } = require('../../../webhook/services/chat-store/chat-store.service');
       this.chatStore = this.moduleRef.get(ChatStoreService, { strict: false });
     } catch {
       // Store unificado no disponible
     }
     try {
-      const { ExternalClientDataService } = require('../../external-client-data/external-client-data.service');
+      const { ExternalClientDataService } = require('../../../external-client-data/external-client-data.service');
       this.externalClientDataService = this.moduleRef.get(ExternalClientDataService, { strict: false });
     } catch {
       // Módulo de datos externos no disponible
     }
     try {
-      const { GoogleSheetsService } = require('../../google-sheets/google-sheets.service');
+      const { GoogleSheetsService } = require('../../../google-sheets/google-sheets.service');
       this.googleSheetsService = this.moduleRef.get(GoogleSheetsService, { strict: false });
     } catch {
       // Módulo de Google Sheets no disponible

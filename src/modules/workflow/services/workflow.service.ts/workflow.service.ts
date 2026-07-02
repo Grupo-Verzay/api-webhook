@@ -208,7 +208,13 @@ export class WorkflowService implements OnModuleInit {
     channel: string,
   ): Promise<void> {
     try {
-      if (!this.chatStore || !ctx.userId) return;
+      if (!this.chatStore || !ctx.userId) {
+        this.logger.warn(
+          `[FlowPersist] media omitida (chatStore=${!!this.chatStore} userId=${!!ctx.userId})`,
+          'WorkflowService',
+        );
+        return;
+      }
       const mediaUrl = (node.url ?? '').toString().trim();
       if (!mediaUrl) return;
       const messageType = `${node.tipo}Message`; // image|video|document|audio -> *Message
@@ -224,8 +230,40 @@ export class WorkflowService implements OnModuleInit {
         mediaUrl,
         messageTimestamp: Math.floor(Date.now() / 1000),
       });
-    } catch {
-      // nunca romper el envío por un fallo de persistencia
+    } catch (e: any) {
+      this.logger.warn(`[FlowPersist] error media: ${e?.message}`, 'WorkflowService');
+    }
+  }
+
+  /**
+   * Persiste el TEXTO saliente de un nodo de flujo en el store unificado para que
+   * el operador lo vea en el panel de Chats. Solo para canales (meta/telegram):
+   * en Evolution los salientes de texto ya llegan por webhook (evita duplicados).
+   */
+  private async persistFlowOutboundText(ctx: NodeExecCtx, remoteJid: string, text: string): Promise<void> {
+    try {
+      const t = (text ?? '').trim();
+      if (!t) return;
+      if (!this.isChannelType(ctx.instanceType)) return; // Evolution/Baileys: no duplicar
+      if (!this.chatStore || !ctx.userId) {
+        this.logger.warn(
+          `[FlowPersist] texto omitido (chatStore=${!!this.chatStore} userId=${!!ctx.userId})`,
+          'WorkflowService',
+        );
+        return;
+      }
+      await this.chatStore.persistMessage({
+        userId: ctx.userId,
+        instanceName: ctx.instanceName,
+        instanceType: ctx.instanceType,
+        remoteJid,
+        fromMe: true,
+        messageType: 'conversation',
+        content: t,
+        messageTimestamp: Math.floor(Date.now() / 1000),
+      });
+    } catch (e: any) {
+      this.logger.warn(`[FlowPersist] error texto: ${e?.message}`, 'WorkflowService');
     }
   }
 
@@ -925,7 +963,9 @@ export class WorkflowService implements OnModuleInit {
     // Envío enrutado por canal (meta/telegram → adaptador de canal; baileys →
     // adaptador baileys; en otro caso → Evolution API). Ver wfSend* helpers.
     if (node.tipo === 'text') {
-      await this.wfSendText(ctx, remoteJid, this.resolveNodeText(node.message, pushName));
+      const text = this.resolveNodeText(node.message, pushName);
+      await this.wfSendText(ctx, remoteJid, text);
+      await this.persistFlowOutboundText(ctx, remoteJid, text);
       return;
     }
 

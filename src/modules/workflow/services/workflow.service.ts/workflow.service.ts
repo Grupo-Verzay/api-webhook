@@ -902,12 +902,18 @@ export class WorkflowService implements OnModuleInit {
           .replace(/[̀-ͯ]/g, '')
           .trim();
 
+      // Campos MANUALES: son un juicio comercial del asesor (ej. "Interés":
+      // interesado/descartado), NO los deduce la IA. Se excluyen de la extracción
+      // para no pisar lo que el equipo marca a mano (el campo sigue en la ficha/Sheets).
+      const MANUAL_LABELS = new Set(['interes', 'interés'].map(norm));
+      const aiFields = fields.filter((f) => !MANUAL_LABELS.has(norm(f.label)));
+
       // La clave de tus campos suele ser auto-generada (ej. "nuevo_campo_1"), que no
       // significa nada para la IA → le pedimos que use la ETIQUETA legible ("Rubro")
       // como clave del JSON, y luego mapeamos etiqueta→clave real. Aceptamos también
       // que devuelva la clave cruda, por robustez.
       const resolver = new Map<string, string>();
-      for (const f of fields) {
+      for (const f of aiFields) {
         resolver.set(norm(f.label), f.key);
         resolver.set(norm(f.key), f.key);
       }
@@ -916,7 +922,7 @@ export class WorkflowService implements OnModuleInit {
       resolver.set(norm('Nombre del cliente'), '__nombre');
       resolver.set(norm('nombre'), '__nombre');
 
-      const fieldList = ['- Nombre del cliente', ...fields.map((f) => `- ${f.label}`)].join('\n');
+      const fieldList = ['- Nombre del cliente', ...aiFields.map((f) => `- ${f.label}`)].join('\n');
       const extra = (customInstruction ?? '').trim();
       const systemPrompt = [
         'Eres un extractor de datos. A partir de la conversación entre un negocio y un cliente, extrae SOLO los siguientes datos DEL CLIENTE:',

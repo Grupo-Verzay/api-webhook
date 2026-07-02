@@ -96,15 +96,8 @@ export class WorkflowService implements OnModuleInit {
   }
 
   /**
-   * Persiste un mensaje multimedia saliente de un flujo en el store unificado
-   * (chat_messages) para que el panel de Chats lo muestre. Evolution no reenvía
-   * por webhook los salientes (fromMe) con su mediaUrl, así que sin esto el video/
-   * imagen/documento/audio que envía el flujo nunca aparece en la conversación.
-   * Nunca lanza: un fallo al persistir jamás debe romper el envío.
-   */
-  /**
-   * Resuelve el canal de una instancia por nombre (cacheado por ejecución vía el
-   * ctx). Devuelve 'evolution' por defecto si no se encuentra.
+   * Resuelve el canal de una instancia por nombre. Devuelve 'evolution' por
+   * defecto si no se encuentra.
    */
   private async resolveInstanceType(instanceName: string, userId: string): Promise<string> {
     try {
@@ -353,6 +346,7 @@ export class WorkflowService implements OnModuleInit {
           userId,
           session,
           pushName,
+          instanceType,
         );
       }
 
@@ -401,13 +395,11 @@ export class WorkflowService implements OnModuleInit {
 
           if (!isWaitingHere) {
             if (messageToUser) {
-              if (!urlevo && this.whatsAppSenderFactory) {
-                const sender = this.whatsAppSenderFactory.getSenderSync('baileys');
-                await sender.sendText(instanceName, remoteJid, messageToUser).catch(() => {});
-              } else {
-                const url = `${urlevo}/message/sendText/${instanceName}`;
-                await this.nodeSenderService.sendTextNode(url, apikey, remoteJid, messageToUser);
-              }
+              await this.wfSendText(
+                { urlevo, apikey, instanceName, remoteJid, userId, instanceType },
+                remoteJid,
+                messageToUser,
+              );
             }
 
             state = await this.prisma.sessionWorkflowState.update({
@@ -548,7 +540,7 @@ export class WorkflowService implements OnModuleInit {
 
         await this.runNodeWithTimeout(
           node,
-          { urlevo, apikey, instanceName, remoteJid, userId },
+          { urlevo, apikey, instanceName, remoteJid, userId, instanceType },
           {
             timeoutLabel: 'nodo',
             logPauseDiagnostics: true,
@@ -961,6 +953,7 @@ export class WorkflowService implements OnModuleInit {
         instanceName,
         remoteJid,
         userId,
+        instanceType: ctx.instanceType,
       });
       return;
     }
@@ -1137,8 +1130,9 @@ export class WorkflowService implements OnModuleInit {
     instanceName: string;
     remoteJid: string;
     userId: string;
+    instanceType?: string;
   }) {
-    const { node, session, urlevo, apikey, instanceName, remoteJid, userId } =
+    const { node, session, urlevo, apikey, instanceName, remoteJid, userId, instanceType } =
       args;
 
     const phones = await this.notificationContactsService.getActiveNumbers(userId);
@@ -1174,10 +1168,19 @@ export class WorkflowService implements OnModuleInit {
       customMessage: node.message ?? '',
     });
 
-    const url = `${urlevo}/message/sendText/${instanceName}`;
+    const notifyCtx: NodeExecCtx = {
+      urlevo,
+      apikey,
+      instanceName,
+      remoteJid,
+      userId,
+      instanceType,
+    };
     const results = await Promise.all(
       phones.map((phone) =>
-        this.nodeSenderService.sendTextNode(url, apikey, phone, notifyMessage),
+        this.wfSendText(notifyCtx, phone, notifyMessage)
+          .then(() => true)
+          .catch(() => false),
       ),
     );
 
@@ -1290,6 +1293,7 @@ export class WorkflowService implements OnModuleInit {
     userId: string,
     session: Session,
     pushName?: string,
+    instanceType?: string,
   ) {
     const nodes = await this.prisma.workflowNode.findMany({
       where: { workflowId: workflow.id },
@@ -1323,7 +1327,7 @@ export class WorkflowService implements OnModuleInit {
 
       await this.runNodeWithTimeout(
         node,
-        { urlevo, apikey, instanceName, remoteJid, userId, pushName },
+        { urlevo, apikey, instanceName, remoteJid, userId, pushName, instanceType },
         {
           timeoutLabel: 'nodo básico',
           logPauseDiagnostics: false,

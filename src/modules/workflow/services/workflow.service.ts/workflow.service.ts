@@ -21,6 +21,14 @@ type EdgeDB = {
   sourceHandle: string | null;
 };
 
+/**
+ * Contador de envíos de contenido de UNA ejecución de flujo (compartido entre
+ * todos los nodos de esa corrida). Permite saber si el cliente realmente
+ * recibió algo: si se intentó enviar y NADA salió (p. ej. instancia
+ * desconectada), se omite el seguimiento de inactividad.
+ */
+type FlowSendTracker = { attempted: number; sent: number; failed: number };
+
 type NodeExecCtx = {
   urlevo: string;
   apikey: string;
@@ -34,6 +42,11 @@ type NodeExecCtx = {
    * meta/telegram, `urlevo` es el phoneNumberId/sentinel y `apikey` el token.
    */
   instanceType?: string;
+  /**
+   * Contador de envíos compartido en la corrida (mismo objeto en todos los
+   * nodos). Lo alimenta `recordFlowSend`; lo consulta el nodo de seguimiento.
+   */
+  flowSend?: FlowSendTracker;
 };
 
 type RunNodeOptions = {
@@ -120,28 +133,53 @@ export class WorkflowService implements OnModuleInit {
    * meta/telegram → adaptador de canal (usa urlevo=serverUrl/apikey=token);
    * baileys (sin urlevo) → adaptador baileys; en otro caso → Evolution API.
    */
-  private async wfSendText(ctx: NodeExecCtx, remoteJid: string, text: string): Promise<void> {
+  private async wfSendText(ctx: NodeExecCtx, remoteJid: string, text: string): Promise<boolean> {
     const t = (text ?? '').trim();
-    if (!t) return;
+    if (!t) return true;
     const { instanceType, urlevo, apikey, instanceName } = ctx;
     const factory = this.whatsAppSenderFactory;
     if (this.isChannelType(instanceType) && factory) {
-      await factory
+      return factory
         .getSenderSync(instanceType)
         .sendText(instanceName, remoteJid, t, urlevo, apikey)
-        .catch(() => {});
-      return;
+        .then(() => true)
+        .catch(() => false);
     }
     if (!urlevo && factory) {
-      await factory.getSenderSync('baileys').sendText(instanceName, remoteJid, t).catch(() => {});
-      return;
+      return factory
+        .getSenderSync('baileys')
+        .sendText(instanceName, remoteJid, t)
+        .then(() => true)
+        .catch(() => false);
     }
-    await this.nodeSenderService.sendTextNode(
+    return this.nodeSenderService.sendTextNode(
       `${urlevo}/message/sendText/${instanceName}`,
       apikey,
       remoteJid,
       t,
     );
+  }
+
+  /**
+   * Registra el resultado de un envío de contenido del flujo en el contador de
+   * la corrida y, si falló, lo deja como ERROR (antes se perdía en un warning y
+   * el flujo seguía como si nada → el cliente no recibía el mensaje pero igual
+   * se agendaba el seguimiento). No lanza: solo contabiliza y loguea.
+   */
+  private recordFlowSend(ctx: NodeExecCtx, node: WorkflowNode, ok: boolean): void {
+    if (ctx.flowSend) {
+      ctx.flowSend.attempted++;
+      if (ok) ctx.flowSend.sent++;
+      else ctx.flowSend.failed++;
+    }
+    if (!ok) {
+      this.logger.error(
+        `[UID=${ctx.userId}][I=${ctx.instanceName}][R=${ctx.remoteJid}] [flujo] ENVÍO FALLIDO nodo tipo="${node.tipo}" id="${node.id}". ` +
+          `El cliente NO recibió este mensaje (revisar conexión/estado de la instancia "${ctx.instanceName}").`,
+        undefined,
+        'WorkflowService',
+      );
+    }
   }
 
   /** Envío de MEDIA (image/video/document) de un nodo, enrutando por canal. */
@@ -413,6 +451,9 @@ export class WorkflowService implements OnModuleInit {
           : startNodeId;
 
       let executedCount = 0;
+      // Contador de envíos compartido por toda la corrida del flujo (se consulta
+      // en el nodo de seguimiento para no agendarlo si no se entregó nada).
+      const flowSend: FlowSendTracker = { attempted: 0, sent: 0, failed: 0 };
 
       while (currentId) {
         const node = byId.get(currentId);
@@ -582,7 +623,7 @@ export class WorkflowService implements OnModuleInit {
 
         await this.runNodeWithTimeout(
           node,
-          { urlevo, apikey, instanceName, remoteJid, userId, instanceType },
+          { urlevo, apikey, instanceName, remoteJid, userId, instanceType, flowSend },
           {
             timeoutLabel: 'nodo',
             logPauseDiagnostics: true,
@@ -1054,7 +1095,8 @@ export class WorkflowService implements OnModuleInit {
     // adaptador baileys; en otro caso → Evolution API). Ver wfSend* helpers.
     if (node.tipo === 'text') {
       const text = this.resolveNodeText(node.message, pushName);
-      await this.wfSendText(ctx, remoteJid, text);
+      const ok = await this.wfSendText(ctx, remoteJid, text);
+      if (text.trim()) this.recordFlowSend(ctx, node, ok);
       await this.persistFlowOutboundText(ctx, remoteJid, text);
       return;
     }
@@ -1063,6 +1105,7 @@ export class WorkflowService implements OnModuleInit {
       const url = (node.url ?? '').trim();
       const caption = this.resolveNodeText(node.message, pushName).trim();
       const ok = await this.wfSendMedia(ctx, remoteJid, node.tipo, caption, url);
+      if (url) this.recordFlowSend(ctx, node, ok);
       if (ok) await this.persistFlowOutboundMedia(ctx, node, ctx.instanceType ?? 'evolution');
       return;
     }
@@ -1070,6 +1113,7 @@ export class WorkflowService implements OnModuleInit {
     if (node.tipo === 'audio') {
       const url = (node.url ?? '').trim();
       const ok = await this.wfSendAudio(ctx, remoteJid, url);
+      if (url) this.recordFlowSend(ctx, node, ok);
       if (ok) await this.persistFlowOutboundMedia(ctx, node, ctx.instanceType ?? 'evolution');
       return;
     }
@@ -1230,6 +1274,7 @@ export class WorkflowService implements OnModuleInit {
         remoteJid,
         userId,
         warnMissingSession: opts.warnMissingSessionForSeguimiento,
+        flowSend: ctx.flowSend,
       });
       return;
     }
@@ -1439,6 +1484,9 @@ export class WorkflowService implements OnModuleInit {
     }
 
     let executedCount = 0;
+    // Contador de envíos compartido por toda la corrida (se consulta en el nodo
+    // de seguimiento para no agendarlo si el flujo no entregó nada).
+    const flowSend: FlowSendTracker = { attempted: 0, sent: 0, failed: 0 };
 
     for (const node of nodes) {
       // En básico no existe intention. Si aparece, lo ignoramos.
@@ -1457,7 +1505,7 @@ export class WorkflowService implements OnModuleInit {
 
       await this.runNodeWithTimeout(
         node,
-        { urlevo, apikey, instanceName, remoteJid, userId, pushName, instanceType },
+        { urlevo, apikey, instanceName, remoteJid, userId, pushName, instanceType, flowSend },
         {
           timeoutLabel: 'nodo básico',
           logPauseDiagnostics: false,
@@ -1606,6 +1654,7 @@ export class WorkflowService implements OnModuleInit {
     remoteJid: string;
     userId: string;
     warnMissingSession?: boolean;
+    flowSend?: FlowSendTracker;
   }) {
     const {
       node,
@@ -1615,7 +1664,29 @@ export class WorkflowService implements OnModuleInit {
       remoteJid,
       userId,
       warnMissingSession,
+      flowSend,
     } = args;
+
+    // Si el flujo intentó enviar contenido y NADA se entregó (p. ej. la instancia
+    // estaba desconectada), NO agendar el seguimiento de inactividad: el cliente
+    // no recibió ningún mensaje, así que preguntarle luego "¿tienes dudas?" es
+    // incoherente y confunde (síntoma reportado: audios que no salen pero el
+    // seguimiento sí queda registrado).
+    if (
+      node.inactividad &&
+      flowSend &&
+      flowSend.attempted > 0 &&
+      flowSend.sent === 0
+    ) {
+      this.logger.error(
+        `Seguimiento de inactividad NO agendado para ${remoteJid}: el flujo no logró entregar ningún mensaje ` +
+          `(intentos=${flowSend.attempted}, fallidos=${flowSend.failed}). Revisar la conexión de la instancia "${instanceName}".`,
+        undefined,
+        'WorkflowService',
+      );
+      return;
+    }
+
     const session = await this.getSession({ remoteJid, instanceName, userId });
 
     if (!session) {

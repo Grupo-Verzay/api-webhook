@@ -993,7 +993,7 @@ export class WorkflowService implements OnModuleInit {
 
       // Marcador para las columnas que quedan vacías (dato no capturado): deja la fila
       // visualmente uniforme en Sheets. La ficha en la app queda vacía (editable).
-      const PLACEHOLDER = '--------•--------•--------•--------';
+      const PLACEHOLDER = '--------•--------•--------';
       const headers = ['Teléfono', 'Nombre', ...fields.map((f) => f.label), 'Actualizado'];
       const row = [
         phone,

@@ -135,7 +135,10 @@ export class BillingCronService {
     const timeoutMs = this.parsePositiveInt(
       this.configService.get<string>('billingCron.timeoutMs') ??
         this.configService.get<string>('BILLING_CRON_TIMEOUT_MS'),
-      20_000,
+      // El job de billing recorre todos los clientes y les envía por WhatsApp (uno a
+      // uno), así que 20s se quedaba corto y se cortaba a medias. 5 min da margen de
+      // sobra (corre 1 vez/día). Configurable por BILLING_CRON_TIMEOUT_MS.
+      300_000,
     );
 
     return {

@@ -545,6 +545,9 @@ model User {
   leadStatusWorkflowConfigs          LeadStatusWorkflowConfig[]
   stageAutomations                   StageAutomation[]
   advisorAutomations                 AdvisorAutomation[]
+  tagAutomations                     TagAutomation[]
+  apptAutomations                    ApptAutomation[]
+  taskTypeAutomations                TaskTypeAutomation[]
   visualStyles                       UserVisualStyle[]
 }
 
@@ -1433,6 +1436,106 @@ model AdvisorAutomationAction {
 
   @@index([automationId])
   @@map("advisor_automation_actions")
+}
+
+// Automatizaciones por etiqueta: se disparan cuando se asigna un tag a un contacto.
+// tagId null = "cualquier etiqueta".
+model TagAutomation {
+  id        String   @id @default(cuid())
+  userId    String
+  tagId     Int?
+  name      String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actions TagAutomationAction[]
+
+  @@index([userId, tagId])
+  @@map("tag_automations")
+}
+
+model TagAutomationAction {
+  id           String          @id @default(cuid())
+  automationId String
+  type         StageActionType
+  order        Int             @default(0)
+  config       Json
+  delayMinutes Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  automation TagAutomation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId])
+  @@map("tag_automation_actions")
+}
+
+// Automatizaciones por estado de cita: se disparan cuando una cita cambia a ese status.
+model ApptAutomation {
+  id         String            @id @default(cuid())
+  userId     String
+  apptStatus AppointmentStatus
+  name       String
+  enabled    Boolean           @default(true)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  user    User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actions ApptAutomationAction[]
+
+  @@index([userId, apptStatus])
+  @@map("appt_automations")
+}
+
+model ApptAutomationAction {
+  id           String          @id @default(cuid())
+  automationId String
+  type         StageActionType
+  order        Int             @default(0)
+  config       Json
+  delayMinutes Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  automation ApptAutomation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId])
+  @@map("appt_automation_actions")
+}
+
+// Automatizaciones por tipo de tarea: se disparan al crear una tarea de ese tipo.
+model TaskTypeAutomation {
+  id        String   @id @default(cuid())
+  userId    String
+  taskType  String
+  name      String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actions TaskTypeAutomationAction[]
+
+  @@index([userId, taskType])
+  @@map("task_type_automations")
+}
+
+model TaskTypeAutomationAction {
+  id           String          @id @default(cuid())
+  automationId String
+  type         StageActionType
+  order        Int             @default(0)
+  config       Json
+  delayMinutes Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  automation TaskTypeAutomation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId])
+  @@map("task_type_automation_actions")
 }
 
 enum ThemeApp {

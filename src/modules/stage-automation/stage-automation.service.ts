@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-import { LeadStatus, StageActionType } from '@prisma/client';
+import { AppointmentStatus, LeadStatus, StageActionType } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 import { LoggerService } from 'src/core/logger/logger.service';
 import { NodeSenderService } from 'src/modules/workflow/services/node-sender.service.ts/node-sender.service';
@@ -130,6 +130,76 @@ export class StageAutomationService {
 
     this.logger.log(
       `[AdvisorAutomation] ${automations.length} automacion(es) para advisor=${advisorId} session=${sessionId}`,
+      'StageAutomationService',
+    );
+
+    await this.runAutomations(automations, ctx);
+  }
+
+  /**
+   * Ejecuta las automatizaciones de una etiqueta cuando se asigna a un contacto.
+   * Incluye las de "cualquier etiqueta" (tagId = null).
+   */
+  async executeForTag(sessionId: number, tagId: number): Promise<void> {
+    if (!tagId) return;
+    const ctx = await this.buildCtx(sessionId);
+    if (!ctx) return;
+
+    const automations = await this.prisma.tagAutomation.findMany({
+      where: {
+        userId: ctx.userId,
+        enabled: true,
+        OR: [{ tagId }, { tagId: null }],
+      },
+      include: { actions: { orderBy: { order: 'asc' } } },
+    });
+
+    if (automations.length === 0) return;
+
+    this.logger.log(
+      `[TagAutomation] ${automations.length} automacion(es) para tag=${tagId} session=${sessionId}`,
+      'StageAutomationService',
+    );
+
+    await this.runAutomations(automations, ctx);
+  }
+
+  /** Ejecuta las automatizaciones de una cita cuando cambia a un estado. */
+  async executeForAppt(sessionId: number, apptStatus: AppointmentStatus): Promise<void> {
+    if (!apptStatus) return;
+    const ctx = await this.buildCtx(sessionId);
+    if (!ctx) return;
+
+    const automations = await this.prisma.apptAutomation.findMany({
+      where: { userId: ctx.userId, apptStatus, enabled: true },
+      include: { actions: { orderBy: { order: 'asc' } } },
+    });
+
+    if (automations.length === 0) return;
+
+    this.logger.log(
+      `[ApptAutomation] ${automations.length} automacion(es) para status=${apptStatus} session=${sessionId}`,
+      'StageAutomationService',
+    );
+
+    await this.runAutomations(automations, ctx);
+  }
+
+  /** Ejecuta las automatizaciones de un tipo de tarea cuando se crea una tarea de ese tipo. */
+  async executeForTaskType(sessionId: number, taskType: string): Promise<void> {
+    if (!taskType) return;
+    const ctx = await this.buildCtx(sessionId);
+    if (!ctx) return;
+
+    const automations = await this.prisma.taskTypeAutomation.findMany({
+      where: { userId: ctx.userId, taskType, enabled: true },
+      include: { actions: { orderBy: { order: 'asc' } } },
+    });
+
+    if (automations.length === 0) return;
+
+    this.logger.log(
+      `[TaskTypeAutomation] ${automations.length} automacion(es) para taskType=${taskType} session=${sessionId}`,
       'StageAutomationService',
     );
 

@@ -6,6 +6,10 @@ const TIME_ZONE = 'America/Bogota';
 // Slots en formato HH:MM.
 const CHECK_SLOTS = ['09:00', '13:00', '17:00'];
 const INTERVAL_MS = 60_000;
+// Ventana (min) para recuperar un slot perdido: un reinicio dentro de este lapso
+// tras el slot lo ejecuta; más allá, espera al siguiente. 120 < 240 (separación
+// entre slots), así que nunca se solapa con el siguiente.
+const SLOT_TOLERANCE_MIN = 120;
 
 @Injectable()
 export class ConnectionCheckSchedulerService implements OnModuleInit, OnModuleDestroy {
@@ -24,6 +28,10 @@ export class ConnectionCheckSchedulerService implements OnModuleInit, OnModuleDe
       `Connection check scheduler iniciado. Slots=${CHECK_SLOTS.join(', ')} tz=${TIME_ZONE}`,
       'ConnectionCheckSchedulerService',
     );
+    // Chequeo de recuperación inmediato al arrancar: si el contenedor se reinició
+    // después de un slot (ej. por un deploy), lo ejecuta en vez de esperar al
+    // siguiente. Sin esto, un redeploy cerca de las 13:00/17:00 se comía ese aviso.
+    void this.runTick();
   }
 
   onModuleDestroy() {
@@ -32,7 +40,14 @@ export class ConnectionCheckSchedulerService implements OnModuleInit, OnModuleDe
     this.timer = null;
   }
 
-  private getSlotKey(now: Date): string | null {
+  /**
+   * Devuelve el slot VENCIDO más reciente de HOY (el último cuya hora ya pasó),
+   * no solo si estamos en el minuto exacto. Así, combinado con la deduplicación
+   * por `lastRunSlotKey`, un slot corre aunque el minuto exacto se pierda (por un
+   * reinicio o un tick tardío): tolerancia + recuperación. Devuelve null antes del
+   * primer slot del día.
+   */
+  private getDueSlotKey(now: Date): string | null {
     const parts = new Intl.DateTimeFormat('en-CA', {
       timeZone: TIME_ZONE,
       year: 'numeric',
@@ -44,16 +59,25 @@ export class ConnectionCheckSchedulerService implements OnModuleInit, OnModuleDe
     }).formatToParts(now);
 
     const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '0';
-    const hm = `${get('hour').padStart(2, '0')}:${get('minute').padStart(2, '0')}`;
     const dateStr = `${get('year')}-${get('month')}-${get('day')}`;
+    const nowMin = Number(get('hour')) * 60 + Number(get('minute'));
 
-    if (!CHECK_SLOTS.includes(hm)) return null;
-    return `${dateStr}::${hm}`;
+    // El slot vencido más reciente cuya hora esté DENTRO de la ventana de tolerancia
+    // (para recuperar un slot perdido por reinicio, sin re-disparar uno muy viejo:
+    // ej. un deploy a las 20:00 no debe reenviar el aviso de las 17:00).
+    let due: string | null = null;
+    for (const slot of CHECK_SLOTS) {
+      const [h, m] = slot.split(':').map(Number);
+      const slotMin = h * 60 + m;
+      if (slotMin <= nowMin && nowMin - slotMin <= SLOT_TOLERANCE_MIN) due = slot;
+    }
+    if (!due) return null;
+    return `${dateStr}::${due}`;
   }
 
   private async runTick() {
     const now = new Date();
-    const slotKey = this.getSlotKey(now);
+    const slotKey = this.getDueSlotKey(now);
     if (!slotKey) return;
     if (slotKey === this.lastRunSlotKey) return;
     if (this.isRunning) {

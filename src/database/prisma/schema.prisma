@@ -548,6 +548,7 @@ model User {
   tagAutomations                     TagAutomation[]
   apptAutomations                    ApptAutomation[]
   taskTypeAutomations                TaskTypeAutomation[]
+  reminderGroupAutomations           ReminderGroupAutomation[]
   visualStyles                       UserVisualStyle[]
 }
 
@@ -1536,6 +1537,40 @@ model TaskTypeAutomationAction {
 
   @@index([automationId])
   @@map("task_type_automation_actions")
+}
+
+// Automatizaciones por grupo de recordatorio: se disparan cuando un recordatorio
+// de ese grupo se ejecuta/envía. reminderGroup = bucket derivado (sent, recurring, today...).
+model ReminderGroupAutomation {
+  id            String   @id @default(cuid())
+  userId        String
+  reminderGroup String
+  name          String
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user    User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actions ReminderGroupAutomationAction[]
+
+  @@index([userId, reminderGroup])
+  @@map("reminder_group_automations")
+}
+
+model ReminderGroupAutomationAction {
+  id           String          @id @default(cuid())
+  automationId String
+  type         StageActionType
+  order        Int             @default(0)
+  config       Json
+  delayMinutes Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  automation ReminderGroupAutomation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId])
+  @@map("reminder_group_automation_actions")
 }
 
 enum ThemeApp {

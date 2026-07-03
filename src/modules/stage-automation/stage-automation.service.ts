@@ -206,6 +206,53 @@ export class StageAutomationService {
     await this.runAutomations(automations, ctx);
   }
 
+  /**
+   * Ejecuta las automatizaciones de grupo de recordatorio cuando un recordatorio
+   * se ejecuta/envía. El contexto se arma desde el propio recordatorio (no hay
+   * sessionId garantizado): se resuelve la sesión por remoteJid+userId para las
+   * acciones que la requieren; las de solo envío (mensaje/flujo/archivo) no la necesitan.
+   */
+  async executeForReminderGroup(params: {
+    userId: string;
+    remoteJid: string;
+    serverUrl: string;
+    instanceName: string;
+    apikey: string;
+    groups: string[];
+  }): Promise<void> {
+    const { userId, remoteJid, serverUrl, instanceName, apikey, groups } = params;
+    if (!userId || !remoteJid || !instanceName || !serverUrl || !groups?.length) return;
+
+    const automations = await this.prisma.reminderGroupAutomation.findMany({
+      where: { userId, reminderGroup: { in: groups }, enabled: true },
+      include: { actions: { orderBy: { order: 'asc' } } },
+    });
+
+    if (automations.length === 0) return;
+
+    // Resolver sessionId por contacto (para acciones que mutan la sesión)
+    const session = await this.prisma.session.findFirst({
+      where: { remoteJid, userId },
+      select: { id: true },
+    });
+
+    const ctx: ExecCtx = {
+      sessionId: session?.id ?? 0,
+      userId,
+      remoteJid,
+      serverUrl: normalizeBase(serverUrl),
+      instanceName,
+      apikey,
+    };
+
+    this.logger.log(
+      `[ReminderGroupAutomation] ${automations.length} automacion(es) para grupos=${groups.join(',')} remoteJid=${remoteJid}`,
+      'StageAutomationService',
+    );
+
+    await this.runAutomations(automations, ctx);
+  }
+
   private async runAction(action: { type: StageActionType; config: unknown }, ctx: ExecCtx): Promise<void> {
     const cfg = action.config as Record<string, unknown>;
     try {

@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 
 import { LoggerService } from 'src/core/logger/logger.service';
 import { PrismaService } from 'src/database/prisma.service';
 import { WhatsAppSenderFactory } from 'src/modules/whatsapp/whatsapp-sender.factory';
 import { WorkflowService } from 'src/modules/workflow/services/workflow.service.ts/workflow.service';
+import { StageAutomationService } from 'src/modules/stage-automation/stage-automation.service';
 
 @Injectable()
 export class RemindersRunnerService {
@@ -16,9 +18,71 @@ export class RemindersRunnerService {
     private readonly configService: ConfigService,
     private readonly factory: WhatsAppSenderFactory,
     private readonly workflowService: WorkflowService,
+    private readonly moduleRef: ModuleRef,
   ) {
     this.timezoneOffset =
       this.configService.get<string>('FOLLOW_UP_TIMEZONE_OFFSET') ?? '-05:00';
+  }
+
+  /**
+   * Grupos (buckets del kanban de recordatorios) a los que pertenece un
+   * recordatorio al ejecutarse. Espeja getReminderGroup del frontend:
+   * recurring tiene precedencia; si no, el recordatorio recién enviado queda
+   * en 'sent' y su bucket temporal ('today'/'expired') según su hora.
+   */
+  private reminderGroups(reminder: {
+    repeatType?: string | null;
+    time?: string | null;
+  }): string[] {
+    if (reminder.repeatType && reminder.repeatType !== 'NONE') return ['recurring'];
+
+    const groups = new Set<string>(['sent']);
+    const ts = reminder.time ? this.parseLocalTime(reminder.time) : null;
+    const tsMs = ts ? ts.getTime() : (reminder.time ? Date.parse(reminder.time) : NaN);
+    if (!Number.isNaN(tsMs)) {
+      const offMin = this.parseOffsetToMinutes(this.timezoneOffset);
+      const nowLocal = new Date(Date.now() + offMin * 60_000);
+      const startTodayLocalMs =
+        Date.UTC(nowLocal.getUTCFullYear(), nowLocal.getUTCMonth(), nowLocal.getUTCDate()) -
+        offMin * 60_000;
+      groups.add(tsMs < startTodayLocalMs ? 'expired' : 'today');
+    } else {
+      groups.add('today');
+    }
+    return [...groups];
+  }
+
+  /** Dispara (fire-and-forget) las automatizaciones de grupo del recordatorio enviado. */
+  private triggerReminderGroupAutomations(
+    reminder: {
+      userId?: string | null;
+      repeatType?: string | null;
+      time?: string | null;
+      isCampaign?: boolean | null;
+    },
+    remoteJid: string,
+    serverUrl: string,
+    instanceName: string,
+    apikey: string,
+  ): void {
+    // En campañas (blast masivo) no se disparan automatizaciones de grupo.
+    if (reminder.isCampaign || !reminder.userId || !remoteJid) return;
+    try {
+      const svc = this.moduleRef.get(StageAutomationService, { strict: false });
+      void svc.executeForReminderGroup({
+        userId: reminder.userId,
+        remoteJid,
+        serverUrl,
+        instanceName,
+        apikey,
+        groups: this.reminderGroups(reminder),
+      });
+    } catch (err: any) {
+      this.logger.warn(
+        `[REMINDERS] No se pudo disparar automatizaciones de grupo: ${err?.message}`,
+        'RemindersRunnerService',
+      );
+    }
   }
 
   private parseOffsetToMinutes(offset: string): number {
@@ -251,6 +315,9 @@ export class RemindersRunnerService {
               );
             }
           }
+
+          // Automatizaciones de grupo de recordatorio (al ejecutarse el recordatorio)
+          this.triggerReminderGroupAutomations(reminder, remoteJid, serverUrl, instanceName, apikey);
         }
 
         await this.deleteOrAdvance(reminder);

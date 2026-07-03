@@ -33,7 +33,8 @@ export class StageAutomationService {
     private readonly http: HttpService,
   ) {}
 
-  async executeForSession(sessionId: number, newStage: LeadStatus): Promise<void> {
+  /** Construye el contexto de envío (instancia WhatsApp) para una sesión. */
+  private async buildCtx(sessionId: number): Promise<ExecCtx | null> {
     const session = await this.prisma.session.findUnique({
       where: { id: sessionId },
       select: {
@@ -52,16 +53,16 @@ export class StageAutomationService {
       },
     });
 
-    if (!session) return;
+    if (!session) return null;
 
     const instance = session.user?.instancias[0];
     const serverUrl = session.user?.apiKey?.url?.trim();
     if (!instance || !serverUrl) {
       this.logger.warn(`[StageAutomation] Sin instancia para userId=${session.userId}`, 'StageAutomationService');
-      return;
+      return null;
     }
 
-    const ctx: ExecCtx = {
+    return {
       sessionId,
       userId: session.userId,
       remoteJid: session.remoteJid,
@@ -69,9 +70,30 @@ export class StageAutomationService {
       instanceName: instance.instanceName,
       apikey: instance.instanceId,
     };
+  }
+
+  /** Ejecuta las acciones de un conjunto de automatizaciones sobre un contexto. */
+  private async runAutomations(
+    automations: { actions: { type: StageActionType; config: unknown; delayMinutes: number }[] }[],
+    ctx: ExecCtx,
+  ): Promise<void> {
+    for (const automation of automations) {
+      for (const action of automation.actions) {
+        if (action.delayMinutes > 0) {
+          setTimeout(() => void this.runAction(action, ctx), action.delayMinutes * 60_000);
+        } else {
+          await this.runAction(action, ctx);
+        }
+      }
+    }
+  }
+
+  async executeForSession(sessionId: number, newStage: LeadStatus): Promise<void> {
+    const ctx = await this.buildCtx(sessionId);
+    if (!ctx) return;
 
     const automations = await this.prisma.stageAutomation.findMany({
-      where: { userId: session.userId, stage: newStage, enabled: true },
+      where: { userId: ctx.userId, stage: newStage, enabled: true },
       include: { actions: { orderBy: { order: 'asc' } } },
     });
 
@@ -82,15 +104,36 @@ export class StageAutomationService {
       'StageAutomationService',
     );
 
-    for (const automation of automations) {
-      for (const action of automation.actions) {
-        if (action.delayMinutes > 0) {
-          setTimeout(() => void this.runAction(action, ctx), action.delayMinutes * 60_000);
-        } else {
-          await this.runAction(action, ctx);
-        }
-      }
-    }
+    await this.runAutomations(automations, ctx);
+  }
+
+  /**
+   * Ejecuta las automatizaciones configuradas para un asesor cuando se le
+   * asigna (auto o manual) un contacto. Incluye las que aplican a "cualquier
+   * asesor" (advisorId = null). Idempotencia: se dispara sólo con el asesor recibido.
+   */
+  async executeForAdvisor(sessionId: number, advisorId: string): Promise<void> {
+    if (!advisorId) return;
+    const ctx = await this.buildCtx(sessionId);
+    if (!ctx) return;
+
+    const automations = await this.prisma.advisorAutomation.findMany({
+      where: {
+        userId: ctx.userId,
+        enabled: true,
+        OR: [{ advisorId }, { advisorId: null }],
+      },
+      include: { actions: { orderBy: { order: 'asc' } } },
+    });
+
+    if (automations.length === 0) return;
+
+    this.logger.log(
+      `[AdvisorAutomation] ${automations.length} automacion(es) para advisor=${advisorId} session=${sessionId}`,
+      'StageAutomationService',
+    );
+
+    await this.runAutomations(automations, ctx);
   }
 
   private async runAction(action: { type: StageActionType; config: unknown }, ctx: ExecCtx): Promise<void> {

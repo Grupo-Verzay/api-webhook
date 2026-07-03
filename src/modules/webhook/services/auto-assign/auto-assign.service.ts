@@ -1,11 +1,28 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from 'src/database/prisma.service';
+import { StageAutomationService } from 'src/modules/stage-automation/stage-automation.service';
 
 @Injectable()
 export class AutoAssignService {
   private readonly logger = new Logger(AutoAssignService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly moduleRef: ModuleRef,
+  ) {}
+
+  /** Dispara (fire-and-forget) las automatizaciones del asesor recién asignado. */
+  private triggerAdvisorAutomations(sessionId: number, advisorId: string): void {
+    try {
+      const svc = this.moduleRef.get(StageAutomationService, { strict: false });
+      void svc.executeForAdvisor(sessionId, advisorId);
+    } catch (err: any) {
+      this.logger.warn(
+        `[AUTO-ASSIGN] No se pudo disparar automatizaciones de asesor session=${sessionId}: ${err?.message}`,
+      );
+    }
+  }
 
   /**
    * Tries to auto-assign a newly created session to the advisor with the
@@ -84,6 +101,9 @@ export class AutoAssignService {
       this.logger.log(
         `[AUTO-ASSIGN] Session ${sessionId} assigned to advisor ${advisorId}`,
       );
+
+      // Pipeline de asesores: dispara las automatizaciones de ese asesor.
+      this.triggerAdvisorAutomations(sessionId, advisorId);
     } catch (error) {
       this.logger.error(`[AUTO-ASSIGN] Error assigning session ${sessionId}`, error);
     }

@@ -544,6 +544,7 @@ model User {
   Module                             Module[]                     @relation("UserModules")
   leadStatusWorkflowConfigs          LeadStatusWorkflowConfig[]
   stageAutomations                   StageAutomation[]
+  advisorAutomations                 AdvisorAutomation[]
   visualStyles                       UserVisualStyle[]
 }
 
@@ -1398,6 +1399,40 @@ model StageAutomationAction {
 
   @@index([automationId])
   @@map("stage_automation_actions")
+}
+
+// Pipeline de asesores: automatizaciones disparadas al asignar (auto/manual)
+// un asesor a un contacto. advisorId = User del asesor; null = cualquier asesor.
+model AdvisorAutomation {
+  id        String   @id @default(cuid())
+  userId    String
+  advisorId String?
+  name      String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actions AdvisorAutomationAction[]
+
+  @@index([userId, advisorId])
+  @@map("advisor_automations")
+}
+
+model AdvisorAutomationAction {
+  id           String          @id @default(cuid())
+  automationId String
+  type         StageActionType
+  order        Int             @default(0)
+  config       Json
+  delayMinutes Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  automation AdvisorAutomation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId])
+  @@map("advisor_automation_actions")
 }
 
 enum ThemeApp {

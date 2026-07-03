@@ -173,6 +173,51 @@ export class VoicebotService {
   }
 
   /**
+   * Reportado por wacalls al TERMINAR una llamada saliente del bot, con su
+   * resultado. Si NO fue contestada y la cuenta tiene activado el auto-mensaje
+   * "al no contestar", se le envía al contacto por WhatsApp (queda en su chat).
+   * La llamada ya quedó registrada al iniciarse (logOutgoingCallAction en el front).
+   */
+  async handleCallResult(
+    sid: string,
+    phone: string,
+    answered: boolean,
+    secret?: string,
+  ): Promise<{ ok: boolean; sent?: boolean }> {
+    const expected = process.env.VOICEBOT_SECRET;
+    if (expected && secret !== expected) return { ok: false };
+    if (!sid?.trim() || !phone?.trim()) return { ok: false };
+
+    // Contestada → nada que enviar.
+    if (answered) return { ok: true, sent: false };
+
+    try {
+      const users = await this.prisma.$queryRaw<
+        { id: string; enabled: boolean; text: string | null }[]
+      >`
+        SELECT "id",
+               "missed_call_reply_enabled" AS enabled,
+               "missed_call_reply_text"    AS text
+        FROM "User" WHERE "astra_calls_sid" = ${sid} LIMIT 1
+      `;
+      const row = users[0];
+      if (!row?.id) return { ok: false };
+      if (!row.enabled) return { ok: true, sent: false };
+      const text = (row.text ?? '').trim();
+      if (!text) return { ok: true, sent: false };
+
+      const sent = await this.sendWhatsapp(row.id, phone, text);
+      this.logger.log(
+        `[voicebot] auto-mensaje al no contestar userId=${row.id} phone=${phone} sent=${sent}`,
+      );
+      return { ok: true, sent };
+    } catch (err: any) {
+      this.logger.warn(`[voicebot] handleCallResult error: ${err?.message ?? err}`);
+      return { ok: false };
+    }
+  }
+
+  /**
    * Ejecuta una herramienta solicitada por el bot durante la llamada
    * (function calling). Devuelve un texto de resultado que el bot dirá.
    */

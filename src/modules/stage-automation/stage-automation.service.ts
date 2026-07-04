@@ -42,7 +42,7 @@ export class StageAutomationService {
         remoteJid: true,
         user: {
           select: {
-            apiKey: { select: { url: true, key: true } },
+            apiKey: { select: { url: true } },
             instancias: {
               where: { instanceType: 'Whatsapp' },
               select: { instanceName: true, instanceId: true },
@@ -62,20 +62,13 @@ export class StageAutomationService {
       return null;
     }
 
-    // Apikey de Evolution: es la clave del ApiKey del owner (misma que usa el
-    // resto del backend para autenticar contra Evolution, p. ej. instances.service),
-    // NO el instanceId (un UUID de la instancia, que Evolution rechaza con 401 →
-    // los envíos del flujo lanzado por automatización fallaban aunque la instancia
-    // estuviera conectada). Fallback a instanceId por compatibilidad si faltara la clave.
-    const apikey = session.user?.apiKey?.key?.trim() || instance.instanceId;
-
     return {
       sessionId,
       userId: session.userId,
       remoteJid: session.remoteJid,
       serverUrl: normalizeBase(serverUrl),
       instanceName: instance.instanceName,
-      apikey,
+      apikey: instance.instanceId,
     };
   }
 

@@ -326,9 +326,12 @@ export class StageAutomationService {
 
   private async doExecuteFlow(cfg: Record<string, unknown>, ctx: ExecCtx) {
     const workflowName = String(cfg.workflowName);
-    const sendUrl = `${ctx.serverUrl}/message/sendText/${encodeURIComponent(ctx.instanceName)}`;
+    // executeWorkflow espera la URL BASE del servidor (arma /message/sendText,
+    // /message/sendWhatsAppAudio, etc. por dentro en cada nodo). Pasar aquí una
+    // URL ya construida con /message/sendText/<instancia> duplicaba la ruta y
+    // Evolution respondía 404 en TODOS los nodos del flujo lanzado por automatización.
     await this.workflowService.executeWorkflow(
-      workflowName, sendUrl, ctx.apikey, ctx.instanceName, ctx.remoteJid, ctx.userId,
+      workflowName, ctx.serverUrl, ctx.apikey, ctx.instanceName, ctx.remoteJid, ctx.userId,
     );
     this.logger.log(`[StageAutomation] EXECUTE_FLOW workflow=${workflowName} session=${ctx.sessionId}`, 'StageAutomationService');
   }

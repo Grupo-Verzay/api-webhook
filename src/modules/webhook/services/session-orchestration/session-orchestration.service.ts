@@ -104,7 +104,7 @@ export class SessionOrchestrationService {
 
       // Retry auto-assign si la sesión existe pero aún no tiene asesor asignado
       if (!session.assignedAdvisorId) {
-        void this.autoAssignService.tryAssign(session.id, userId);
+        void this.autoAssignService.tryAssign(session.id, userId, session.remoteJid, instanceName);
       }
 
       const hasTrigger = await this.sessionTriggerService.findBySessionId(session.id.toString());
@@ -131,7 +131,7 @@ export class SessionOrchestrationService {
     );
     logger.log(`✅ Registro exitoso para ${remoteJid}`);
 
-    void this.autoAssignService.tryAssign(newSession.id, userId);
+    void this.autoAssignService.tryAssign(newSession.id, userId, remoteJid, instanceName);
 
     return { status: true, canonicalRemoteJid: remoteJid };
   }

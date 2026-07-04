@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from 'src/database/prisma.service';
 import { StageAutomationService } from 'src/modules/stage-automation/stage-automation.service';
+import { ChatEventsGateway } from 'src/modules/realtime/chat-events.gateway';
 
 @Injectable()
 export class AutoAssignService {
@@ -25,13 +26,38 @@ export class AutoAssignService {
   }
 
   /**
+   * Notifica por tiempo real que el chat cambió (se asignó asesor) para que el
+   * panel del dueño/asesor lo refresque AL INSTANTE, en vez de esperar al poll.
+   * Sin `message` → el frontend hace refetch y ve el nuevo asesor.
+   * Aditivo y nunca bloqueante (si el gateway no está, se ignora).
+   */
+  private emitAssignmentRealtime(
+    ownerId: string,
+    remoteJid?: string,
+    instanceName?: string | null,
+  ): void {
+    if (!remoteJid) return;
+    try {
+      const gateway = this.moduleRef.get(ChatEventsGateway, { strict: false });
+      gateway.emitChatChanged({ userId: ownerId, remoteJid, instanceName });
+    } catch {
+      // silencioso: nunca romper la asignación por un fallo de emisión.
+    }
+  }
+
+  /**
    * Tries to auto-assign a newly created session to the advisor with the
    * fewest active sessions, respecting the owner's max-chats limit.
    * Uses a conditional UPDATE to prevent double-assignment race conditions.
    * Devuelve true si asignó (útil para el barrido de seguridad). Loguea el
    * motivo cuando NO asigna, para poder diagnosticar por qué un lead queda solo.
    */
-  async tryAssign(sessionId: number, ownerId: string): Promise<boolean> {
+  async tryAssign(
+    sessionId: number,
+    ownerId: string,
+    remoteJid?: string,
+    instanceName?: string | null,
+  ): Promise<boolean> {
     try {
       // 1. Check owner settings
       const settings = await this.prisma.$queryRaw<
@@ -128,6 +154,8 @@ export class AutoAssignService {
 
       // Pipeline de asesores: dispara las automatizaciones de ese asesor.
       this.triggerAdvisorAutomations(sessionId, advisorId);
+      // Tiempo real: que el panel muestre el asesor asignado al instante.
+      this.emitAssignmentRealtime(ownerId, remoteJid, instanceName);
       return true;
     } catch (error) {
       this.logger.error(`[AUTO-ASSIGN] Error assigning session ${sessionId}`, error);
@@ -148,8 +176,10 @@ export class AutoAssignService {
     //   real se perdió (reinicio/fallo transitorio); no mass-asignar backlog viejo.
     // - Con ASC + LIMIT, el backlog de sesiones viejas inasignables (owners sin
     //   capacidad) consumía el lote y los leads nuevos nunca se procesaban.
-    const pending = await this.prisma.$queryRaw<{ id: number; userId: string }[]>`
-      SELECT s.id, s."userId"
+    const pending = await this.prisma.$queryRaw<
+      { id: number; userId: string; remoteJid: string }[]
+    >`
+      SELECT s.id, s."userId", s."remoteJid"
       FROM "Session" s
       JOIN "User" u ON u.id = s."userId"
       WHERE s.assigned_advisor_id IS NULL
@@ -163,7 +193,7 @@ export class AutoAssignService {
 
     let assigned = 0;
     for (const row of pending) {
-      const ok = await this.tryAssign(row.id, row.userId);
+      const ok = await this.tryAssign(row.id, row.userId, row.remoteJid);
       if (ok) assigned++;
     }
     return { scanned: pending.length, assigned };

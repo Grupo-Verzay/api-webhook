@@ -28,8 +28,10 @@ export class AutoAssignService {
    * Tries to auto-assign a newly created session to the advisor with the
    * fewest active sessions, respecting the owner's max-chats limit.
    * Uses a conditional UPDATE to prevent double-assignment race conditions.
+   * Devuelve true si asignó (útil para el barrido de seguridad). Loguea el
+   * motivo cuando NO asigna, para poder diagnosticar por qué un lead queda solo.
    */
-  async tryAssign(sessionId: number, ownerId: string): Promise<void> {
+  async tryAssign(sessionId: number, ownerId: string): Promise<boolean> {
     try {
       // 1. Check owner settings
       const settings = await this.prisma.$queryRaw<
@@ -41,7 +43,18 @@ export class AutoAssignService {
         LIMIT 1
       `;
 
-      if (!settings[0]?.auto_assign_enabled) return;
+      if (!settings[0]) {
+        this.logger.debug(
+          `[AUTO-ASSIGN] session=${sessionId} owner=${ownerId}: owner no encontrado → no se asigna.`,
+        );
+        return false;
+      }
+      if (!settings[0].auto_assign_enabled) {
+        this.logger.debug(
+          `[AUTO-ASSIGN] session=${sessionId} owner=${ownerId}: auto-asignación deshabilitada → no se asigna.`,
+        );
+        return false;
+      }
 
       const maxChats = settings[0].auto_assign_max_chats ?? 5;
 
@@ -71,7 +84,13 @@ export class AutoAssignService {
         LIMIT 1
       `;
 
-      if (candidates.length === 0) return;
+      if (candidates.length === 0) {
+        this.logger.warn(
+          `[AUTO-ASSIGN] session=${sessionId} owner=${ownerId}: SIN asesores elegibles ` +
+            `(ninguno disponible y bajo el límite ${maxChats}). El lead queda sin asignar.`,
+        );
+        return false;
+      }
 
       const advisorId = candidates[0].id;
 
@@ -83,7 +102,12 @@ export class AutoAssignService {
           AND assigned_advisor_id IS NULL
       `;
 
-      if (Number(updated) <= 0) return;
+      if (Number(updated) <= 0) {
+        this.logger.debug(
+          `[AUTO-ASSIGN] session=${sessionId}: la sesión ya estaba asignada (update 0 filas).`,
+        );
+        return false;
+      }
 
       try {
         await this.prisma.$executeRaw`
@@ -104,8 +128,38 @@ export class AutoAssignService {
 
       // Pipeline de asesores: dispara las automatizaciones de ese asesor.
       this.triggerAdvisorAutomations(sessionId, advisorId);
+      return true;
     } catch (error) {
       this.logger.error(`[AUTO-ASSIGN] Error assigning session ${sessionId}`, error);
+      return false;
     }
+  }
+
+  /**
+   * Red de seguridad: asigna cualquier sesión ACTIVA que haya quedado SIN asesor
+   * pese al tryAssign en tiempo real (p. ej. porque el backend se reinició justo
+   * al llegar el mensaje, o un fallo transitorio). Se ejecuta periódicamente
+   * desde AutoAssignSweepScheduler. Reutiliza tryAssign (mismos límites/reglas).
+   * Excluye @lid (sesiones fantasma sin teléfono).
+   */
+  async sweepUnassigned(): Promise<{ scanned: number; assigned: number }> {
+    const pending = await this.prisma.$queryRaw<{ id: number; userId: string }[]>`
+      SELECT s.id, s."userId"
+      FROM "Session" s
+      JOIN "User" u ON u.id = s."userId"
+      WHERE s.assigned_advisor_id IS NULL
+        AND s.status = true
+        AND u.auto_assign_enabled = true
+        AND lower(s."remoteJid") NOT LIKE '%@lid'
+      ORDER BY s."createdAt" ASC
+      LIMIT 300
+    `;
+
+    let assigned = 0;
+    for (const row of pending) {
+      const ok = await this.tryAssign(row.id, row.userId);
+      if (ok) assigned++;
+    }
+    return { scanned: pending.length, assigned };
   }
 }

@@ -31,6 +31,7 @@ import { ChatMessagesCleanupService } from './services/chat-messages-cleanup/cha
 import { ChatMessagesCleanupSchedulerService } from './services/chat-messages-cleanup/chat-messages-cleanup.scheduler.service';
 import { PaymentReceiptModule } from 'src/modules/payment-receipt/payment-receipt.module';
 import { AutoAssignService } from './services/auto-assign/auto-assign.service';
+import { AutoAssignSweepSchedulerService } from './services/auto-assign/auto-assign-sweep.scheduler.service';
 import { SessionTriggerRunnerService } from './services/session-trigger-runner/session-trigger-runner.service';
 import { SessionTriggerRunnerSchedulerService } from './services/session-trigger-runner/session-trigger-runner.scheduler.service';
 import { RemindersRunnerService } from './services/reminders-runner/reminders-runner.service';
@@ -83,6 +84,7 @@ import { TrialFollowUpCronSchedulerService } from './services/trial-followup-cro
     MessageBufferService,
     MessageTypeHandlerService,
     AutoAssignService,
+    AutoAssignSweepSchedulerService,
     SessionTriggerRunnerService,
     SessionTriggerRunnerSchedulerService,
     RemindersRunnerService,

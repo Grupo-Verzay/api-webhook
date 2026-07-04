@@ -246,6 +246,11 @@ export class WorkflowService implements OnModuleInit {
     channel: string,
   ): Promise<void> {
     try {
+      // Solo para canales (meta/telegram): en Evolution/Baileys el saliente ya
+      // llega por webhook/store, así que persistirlo aquí duplicaba el mensaje en
+      // el panel (una copia "Agente IA" + otra del eco del webhook atribuida al
+      // asesor). Mismo criterio que persistFlowOutboundText.
+      if (!this.isChannelType(ctx.instanceType)) return;
       if (!this.chatStore || !ctx.userId) {
         this.logger.warn(
           `[FlowPersist] media omitida (chatStore=${!!this.chatStore} userId=${!!ctx.userId})`,

@@ -31,7 +31,22 @@ interface MetaValue {
   metadata: { display_phone_number: string; phone_number_id: string };
   contacts?: MetaContact[];
   messages?: MetaMessage[];
+  calls?: MetaCall[];
   statuses?: any[];
+}
+
+interface MetaCall {
+  id?: string;
+  from?: string;
+  to?: string;
+  event?: string;
+  status?: string;
+  timestamp?: string;
+  session?: {
+    sdp?: string;
+    sdp_type?: string;
+  };
+  [key: string]: any;
 }
 
 interface MetaChange {
@@ -122,11 +137,16 @@ export class MetaWebhookNormalizerService {
     const results: WebhookBodyDto[] = [];
 
     for (const change of entry.changes ?? []) {
-      if (change.field !== 'messages') continue;
-
       const value = change.value;
       const phoneNumberId = value.metadata?.phone_number_id;
       if (!phoneNumberId) continue;
+
+      if (change.field === 'calls') {
+        await this.persistCallWebhook(value);
+        continue;
+      }
+
+      if (change.field !== 'messages') continue;
 
       const messages = value.messages ?? [];
       if (messages.length === 0) continue;
@@ -166,6 +186,78 @@ export class MetaWebhookNormalizerService {
   }
 
   /* ── Facebook Messenger / Instagram DMs ── */
+  private async persistCallWebhook(value: MetaValue): Promise<void> {
+    const phoneNumberId = value.metadata?.phone_number_id;
+    const calls = value.calls ?? [];
+    if (!phoneNumberId || calls.length === 0) return;
+
+    const instance = await this.prisma.instancia.findFirst({
+      where: { metaPhoneNumberId: phoneNumberId },
+      select: { instanceName: true, userId: true },
+    });
+
+    if (!instance?.userId) {
+      this.logger.warn(`[Meta/WA Calls] No hay instancia para phone_number_id: ${phoneNumberId}`);
+      return;
+    }
+
+    await this.prisma.$executeRaw`
+      CREATE TABLE IF NOT EXISTS "chat_messages" (
+        "id" BIGSERIAL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "instanceName" TEXT NOT NULL,
+        "instanceType" TEXT,
+        "remoteJid" TEXT NOT NULL,
+        "remoteJidAlt" TEXT,
+        "senderPn" TEXT,
+        "messageId" TEXT NOT NULL,
+        "fromMe" BOOLEAN NOT NULL DEFAULT FALSE,
+        "pushName" TEXT,
+        "messageType" TEXT NOT NULL DEFAULT 'conversation',
+        "content" TEXT,
+        "mediaUrl" TEXT,
+        "raw" JSONB,
+        "messageTimestamp" TIMESTAMP(3) NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+    await this.prisma.$executeRaw`
+      CREATE UNIQUE INDEX IF NOT EXISTS "chat_messages_user_instance_jid_msg_from_unique"
+      ON "chat_messages" ("userId", "instanceName", "remoteJid", "messageId", "fromMe")
+    `;
+
+    for (const call of calls) {
+      const callId = String(call.id ?? '').trim();
+      if (!callId) continue;
+
+      const rawJson = JSON.stringify({
+        metaCall: {
+          ...call,
+          phoneNumberId,
+          displayPhoneNumber: value.metadata?.display_phone_number,
+        },
+      });
+
+      await this.prisma.$executeRaw`
+        INSERT INTO "chat_messages" (
+          "userId", "instanceName", "instanceType", "remoteJid", "messageId",
+          "fromMe", "messageType", "content", "raw", "messageTimestamp", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${instance.userId}, ${instance.instanceName}, ${'meta'}, ${`meta-call:${callId}`},
+          ${`meta_call_${callId}`}, ${false}, ${'meta_call'},
+          ${call.event ?? call.status ?? 'call'}, ${rawJson}::jsonb, NOW(), NOW(), NOW()
+        )
+        ON CONFLICT ("userId", "instanceName", "remoteJid", "messageId", "fromMe")
+        DO UPDATE SET
+          "content" = EXCLUDED."content",
+          "raw" = EXCLUDED."raw",
+          "updatedAt" = NOW()
+      `;
+    }
+  }
+
   private async normalizeMessenger(
     entry: MetaEntry,
     channel: 'facebook' | 'instagram',

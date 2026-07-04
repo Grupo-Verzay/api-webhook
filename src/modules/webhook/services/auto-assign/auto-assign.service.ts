@@ -143,6 +143,11 @@ export class AutoAssignService {
    * Excluye @lid (sesiones fantasma sin teléfono).
    */
   async sweepUnassigned(): Promise<{ scanned: number; assigned: number }> {
+    // Solo leads RECIENTES (últimos 2 días) y newest-first. Motivos:
+    // - La red de seguridad busca rescatar leads frescos cuyo tryAssign en tiempo
+    //   real se perdió (reinicio/fallo transitorio); no mass-asignar backlog viejo.
+    // - Con ASC + LIMIT, el backlog de sesiones viejas inasignables (owners sin
+    //   capacidad) consumía el lote y los leads nuevos nunca se procesaban.
     const pending = await this.prisma.$queryRaw<{ id: number; userId: string }[]>`
       SELECT s.id, s."userId"
       FROM "Session" s
@@ -151,8 +156,9 @@ export class AutoAssignService {
         AND s.status = true
         AND u.auto_assign_enabled = true
         AND lower(s."remoteJid") NOT LIKE '%@lid'
-      ORDER BY s."createdAt" ASC
-      LIMIT 300
+        AND s."createdAt" > NOW() - INTERVAL '2 days'
+      ORDER BY s."createdAt" DESC
+      LIMIT 500
     `;
 
     let assigned = 0;

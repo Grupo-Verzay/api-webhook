@@ -76,19 +76,9 @@ export class WebhookService {
     private readonly chatStore: ChatStoreService,
   ) { }
 
-  /**
-   * Determina el canal real de la conversación para etiquetar `instanceType` en
-   * el store unificado (chat_messages):
-   *  - meta      → data.source === 'meta' (WhatsApp Cloud / Messenger / Instagram)
-   *  - telegram  → data.source === 'telegram' o server_url sentinel 'telegram'
-   *  - baileys   → WhatsApp por Baileys (server_url vacío)
-   *  - evolution → WhatsApp por Evolution API (server_url es una URL)
-   */
-  private resolveInstanceType(source?: string, serverUrl?: string): string {
-    if (source === 'meta') return 'meta';
-    if (source === 'telegram' || serverUrl === 'telegram') return 'telegram';
-    if (!serverUrl) return 'baileys';
-    return 'evolution';
+  /** Canales cuyos mensajes se persisten en el store unificado (no pasan por Evolution). */
+  private isUnifiedStoreChannel(source?: string): boolean {
+    return source === 'telegram' || source === 'meta';
   }
 
   /**
@@ -154,7 +144,6 @@ export class WebhookService {
       return (remoteJid, text) =>
         sender.sendText(instanceName, remoteJid, text).then(() => {
           notify(remoteJid);
-          persistOutbound('baileys', remoteJid, text, true);
         });
     }
     // Telegram: server_url es el sentinel "telegram" y apikey es el bot token.
@@ -180,7 +169,6 @@ export class WebhookService {
     return (remoteJid, text) =>
       this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, remoteJid, text).then(() => {
         notify(remoteJid);
-        persistOutbound('evolution', remoteJid, text, true);
       });
   }
 
@@ -594,12 +582,8 @@ export class WebhookService {
       return;
     }
 
-    /* Persistir entrante en el store unificado para la bandeja de Chats.
-       Antes solo Telegram/Meta; ahora TODOS los canales (incluye WhatsApp por
-       Evolution y Baileys) para que el historial sea durable y sobreviva a
-       desconexiones/relink de la línea, con el canal correctamente etiquetado. */
-    {
-      const inboundInstanceType = this.resolveInstanceType(data?.source, server_url);
+    /* Persistir entrante en el store unificado (Telegram/Meta) para la bandeja de Chats */
+    if (this.isUnifiedStoreChannel(data?.source)) {
       const mediaTypes = ['imageMessage', 'audioMessage', 'videoMessage', 'documentMessage'];
       const isMedia = mediaTypes.includes(messageType);
       // storeIncomingMedia ya dejó la URL pública en data.message.mediaUrl (si pudo subirla).
@@ -620,7 +604,7 @@ export class WebhookService {
       void this.chatStore.persistMessage({
         userId,
         instanceName,
-        instanceType: inboundInstanceType,
+        instanceType: data.source,
         remoteJid: canonicalRemoteJid,
         remoteJidAlt: canonicalAlt || null,
         messageId: data?.key?.id,

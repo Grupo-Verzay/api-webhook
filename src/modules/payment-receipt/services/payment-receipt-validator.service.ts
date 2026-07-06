@@ -4,10 +4,6 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/database/prisma.service';
 import { ReceiptAnalysis, ValidationResult } from '../types/receipt-analysis.types';
 
-/** Montos de planes en USD (con tolerancia ±5%) */
-const PLAN_AMOUNTS_USD = [49, 49.5, 99, 99.5, 119.5, 149, 249];
-const AMOUNT_TOLERANCE = 0.05; // 5%
-
 /** Días máximos de antigüedad permitidos para un comprobante */
 const MAX_RECEIPT_AGE_DAYS = 30;
 
@@ -43,30 +39,18 @@ export class PaymentReceiptValidatorService {
       };
     }
 
-    // 2. ¿El monto corresponde a algún plan?
+    // 2. El monto debe ser extraíble, con moneda reconocible y positivo.
+    //    La validación de que el monto COINCIDE con el precio configurado del
+    //    cliente se hace en verzay-app (confirmPaymentInternal), que sí conoce
+    //    al cliente y su precio en /panel/client-billing.
     if (analysis.amount === null) {
       return { isValid: false, reason: 'No se pudo extraer el monto del comprobante.' };
     }
-
-    // Convertir a USD para comparar (si está en COP, no podemos comparar fácilmente)
-    // Si la moneda es COP, solo validamos que el monto sea positivo
-    if (analysis.currency === 'USD') {
-      const isValidAmount = PLAN_AMOUNTS_USD.some(
-        (plan) => Math.abs(analysis.amount! - plan) / plan <= AMOUNT_TOLERANCE,
-      );
-      if (!isValidAmount) {
-        return {
-          isValid: false,
-          reason: `Monto $${analysis.amount} USD no coincide con ningún plan de Verzay.`,
-        };
-      }
-    } else if (analysis.currency === 'COP') {
-      // Para COP solo validamos que sea positivo (no tenemos tasa de cambio en tiempo real)
-      if (analysis.amount <= 0) {
-        return { isValid: false, reason: 'Monto en COP inválido.' };
-      }
-    } else {
+    if (analysis.currency !== 'COP' && analysis.currency !== 'USD') {
       return { isValid: false, reason: 'No se pudo determinar la moneda del comprobante.' };
+    }
+    if (analysis.amount <= 0) {
+      return { isValid: false, reason: 'Monto del comprobante inválido.' };
     }
 
     // 3. ¿La fecha es reciente?

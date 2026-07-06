@@ -792,8 +792,17 @@ export class FollowUpRunnerService {
       // se libera el lock (vuelve a 'pending') y se reintenta en la próxima corrida del
       // runner que caiga dentro del horario. No cuenta intento.
       const idNodo = (seguimiento.idNodo ?? '').trim();
+      // Recordatorios/confirmaciones con hora exacta elegida por el usuario. Cubre los de
+      // la agenda individual (appt-*), la de equipo (booking-*), tareas (task-reminder-),
+      // recordatorios sueltos (reminder-) y campañas (camping-). Los seguimientos de FLUJO
+      // usan `idNodo` = id del nodo del constructor y NO caen aquí, por lo que sí respetan
+      // la ventana. Sin estos prefijos, un recordatorio de cita fuera del horario laboral
+      // se posponía a la siguiente franja en vez de enviarse a su hora.
       const isExplicitReminder =
-        idNodo.startsWith('reminder-') || /^camping-/.test(idNodo);
+        /^(?:appt|booking(?:-svc)?|task)-reminder-/.test(idNodo) ||
+        idNodo.startsWith('reminder-') ||
+        /^(?:appt|booking)-confirm-/.test(idNodo) ||
+        /^camping-/.test(idNodo);
       if (!isExplicitReminder && !(await this.isWithinSendWindow(effectiveUserId))) {
         await this.prisma.seguimiento.updateMany({
           where: { id: seguimiento.id, followUpStatus: 'processing' },

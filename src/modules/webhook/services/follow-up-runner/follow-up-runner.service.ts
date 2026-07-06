@@ -786,24 +786,28 @@ export class FollowUpRunnerService {
       const effectiveUserId = session?.userId ?? '';
       const effectiveInstanceId = session?.instanceId ?? (seguimiento.instancia ?? '').trim();
 
-      // Ventana de envío por cuenta (horario + días en su zona horaria). Solo aplica a
-      // seguimientos de FLUJO/workflow; los recordatorios y campañas tienen una hora
-      // exacta elegida por el usuario y NO se posponen. Si estamos fuera de la franja,
-      // se libera el lock (vuelve a 'pending') y se reintenta en la próxima corrida del
-      // runner que caiga dentro del horario. No cuenta intento.
+      // Ventana de envío por cuenta (horario + días en su zona horaria). Si un flujo cae
+      // fuera de la franja, se libera el lock (vuelve a 'pending') y se reintenta en la
+      // próxima corrida del runner que caiga dentro del horario. No cuenta intento.
       const idNodo = (seguimiento.idNodo ?? '').trim();
-      // Recordatorios/confirmaciones con hora exacta elegida por el usuario. Cubre los de
-      // la agenda individual (appt-*), la de equipo (booking-*), tareas (task-reminder-),
-      // recordatorios sueltos (reminder-) y campañas (camping-). Los seguimientos de FLUJO
-      // usan `idNodo` = id del nodo del constructor y NO caen aquí, por lo que sí respetan
-      // la ventana. Sin estos prefijos, un recordatorio de cita fuera del horario laboral
-      // se posponía a la siguiente franja en vez de enviarse a su hora.
-      const isExplicitReminder =
+      // La ventana de envío (horario laboral) aplica ÚNICAMENTE a los seguimientos de
+      // FLUJO/WORKFLOW (nodos de /flow y /workflow), que se disparan de forma relativa a
+      // la inactividad del cliente y por eso sí deben respetar el horario. Estos usan
+      // `idNodo` = id del nodo del constructor (no vacío y sin prefijo de recordatorio).
+      //
+      // Todo lo demás tiene una hora exacta elegida por el usuario o debe salir de
+      // inmediato, así que NO se pospone:
+      //   - recordatorios: reminder-, appt-reminder-, booking-reminder-, booking-svc-reminder-, task-reminder-
+      //   - confirmaciones: appt-confirm-, booking-confirm-, e idNodo vacío ("")
+      //   - campañas: camping-
+      const isReminderOrConfirm =
+        idNodo === '' ||
         /^(?:appt|booking(?:-svc)?|task)-reminder-/.test(idNodo) ||
         idNodo.startsWith('reminder-') ||
         /^(?:appt|booking)-confirm-/.test(idNodo) ||
         /^camping-/.test(idNodo);
-      if (!isExplicitReminder && !(await this.isWithinSendWindow(effectiveUserId))) {
+      const isFlowFollowUp = !isReminderOrConfirm;
+      if (isFlowFollowUp && !(await this.isWithinSendWindow(effectiveUserId))) {
         await this.prisma.seguimiento.updateMany({
           where: { id: seguimiento.id, followUpStatus: 'processing' },
           data: { followUpStatus: 'pending' },

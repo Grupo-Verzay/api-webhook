@@ -673,8 +673,12 @@ export class AiAgentService {
         orderBy: { createdAt: 'asc' },
       });
       if (!operators.length) return null;
+      this.scopedLogger({ userId: params.userId, instanceName: params.instanceName, remoteJid: params.remoteJid })
+        .log(`[BRIDGE] tool consultar_operario registrada (${operators.length} operario(s) activo(s)).`);
       return this.buildConsultarOperarioTool(params, operators);
-    } catch {
+    } catch (e: any) {
+      this.scopedLogger({ userId: params.userId, instanceName: params.instanceName, remoteJid: params.remoteJid })
+        .warn(`[BRIDGE] maybeBuildConsultarOperarioTool error: ${e?.message ?? e}`);
       return null;
     }
   }
@@ -758,10 +762,9 @@ export class AiAgentService {
       {
         name: 'consultar_operario',
         description:
-          'Úsala cuando NO puedas resolver una consulta del cliente y necesites la confirmación de un operario/experto humano (precio especial, disponibilidad o stock, un detalle técnico). Reenvía la consulta a un operario por WhatsApp; su respuesta se le entregará al cliente automáticamente. NO la uses para saludos ni para lo que ya puedes responder tú mismo.' +
-          (multiple
-            ? `\n\nOperarios disponibles y su especialidad:\n${roster}\n\nEn "operario" indica el NOMBRE del más adecuado según la consulta.`
-            : ''),
+          `Consulta a un OPERARIO/EXPERTO humano por WhatsApp; su respuesta se reformula y se entrega al cliente automáticamente.\n\n` +
+          `Operarios y su especialidad:\n${roster || '- (un operario disponible)'}\n\n` +
+          `REGLA: si la consulta del cliente trata sobre la especialidad de alguno de estos operarios, USA esta herramienta (indica su NOMBRE en "operario") EN LUGAR de responder tú mismo, AUNQUE creas saber la respuesta. Úsala también cuando no puedas resolver con certeza. NO la uses para saludos ni charla general.`,
         schema: z.object({
           consulta: z.string().describe('La pregunta o solicitud concreta, redactada de forma clara para el operario.'),
           nombre_cliente: z.string().optional().describe('Nombre del cliente si se conoce.'),

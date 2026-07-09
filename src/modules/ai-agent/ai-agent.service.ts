@@ -319,6 +319,10 @@ export class AiAgentService {
       remoteJid: params.remoteJid,
     });
 
+    // Puente con operario: tool de sistema condicional (flag global + por cuenta).
+    // Se calcula una vez y se añade en ambas ramas de retorno.
+    const operatorBridgeTool = await this.maybeBuildConsultarOperarioTool(params);
+
     // Obtener configs (ya precargadas desde processInput para evitar doble query)
     const allConfigs =
       preloadedConfigs ??
@@ -333,6 +337,7 @@ export class AiAgentService {
       );
       const defaultTools = this.buildHardcodedDefaultTools(params);
       defaultTools.push(this.buildMarcarDescartadoTool(params));
+      if (operatorBridgeTool) defaultTools.push(operatorBridgeTool);
       return defaultTools;
     }
 
@@ -385,6 +390,7 @@ export class AiAgentService {
 
     // Tool de sistema: siempre disponible independientemente de configs
     tools.push(this.buildMarcarDescartadoTool(params));
+    if (operatorBridgeTool) tools.push(operatorBridgeTool);
 
     return tools;
   }
@@ -646,6 +652,139 @@ export class AiAgentService {
   }
 
   // ─── Individual tool builders ─────────────────────────────────────────────
+
+  // ── Puente con operario (triangulación IA por WhatsApp) ───────────────────
+  // Registra la tool `consultar_operario` SOLO si la feature está activa (flag
+  // global de entorno + por cuenta) y hay al menos un operario activo. Detrás del
+  // flag global no ejecuta ninguna query, así no afecta el rendimiento normal.
+  private async maybeBuildConsultarOperarioTool(params: {
+    userId: string; server_url: string; apikey: string; instanceName: string; remoteJid: string;
+  }): Promise<any | null> {
+    if (process.env.OPERATOR_BRIDGE_ENABLED !== 'true') return null;
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: params.userId },
+        select: { operatorBridgeEnabled: true },
+      });
+      if (!user?.operatorBridgeEnabled) return null;
+      const op = await this.prisma.operatorContact.findFirst({
+        where: { userId: params.userId, isActive: true },
+        select: { id: true },
+      });
+      if (!op) return null;
+      return this.buildConsultarOperarioTool(params);
+    } catch {
+      return null;
+    }
+  }
+
+  private buildConsultarOperarioTool(params: {
+    userId: string; server_url: string; apikey: string; instanceName: string; remoteJid: string;
+  }): any {
+    const { userId, server_url, apikey, instanceName, remoteJid } = params;
+    const logger = this.scopedLogger({ userId, instanceName, remoteJid });
+
+    // @ts-ignore - evitar problemas de tipos profundos con LangChain + zod
+    return tool(
+      async ({ consulta, nombre_cliente }) => {
+        try {
+          // 1. Operario disponible (primer activo — Fase 2: por tema/turno)
+          const operator = await this.prisma.operatorContact.findFirst({
+            where: { userId, isActive: true },
+            orderBy: { createdAt: 'asc' },
+          });
+          if (!operator) return 'No hay operarios disponibles para consultar en este momento. Responde al cliente con lo que sepas.';
+
+          // 2. Ubicar la conversación del cliente (para vincular el puente)
+          const session = await this.prisma.session.findFirst({
+            where: { userId, remoteJid },
+            select: { id: true },
+          });
+          if (!session) return 'No se pudo ubicar la conversación del cliente.';
+
+          // 3. Enviar la consulta al operario por la MISMA línea del negocio
+          const url = `${server_url}/message/sendText/${instanceName}`;
+          const operatorJid = `${operator.phone}@s.whatsapp.net`;
+          const who = (nombre_cliente ?? '').trim() || 'Un cliente';
+          const msgToOperator =
+            `🧑‍🔧 *Consulta de ${who}*\n\n` +
+            `${consulta}\n\n` +
+            `_Responde a este mensaje con la información y yo se la traslado al cliente._`;
+          await this.nodeSenderService.sendTextNode(url, apikey, operatorJid, msgToOperator);
+
+          // 4. Abrir el puente
+          await this.prisma.operatorBridge.create({
+            data: {
+              userId,
+              clientSessionId: session.id,
+              clientRemoteJid: remoteJid,
+              operatorContactId: operator.id,
+              operatorPhone: operator.phone,
+              question: consulta,
+              status: 'OPEN',
+            },
+          });
+
+          // 5. Pausar la IA del cliente mientras espera al operario
+          await this.prisma.session.update({
+            where: { id: session.id },
+            data: { agentDisabled: true },
+          });
+
+          logger.log(`[BRIDGE] Consulta enviada al operario ${operator.name} (${operator.phone}).`);
+          return `Consulta enviada al operario ${operator.name}. Con tus palabras, dile al cliente que estás confirmando esa información y que en un momento le respondes. NO inventes la respuesta.`;
+        } catch (e: any) {
+          logger.error(`[BRIDGE] Error en consultar_operario: ${e?.message ?? e}`, 'buildConsultarOperarioTool');
+          return 'No se pudo enviar la consulta al operario en este momento. Responde al cliente con lo que sepas.';
+        }
+      },
+      {
+        name: 'consultar_operario',
+        description:
+          'Úsala cuando NO puedas resolver una consulta del cliente y necesites la confirmación de un operario/experto humano (precio especial, disponibilidad o stock, un detalle técnico). Reenvía la consulta a un operario por WhatsApp; su respuesta se le entregará al cliente automáticamente. NO la uses para saludos ni para lo que ya puedes responder tú mismo.',
+        schema: z.object({
+          consulta: z.string().describe('La pregunta o solicitud concreta, redactada de forma clara para el operario.'),
+          nombre_cliente: z.string().optional().describe('Nombre del cliente si se conoce.'),
+        }),
+      },
+    );
+  }
+
+  /**
+   * Reformula la respuesta CRUDA de un operario en un mensaje profesional para el
+   * cliente, ocultando datos internos. Best-effort: si algo falla, devuelve la
+   * respuesta cruda tal cual (mejor entregar algo que nada).
+   */
+  async reformulateOperatorReply(args: {
+    question: string;
+    rawReply: string;
+    apikeyOpenAi: string;
+    defaultModel?: string;
+    defaultProvider?: string;
+  }): Promise<string> {
+    const raw = (args.rawReply ?? '').trim();
+    try {
+      const client = this.initializeClient(args.apikeyOpenAi, args.defaultModel, args.defaultProvider);
+      const sys =
+        'Eres el asistente de atención de un negocio. Un operario interno respondió a una consulta que un cliente hizo por WhatsApp. Redacta la respuesta para el CLIENTE en español, con tono profesional y cálido, breve y claro. Usa SOLO la información útil para el cliente. NUNCA reveles notas internas, márgenes, costos internos, ni menciones que consultaste a un operario. No inventes datos que el operario no dio.';
+      const human =
+        `Consulta original del cliente:\n${args.question}\n\nRespuesta del operario (interna):\n${raw}\n\nEscribe SOLO el mensaje para el cliente.`;
+      const res: any = await client.invoke([
+        ['system', sys],
+        ['human', human],
+      ] as any);
+      const content = res?.content;
+      const text =
+        typeof content === 'string'
+          ? content
+          : Array.isArray(content)
+            ? content.map((p: any) => (typeof p === 'string' ? p : p?.text ?? '')).join(' ')
+            : '';
+      return (text || raw).trim();
+    } catch {
+      return raw;
+    }
+  }
 
   private buildNotificacionAsesorTool(cfg: any, params: {
     userId: string; server_url: string; apikey: string;

@@ -398,6 +398,64 @@ export class WebhookService {
       return;
     }
 
+    // ── Puente con operario: ¿es la RESPUESTA de un operario a una consulta? ──
+    // Aditivo y detrás del flag global. Si el remitente es un operario con un
+    // puente OPEN, la IA reformula su respuesta y se la entrega al cliente, se
+    // cierra el puente y se reactiva la IA del cliente. NO se procesa como lead.
+    // Va ANTES de checkOrRegisterSession para no crear un lead del operario.
+    if (process.env.OPERATOR_BRIDGE_ENABLED === 'true' && userId && !fromMe) {
+      try {
+        const senderDigits = String(remoteJid).split('@')[0].replace(/\D/g, '');
+        const operatorText =
+          data?.message?.conversation ||
+          data?.message?.extendedTextMessage?.text ||
+          '';
+        if (senderDigits && operatorText.trim()) {
+          const bridge = await this.prisma.operatorBridge.findFirst({
+            where: { userId, operatorPhone: senderDigits, status: 'OPEN' },
+            orderBy: { createdAt: 'desc' },
+          });
+          if (bridge) {
+            const clientMsg = await this.aiAgentService.reformulateOperatorReply({
+              question: bridge.question,
+              rawReply: operatorText,
+              apikeyOpenAi: defaultApiKey,
+              defaultModel: (defaultModel as any)?.name,
+              defaultProvider: (defaultProvider as any)?.name,
+            });
+            const sendText = this.makeSendTextFn(
+              instanceName,
+              server_url,
+              apikey,
+              userId,
+              'operator_bridge',
+            );
+            await sendText(bridge.clientRemoteJid, clientMsg);
+            await this.prisma.operatorBridge.update({
+              where: { id: bridge.id },
+              data: { status: 'CLOSED' },
+            });
+            // Reactivar la IA del cliente (la tool la había pausado al abrir el puente).
+            await this.prisma.session.update({
+              where: { id: bridge.clientSessionId },
+              data: { agentDisabled: false },
+            });
+            this.logger.log(
+              `[BRIDGE] Respuesta del operario ${senderDigits} entregada al cliente ${bridge.clientRemoteJid}.`,
+              'WebhookService',
+            );
+            return;
+          }
+        }
+      } catch (e: any) {
+        this.logger.warn(
+          `[BRIDGE] Error procesando respuesta de operario: ${e?.message ?? e}`,
+          'WebhookService',
+        );
+        // Ante cualquier error, se cae al flujo normal.
+      }
+    }
+
     // 🔹 Delay dinámico por usuario (delayTimeGPT en SEGUNDOS → convertir a ms)
     const defaultDelay = WebhookService.DELAYCONVERSATION; // 10000 ms por defecto (10s)
     let delayConversation = defaultDelay;

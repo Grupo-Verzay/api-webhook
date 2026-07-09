@@ -374,6 +374,7 @@ model Session {
   crmFollowUps              CrmFollowUp[]
   financeTransactions       FinanceTransaction[]
   leadStatusWorkflowHistory LeadStatusWorkflowExecution[]
+  operatorBridges           OperatorBridge[]
 
   // Candado: un lead único por (cuenta, línea, número). Coincide con la búsqueda
   // de registerSession (userId+instanceId+remoteJid); el índice existe en BD
@@ -508,6 +509,7 @@ model User {
   advisorAvailable                   Boolean                      @default(true) @map("advisor_available")
   autoAssignEnabled                  Boolean                      @default(false) @map("auto_assign_enabled")
   autoAssignMaxChats                 Int                          @default(5) @map("auto_assign_max_chats")
+  operatorBridgeEnabled              Boolean                      @default(false) @map("operator_bridge_enabled")
   accounts                           Account[]
   agentPrompts                       AgentPrompt[]
   publishedAgentPromptRevisions      AgentPromptRevision[]
@@ -530,6 +532,8 @@ model User {
   UserBilling                        UserBilling?
   UserNavPreference                  UserNavPreference[]
   notificationContacts               UserNotificationContact[]
+  operatorContacts                   OperatorContact[]
+  operatorBridges                    OperatorBridge[]
   crmFollowUpRules                   CrmFollowUpRule[]
   crmFollowUps                       CrmFollowUp[]
   crmFollowUpMedia                   CrmFollowUpMedia[]
@@ -578,6 +582,43 @@ model UserNotificationContact {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// Directorio de operarios/expertos que la IA consulta por WhatsApp (puente).
+model OperatorContact {
+  id        String           @id @default(uuid())
+  userId    String
+  name      String
+  phone     String
+  isActive  Boolean          @default(true) @map("is_active")
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bridges   OperatorBridge[]
+
+  @@index([userId])
+}
+
+// Puente activo cliente↔operario mientras la IA espera la respuesta del operario.
+model OperatorBridge {
+  id                String          @id @default(uuid())
+  userId            String
+  clientSessionId   Int             @map("client_session_id")
+  clientRemoteJid   String          @map("client_remote_jid")
+  operatorContactId String          @map("operator_contact_id")
+  operatorPhone     String          @map("operator_phone")
+  question          String
+  lastOutboundMsgId String?         @map("last_outbound_msg_id")
+  status            String          @default("OPEN")
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientSession     Session         @relation(fields: [clientSessionId], references: [id], onDelete: Cascade)
+  operatorContact   OperatorContact @relation(fields: [operatorContactId], references: [id], onDelete: Cascade)
+
+  @@index([operatorPhone, status])
+  @@index([clientSessionId])
+  @@index([userId, status])
 }
 
 model CrmFollowUp {

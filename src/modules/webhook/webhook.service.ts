@@ -41,6 +41,7 @@ import { ConversationControlService } from './services/conversation-control/conv
 import { SessionOrchestrationService } from './services/session-orchestration/session-orchestration.service';
 import { ChatEventsGateway } from '../realtime/chat-events.gateway';
 import { ChatStoreService } from './services/chat-store/chat-store.service';
+import { PrismaService } from 'src/database/prisma.service';
 
 @Injectable()
 export class WebhookService {
@@ -74,6 +75,7 @@ export class WebhookService {
     private readonly sessionOrchestration: SessionOrchestrationService,
     private readonly chatEvents: ChatEventsGateway,
     private readonly chatStore: ChatStoreService,
+    private readonly prisma: PrismaService,
   ) { }
 
   /** Canales cuyos mensajes se persisten en el store unificado (no pasan por Evolution). */

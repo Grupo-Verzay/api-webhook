@@ -667,33 +667,48 @@ export class AiAgentService {
         select: { operatorBridgeEnabled: true },
       });
       if (!user?.operatorBridgeEnabled) return null;
-      const op = await this.prisma.operatorContact.findFirst({
+      const operators = await this.prisma.operatorContact.findMany({
         where: { userId: params.userId, isActive: true },
-        select: { id: true },
+        select: { id: true, name: true, phone: true, description: true },
+        orderBy: { createdAt: 'asc' },
       });
-      if (!op) return null;
-      return this.buildConsultarOperarioTool(params);
+      if (!operators.length) return null;
+      return this.buildConsultarOperarioTool(params, operators);
     } catch {
       return null;
     }
   }
 
-  private buildConsultarOperarioTool(params: {
-    userId: string; server_url: string; apikey: string; instanceName: string; remoteJid: string;
-  }): any {
+  private buildConsultarOperarioTool(
+    params: { userId: string; server_url: string; apikey: string; instanceName: string; remoteJid: string },
+    operators: Array<{ id: string; name: string; phone: string; description: string | null }>,
+  ): any {
     const { userId, server_url, apikey, instanceName, remoteJid } = params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
+    // Con varios operarios, la IA elige por especialidad (parámetro `operario`).
+    const multiple = operators.length > 1;
+    const roster = operators
+      .map((o) => `- ${o.name}${o.description ? ` (${o.description})` : ''}`)
+      .join('\n');
+
     // @ts-ignore - evitar problemas de tipos profundos con LangChain + zod
     return tool(
-      async ({ consulta, nombre_cliente }) => {
+      async ({ consulta, nombre_cliente, operario }) => {
         try {
-          // 1. Operario disponible (primer activo — Fase 2: por tema/turno)
-          const operator = await this.prisma.operatorContact.findFirst({
-            where: { userId, isActive: true },
-            orderBy: { createdAt: 'asc' },
-          });
-          if (!operator) return 'No hay operarios disponibles para consultar en este momento. Responde al cliente con lo que sepas.';
+          // 1. Elegir operario: por el nombre que indique la IA (según su
+          //    especialidad); si no indica o no coincide, el primero disponible.
+          let chosen = operators[0];
+          const q = (operario ?? '').trim().toLowerCase();
+          if (q) {
+            const match =
+              operators.find((o) => o.name.toLowerCase() === q) ??
+              operators.find(
+                (o) => o.name.toLowerCase().includes(q) || q.includes(o.name.toLowerCase()),
+              );
+            if (match) chosen = match;
+          }
+          if (!chosen) return 'No hay operarios disponibles para consultar en este momento. Responde al cliente con lo que sepas.';
 
           // 2. Ubicar la conversación del cliente (para vincular el puente)
           const session = await this.prisma.session.findFirst({
@@ -704,7 +719,7 @@ export class AiAgentService {
 
           // 3. Enviar la consulta al operario por la MISMA línea del negocio
           const url = `${server_url}/message/sendText/${instanceName}`;
-          const operatorJid = `${operator.phone}@s.whatsapp.net`;
+          const operatorJid = `${chosen.phone}@s.whatsapp.net`;
           const who = (nombre_cliente ?? '').trim() || 'Un cliente';
           const msgToOperator =
             `🧑‍🔧 *Consulta de ${who}*\n\n` +
@@ -718,8 +733,8 @@ export class AiAgentService {
               userId,
               clientSessionId: session.id,
               clientRemoteJid: remoteJid,
-              operatorContactId: operator.id,
-              operatorPhone: operator.phone,
+              operatorContactId: chosen.id,
+              operatorPhone: chosen.phone,
               question: consulta,
               status: 'OPEN',
             },
@@ -731,8 +746,8 @@ export class AiAgentService {
             data: { agentDisabled: true },
           });
 
-          logger.log(`[BRIDGE] Consulta enviada al operario ${operator.name} (${operator.phone}).`);
-          return `Consulta enviada al operario ${operator.name}. Con tus palabras, dile al cliente que estás confirmando esa información y que en un momento le respondes. NO inventes la respuesta.`;
+          logger.log(`[BRIDGE] Consulta enviada al operario ${chosen.name} (${chosen.phone}).`);
+          return `Consulta enviada al operario ${chosen.name}. Con tus palabras, dile al cliente que estás confirmando esa información y que en un momento le respondes. NO inventes la respuesta.`;
         } catch (e: any) {
           logger.error(`[BRIDGE] Error en consultar_operario: ${e?.message ?? e}`, 'buildConsultarOperarioTool');
           return 'No se pudo enviar la consulta al operario en este momento. Responde al cliente con lo que sepas.';
@@ -741,10 +756,21 @@ export class AiAgentService {
       {
         name: 'consultar_operario',
         description:
-          'Úsala cuando NO puedas resolver una consulta del cliente y necesites la confirmación de un operario/experto humano (precio especial, disponibilidad o stock, un detalle técnico). Reenvía la consulta a un operario por WhatsApp; su respuesta se le entregará al cliente automáticamente. NO la uses para saludos ni para lo que ya puedes responder tú mismo.',
+          'Úsala cuando NO puedas resolver una consulta del cliente y necesites la confirmación de un operario/experto humano (precio especial, disponibilidad o stock, un detalle técnico). Reenvía la consulta a un operario por WhatsApp; su respuesta se le entregará al cliente automáticamente. NO la uses para saludos ni para lo que ya puedes responder tú mismo.' +
+          (multiple
+            ? `\n\nOperarios disponibles y su especialidad:\n${roster}\n\nEn "operario" indica el NOMBRE del más adecuado según la consulta.`
+            : ''),
         schema: z.object({
           consulta: z.string().describe('La pregunta o solicitud concreta, redactada de forma clara para el operario.'),
           nombre_cliente: z.string().optional().describe('Nombre del cliente si se conoce.'),
+          operario: z
+            .string()
+            .optional()
+            .describe(
+              multiple
+                ? 'Nombre del operario más adecuado según su especialidad (elige de la lista dada en la descripción).'
+                : 'Opcional; hay un solo operario.',
+            ),
         }),
       },
     );

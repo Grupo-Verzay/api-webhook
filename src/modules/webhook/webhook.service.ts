@@ -406,16 +406,38 @@ export class WebhookService {
     if (process.env.OPERATOR_BRIDGE_ENABLED === 'true' && userId && !fromMe) {
       try {
         const senderDigits = String(remoteJid).split('@')[0].replace(/\D/g, '');
-        const operatorText =
-          data?.message?.conversation ||
-          data?.message?.extendedTextMessage?.text ||
-          '';
-        if (senderDigits && operatorText.trim()) {
-          const bridge = await this.prisma.operatorBridge.findFirst({
-            where: { userId, operatorPhone: senderDigits, status: 'OPEN' },
-            orderBy: { createdAt: 'desc' },
-          });
-          if (bridge) {
+        // ¿El remitente es un operario del directorio de esta cuenta?
+        const operator = senderDigits
+          ? await this.prisma.operatorContact.findFirst({
+              where: { userId, phone: senderDigits },
+              select: { id: true },
+            })
+          : null;
+
+        if (operator) {
+          const operatorText =
+            data?.message?.conversation ||
+            data?.message?.extendedTextMessage?.text ||
+            '';
+
+          // Correlación: primero por mensaje CITADO (el operario respondió
+          // citando la consulta), luego el puente OPEN más reciente de ese número.
+          const quotedId: string | null =
+            data?.message?.extendedTextMessage?.contextInfo?.stanzaId ?? null;
+          let bridge = quotedId
+            ? await this.prisma.operatorBridge.findFirst({
+                where: { userId, operatorPhone: senderDigits, status: 'OPEN', lastOutboundMsgId: quotedId },
+                orderBy: { createdAt: 'desc' },
+              })
+            : null;
+          if (!bridge) {
+            bridge = await this.prisma.operatorBridge.findFirst({
+              where: { userId, operatorPhone: senderDigits, status: 'OPEN' },
+              orderBy: { createdAt: 'desc' },
+            });
+          }
+
+          if (bridge && operatorText.trim()) {
             const clientMsg = await this.aiAgentService.reformulateOperatorReply({
               question: bridge.question,
               rawReply: operatorText,
@@ -444,8 +466,14 @@ export class WebhookService {
               `[BRIDGE] Respuesta del operario ${senderDigits} entregada al cliente ${bridge.clientRemoteJid}.`,
               'WebhookService',
             );
-            return;
+          } else {
+            this.logger.log(
+              `[BRIDGE] Mensaje de operario ${senderDigits} sin puente activo — ignorado (no se crea lead).`,
+              'WebhookService',
+            );
           }
+          // El remitente es un operario: NUNCA se procesa como lead/cliente.
+          return;
         }
       } catch (e: any) {
         this.logger.warn(
@@ -924,10 +952,49 @@ export class WebhookService {
     );
 
     if (agentDisabled) {
-      this.logger.warn(
-        `[WEBHOOK] agentDisabled=true → flujo detenido. userId=${userId} instance=${instanceName} remoteJid=${canonicalRemoteJid}`,
-      );
-      return;
+      // Timeout reactivo del puente con operario: si el cliente vuelve a escribir
+      // y su consulta al operario lleva demasiado tiempo sin respuesta, retomamos
+      // la conversación con la IA (cerramos el puente vencido y la reactivamos).
+      let retomado = false;
+      if (process.env.OPERATOR_BRIDGE_ENABLED === 'true') {
+        try {
+          const timeoutMs = Number(process.env.OPERATOR_BRIDGE_TIMEOUT_MS) || 900_000; // 15 min
+          const cutoff = new Date(Date.now() - timeoutMs);
+          const stale = await this.prisma.operatorBridge.findFirst({
+            where: {
+              userId,
+              clientRemoteJid: canonicalRemoteJid,
+              status: 'OPEN',
+              createdAt: { lt: cutoff },
+            },
+            orderBy: { createdAt: 'desc' },
+          });
+          if (stale) {
+            await this.prisma.operatorBridge.update({
+              where: { id: stale.id },
+              data: { status: 'CLOSED' },
+            });
+            await this.prisma.session.update({
+              where: { id: stale.clientSessionId },
+              data: { agentDisabled: false },
+            });
+            this.logger.log(
+              `[BRIDGE] Puente vencido para ${canonicalRemoteJid} → IA reactivada (el cliente volvió a escribir).`,
+              'WebhookService',
+            );
+            retomado = true;
+          }
+        } catch (e: any) {
+          this.logger.warn(`[BRIDGE] Error en timeout reactivo: ${e?.message ?? e}`, 'WebhookService');
+        }
+      }
+      if (!retomado) {
+        this.logger.warn(
+          `[WEBHOOK] agentDisabled=true → flujo detenido. userId=${userId} instance=${instanceName} remoteJid=${canonicalRemoteJid}`,
+        );
+        return;
+      }
+      // Si se retomó, el flujo continúa y la IA atiende este mensaje.
     }
 
     // Guardamos el mensaje completo que se acumuló en el buffer.

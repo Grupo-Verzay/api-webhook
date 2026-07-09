@@ -725,9 +725,10 @@ export class AiAgentService {
             `🧑‍🔧 *Consulta de ${who}*\n\n` +
             `${consulta}\n\n` +
             `_Responde a este mensaje con la información y yo se la traslado al cliente._`;
-          await this.nodeSenderService.sendTextNode(url, apikey, operatorJid, msgToOperator);
+          const sentMsgId = await this.nodeSenderService.sendTextNodeReturnId(url, apikey, operatorJid, msgToOperator);
 
-          // 4. Abrir el puente
+          // 4. Abrir el puente (guardamos el messageId para correlacionar por
+          //    mensaje CITADO cuando el operario responda)
           await this.prisma.operatorBridge.create({
             data: {
               userId,
@@ -736,6 +737,7 @@ export class AiAgentService {
               operatorContactId: chosen.id,
               operatorPhone: chosen.phone,
               question: consulta,
+              lastOutboundMsgId: sentMsgId ?? undefined,
               status: 'OPEN',
             },
           });

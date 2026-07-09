@@ -54,6 +54,35 @@ export class NodeSenderService {
   }
 
   /**
+   * Igual que sendTextNode pero devuelve el messageId del envío (key.id de
+   * Evolution), para correlacionar luego una respuesta CITADA. null si falla.
+   */
+  async sendTextNodeReturnId(
+    url: string,
+    apikey: string,
+    remoteJid: string,
+    text: string,
+  ): Promise<string | null> {
+    try {
+      const typingDelay = Math.min(Math.max(text.length * 30, 1500), 6000);
+      const body = { number: remoteJid, delay: typingDelay, text };
+      const response = await firstValueFrom(
+        this.http.post(url, body, {
+          headers: { 'Content-Type': 'application/json', apikey },
+        }),
+      );
+      return response?.data?.key?.id ?? null;
+    } catch (error) {
+      this.logger.error(
+        `Error enviando texto (returnId) a ${remoteJid}`,
+        error?.response?.data || error.message,
+        'NodeSenderService',
+      );
+      return null;
+    }
+  }
+
+  /**
    * Envía un nodo multimedia (imagen, video o documento) y registra la respuesta.
    */
   async sendMediaNode(

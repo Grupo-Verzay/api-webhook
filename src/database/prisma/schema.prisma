@@ -375,6 +375,10 @@ model Session {
   financeTransactions       FinanceTransaction[]
   leadStatusWorkflowHistory LeadStatusWorkflowExecution[]
 
+  // Candado: un lead único por (cuenta, línea, número). Coincide con la búsqueda
+  // de registerSession (userId+instanceId+remoteJid); el índice existe en BD
+  // (Session_userId_instanceId_remoteJid_key).
+  @@unique([userId, instanceId, remoteJid])
   @@index([userId, remoteJid])
 }
 

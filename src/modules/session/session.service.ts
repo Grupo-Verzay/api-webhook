@@ -146,14 +146,29 @@ export class SessionService {
           });
         }
 
-        return tx.session.create({
-          data: {
+        // Idempotente ante carreras: el índice único (userId, instanceId,
+        // remoteJid) garantiza un solo lead por línea; si otro webhook lo creó
+        // primero, en vez de fallar por duplicado, actualizamos.
+        return tx.session.upsert({
+          where: {
+            userId_instanceId_remoteJid: {
+              userId,
+              instanceId: this.clean(instanceId),
+              remoteJid: rj,
+            },
+          },
+          create: {
             userId,
             remoteJid: rj,
             remoteJidAlt: pickObservedAlternateRemoteJid(rj, observedAliases),
             pushName: !isBadName(pn) ? pn : 'Desconocido',
             instanceId: this.clean(instanceId),
             status: true,
+            updatedAt: new Date(),
+          },
+          update: {
+            remoteJidAlt: pickObservedAlternateRemoteJid(rj, observedAliases),
+            pushName: !isBadName(pn) ? pn : undefined,
             updatedAt: new Date(),
           },
         });

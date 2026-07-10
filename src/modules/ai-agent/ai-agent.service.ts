@@ -3147,7 +3147,39 @@ export class AiAgentService {
         // RAG falla silenciosamente — el agente continúa con el prompt original
       }
 
-      const promptAI = `${extraRules} ${systemPrompt}${clientContextBlock}${externalDataBlock}${agendaRuleBlock}${businessHoursBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}${knowledgeContext}`.trim();
+      // ── Puente con operario: si la cuenta lo tiene activo con operarios, se le
+      // enseña al agente a delegar por especialidad. Automático (sin que el dueño
+      // escriba nada) y siempre con la lista actualizada de operarios.
+      let operatorBridgeBlock = '';
+      if (process.env.OPERATOR_BRIDGE_ENABLED === 'true') {
+        try {
+          const [obUser, obOperators] = await Promise.all([
+            this.prisma.user.findUnique({
+              where: { id: userId },
+              select: { operatorBridgeEnabled: true },
+            }),
+            this.prisma.operatorContact.findMany({
+              where: { userId, isActive: true },
+              select: { name: true, description: true },
+              orderBy: { createdAt: 'asc' },
+            }),
+          ]);
+          if (obUser?.operatorBridgeEnabled && obOperators.length > 0) {
+            const list = obOperators
+              .map((o) => `- ${o.name}${o.description ? `: ${o.description}` : ''}`)
+              .join('\n');
+            operatorBridgeBlock =
+              '\n\n---\n## CONSULTA A OPERARIOS (expertos humanos)\n' +
+              'Tienes operarios expertos a los que puedes consultar por WhatsApp con la herramienta consultar_operario:\n' +
+              list +
+              '\n\nREGLA: si la consulta del cliente trata sobre la especialidad de alguno de estos operarios, USA consultar_operario (indica su nombre) EN LUGAR de responder tú mismo, AUNQUE creas saber la respuesta. Avísale al cliente que estás confirmando y que en un momento le respondes.\n---';
+          }
+        } catch {
+          // Falla silenciosa; el agente continúa con el prompt normal.
+        }
+      }
+
+      const promptAI = `${extraRules} ${systemPrompt}${clientContextBlock}${externalDataBlock}${agendaRuleBlock}${businessHoursBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}${knowledgeContext}${operatorBridgeBlock}`.trim();
 
       // logger.log('PROMPT:', promptAI);
 

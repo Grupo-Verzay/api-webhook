@@ -1185,15 +1185,24 @@ export class WorkflowService implements OnModuleInit {
 
       const rawDelay = node.delay ?? '';
       if (!rawDelay) {
+        // "Activar IA" SIN delay = activar la IA de INMEDIATO. La sesión se pausó
+        // arriba; la reactivamos ya (status=true) para que la IA responda al
+        // próximo mensaje sin espera. El opt-in (aiOptIn) ya quedó puesto arriba.
+        await this.sessionService.updateSessionStatus(
+          remoteJid,
+          instanceName,
+          true,
+          userId,
+        );
         if (s) {
           await this.clearSessionTriggerIfExists(
             s.id,
-            `Nodo pause sin delay. Se elimina SessionTrigger previo si existe (${remoteJid}).`,
+            `Nodo pause sin delay + IA activada. Reactivación inmediata; se elimina SessionTrigger previo si existe (${remoteJid}).`,
           );
         }
         if (opts.logPauseDiagnostics) {
           this.logger.log(
-            `Nodo pause sin delay definido. No se crea SessionTrigger (remoteJid=${remoteJid}).`,
+            `Nodo pause "Activar IA" sin delay → IA activada de inmediato (sesión reactivada). remoteJid=${remoteJid}`,
             'WorkflowService',
           );
         }
@@ -1223,15 +1232,22 @@ export class WorkflowService implements OnModuleInit {
       }
 
       if (value <= 0) {
+        // delay 0 + IA activada = activar de inmediato (reactivamos la sesión ya).
+        await this.sessionService.updateSessionStatus(
+          remoteJid,
+          instanceName,
+          true,
+          userId,
+        );
         if (s) {
           await this.clearSessionTriggerIfExists(
             s.id,
-            `Nodo pause con delay 0. Se elimina SessionTrigger previo si existe (${remoteJid}).`,
+            `Nodo pause con delay 0 + IA activada. Reactivación inmediata; se elimina SessionTrigger previo si existe (${remoteJid}).`,
           );
         }
         if (opts.logPauseDiagnostics) {
           this.logger.log(
-            `Nodo pause con delay 0. Solo se pausa la sesión, sin SessionTrigger.`,
+            `Nodo pause "Activar IA" con delay 0 → IA activada de inmediato (sesión reactivada). remoteJid=${remoteJid}`,
             'WorkflowService',
           );
         }

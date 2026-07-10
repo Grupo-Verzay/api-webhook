@@ -270,6 +270,32 @@ export class SessionService {
   }
 
   /**
+   * Opt-in de IA por contacto. Cuando es true, la IA responde a ESTE contacto
+   * aunque el interruptor global "Estado del agente" (User.muteAgentResponses)
+   * esté apagado. Lo activa el nodo "Activar IA" de un flujo o el toggle manual
+   * del chat. No toca la config global ni a los demás contactos.
+   */
+  async setAiOptIn(
+    remoteJid: string,
+    instanceId: string,
+    aiOptIn: boolean,
+    userId: string,
+  ) {
+    const candidates = this.buildRemoteJidCandidates(this.clean(remoteJid));
+    return this.prisma.session.updateMany({
+      where: {
+        userId: this.clean(userId),
+        instanceId: this.clean(instanceId),
+        OR: [
+          { remoteJid: { in: candidates } },
+          { remoteJidAlt: { in: candidates } },
+        ],
+      },
+      data: { aiOptIn },
+    });
+  }
+
+  /**
    * Deshabilita la sesión de forma atómica: status=false y agentDisabled=true
    * en una única transacción para evitar estados inconsistentes si una de las
    * dos operaciones falla.

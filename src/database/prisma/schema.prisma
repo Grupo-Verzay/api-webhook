@@ -352,6 +352,7 @@ model Session {
   flujos               String?                @default("")
   remoteJidAlt         String?
   agentDisabled        Boolean                @default(false)
+  aiOptIn              Boolean                @default(false) @map("ai_opt_in")
   signatureEnabled     Boolean                @default(false) @map("signature_enabled")
   leadStatus           LeadStatus?
   leadStatusReason     String?                @map("lead_status_reason")

@@ -1299,10 +1299,15 @@ export class WebhookService {
       return;
     }
 
-    // 2) Si el agente está muteado → solo dejamos funcionar flujos (que ya revisamos)
-    if (userWithRelations.muteAgentResponses) {
+    // 2) Gate de IA. El interruptor global "Estado del agente" (muteAgentResponses)
+    // apaga la IA para TODA la cuenta. PERO un contacto puede quedar habilitado
+    // individualmente (opt-in por sesión, p. ej. tras un flujo por palabra clave con
+    // el nodo "Activar IA"): en ese caso la IA sí responde a ESE contacto aunque el
+    // global esté apagado. Así se logra "chatbot para todos, IA solo para los
+    // contactos activados". El opt-out por contacto (agentDisabled) ya cortó antes.
+    if (userWithRelations.muteAgentResponses && !currentSession?.aiOptIn) {
       logger.warn(
-        '🔇 Agente muteado: no se usará IA (solo flujos/chatbot).',
+        '🔇 Agente muteado y contacto sin opt-in de IA: no se usará IA (solo flujos/chatbot).',
         'muteAgentResponses',
       );
       return;

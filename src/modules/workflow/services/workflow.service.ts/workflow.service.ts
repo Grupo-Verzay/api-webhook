@@ -1156,6 +1156,18 @@ export class WorkflowService implements OnModuleInit {
         (node as WorkflowNode & { aiEnabled?: boolean | null }).aiEnabled ===
         true;
 
+      // "Activar IA": opt-in de IA por contacto. Con aiEnabled=true, la IA
+      // responderá a ESTE contacto cuando la sesión se reactive, aunque el
+      // interruptor global "Estado del agente" esté apagado. Con aiEnabled=false
+      // se retira el opt-in (pausar sin continuar con IA). Es por sesión; no
+      // toca la config global ni a otros contactos.
+      await this.sessionService.setAiOptIn(
+        remoteJid,
+        instanceName,
+        aiEnabled,
+        userId,
+      );
+
       if (!aiEnabled) {
         if (s) {
           await this.clearSessionTriggerIfExists(

@@ -94,6 +94,11 @@ export class ChatStoreService {
         CREATE UNIQUE INDEX IF NOT EXISTS "chat_conversations_user_instance_jid_unique"
         ON "chat_conversations" ("userId", "instanceName", "remoteJid")
       `;
+      // El último mensaje de la conversación fue eliminado por el cliente (la lista
+      // muestra "Mensaje eliminado"). Se resetea a FALSE al llegar un mensaje nuevo.
+      await this.prisma.$executeRaw`
+        ALTER TABLE "chat_conversations" ADD COLUMN IF NOT EXISTS "lastMessageDeleted" BOOLEAN NOT NULL DEFAULT FALSE
+      `;
       // Mapeo lid -> remoteJid (número), aprendido de los mensajes entrantes, para
       // resolver el "from" de las llamadas (que llega como @lid) al chat correcto.
       await this.prisma.$executeRaw`
@@ -175,6 +180,15 @@ export class ChatStoreService {
           AND "messageId" = ${input.messageId}
           ${jidClause}
       `;
+      // Si el eliminado era el último mensaje, marcar la conversación para la lista.
+      await this.prisma.$executeRaw`
+        UPDATE "chat_conversations"
+        SET "lastMessageDeleted" = TRUE, "updatedAt" = NOW()
+        WHERE "userId" = ${input.userId}
+          AND "instanceName" = ${input.instanceName}
+          AND "lastMessageId" = ${input.messageId}
+          ${jidClause}
+      `;
     } catch (err: any) {
       this.logger.error(`[ChatStore] Error marcando mensaje eliminado: ${err?.message}`);
     }
@@ -185,6 +199,16 @@ export class ChatStoreService {
     if (!input.userId || !input.instanceName || !input.remoteJid) return;
     // Nunca persistir un borrado: conserva intacto el mensaje original.
     if (this.isDeletedMessageEvent(input)) return;
+    // No persistir mensajes de texto vacíos (p.ej. el placeholder que a veces deja
+    // un borrado): evita que la lista quede con "-" como último mensaje.
+    {
+      const contentTrim = typeof input.content === 'string' ? input.content.trim() : '';
+      const hasPayload =
+        (!!contentTrim && contentTrim !== '-') ||
+        !!input.mediaUrl ||
+        !['conversation', 'extendedTextMessage', null, undefined].includes(input.messageType ?? undefined);
+      if (!hasPayload) return;
+    }
 
     try {
       await this.ensureTables();
@@ -244,6 +268,7 @@ export class ChatStoreService {
           "lastMessageMediaUrl" = EXCLUDED."lastMessageMediaUrl",
           "lastMessageRaw" = EXCLUDED."lastMessageRaw",
           "lastMessageTimestamp" = EXCLUDED."lastMessageTimestamp",
+          "lastMessageDeleted" = FALSE,
           "updatedAt" = NOW()
         WHERE "chat_conversations"."lastMessageTimestamp" IS NULL
            OR "chat_conversations"."lastMessageTimestamp" <= EXCLUDED."lastMessageTimestamp"

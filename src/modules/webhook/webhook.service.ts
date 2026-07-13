@@ -693,6 +693,61 @@ export class WebhookService {
       }
     }
 
+    /* Fase 2.5b — Persistir el entrante en el store AUNQUE la sesión esté pausada
+       o sin estado activo. Sin esto, los chats "Sin sesión" no tienen historial
+       local en chat_messages y abrirlos obliga a un fetch remoto lento a Evolution
+       (skeleton eterno en móvil). Se hace ANTES del guard de abajo, con contenido
+       "barato" (texto crudo o etiqueta de media, sin Vision/transcripción) porque
+       el panel renderiza la media desde su propia URL. El persist normal de más
+       abajo cubre la sesión ACTIVA; este cubre solo el caso inactivo para no
+       duplicar escrituras. Aditivo, no bloqueante e idempotente (ON CONFLICT). */
+    const willSkipInactiveSession =
+      !(canonicalSession?.status ?? sessionRes.status) || !sessionRes.status;
+    if (
+      willSkipInactiveSession &&
+      !fromMe &&
+      userId &&
+      !this.isUnifiedStoreChannel(data?.source) &&
+      !isGroupChat(canonicalRemoteJid)
+    ) {
+      const mediaTypes = ['imageMessage', 'audioMessage', 'videoMessage', 'documentMessage'];
+      const isMedia = mediaTypes.includes(messageType);
+      const storedUrl = data?.message?.mediaUrl;
+      const publicMediaUrl =
+        typeof storedUrl === 'string' && /^https?:\/\//.test(storedUrl) ? storedUrl : null;
+      const mediaLabel =
+        messageType === 'imageMessage' ? '[Imagen]'
+          : messageType === 'audioMessage' ? '[Audio]'
+            : messageType === 'videoMessage' ? '[Video]'
+              : messageType === 'documentMessage' ? '[Documento]' : '';
+      const rawText = (
+        data?.message?.conversation ??
+        (data?.message as any)?.extendedTextMessage?.text ??
+        ''
+      )
+        .toString()
+        .trim();
+      const displayContent = isMedia ? (rawText || mediaLabel) : rawText;
+      // Sin contenido mostrable (sticker/tipo no soportado sin caption) → no guardar.
+      if (displayContent) {
+        void this.chatStore.persistMessage({
+          userId,
+          instanceName,
+          instanceType: 'evolution',
+          remoteJid: canonicalRemoteJid,
+          remoteJidAlt: canonicalAlt || null,
+          senderPn: rawSenderPn || null,
+          messageId: data?.key?.id,
+          fromMe: false,
+          pushName: incomingPushName || null,
+          messageType,
+          content: displayContent,
+          mediaUrl: publicMediaUrl,
+          messageTimestamp: data?.messageTimestamp,
+        });
+      }
+    }
+
     if (!(canonicalSession?.status ?? sessionRes.status)) return;
     if (!sessionRes.status) return;
 

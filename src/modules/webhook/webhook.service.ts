@@ -167,11 +167,32 @@ export class WebhookService {
           persistOutbound('meta', remoteJid, text, ok);
         });
     }
+    // Evolution API. Se usa sendTextNodeReturnId (idéntico a sendTextNode pero
+    // devuelve el messageId real de Evolution) para persistir el saliente con ese
+    // id: así, cuando la app resincronice desde Evolution, el ON CONFLICT lo
+    // dedupe en vez de duplicar la respuesta del agente. (Fase 2.5)
     const apiMsgUrl = `${server_url}/message/sendText/${instanceName}`;
     return (remoteJid, text) =>
-      this.nodeSenderService.sendTextNode(apiMsgUrl, apikey, remoteJid, text).then(() => {
-        notify(remoteJid);
-      });
+      this.nodeSenderService
+        .sendTextNodeReturnId(apiMsgUrl, apikey, remoteJid, text)
+        .then((sentId) => {
+          notify(remoteJid);
+          if (sentId && userId) {
+            void this.chatStore.persistMessage({
+              userId,
+              instanceName,
+              instanceType: 'evolution',
+              remoteJid,
+              messageId: sentId,
+              fromMe: true,
+              messageType: 'conversation',
+              content: text,
+              // Marca de "Agente IA" para el panel (respuesta del bot, no de un asesor).
+              raw: { sentByAi: true },
+              messageTimestamp: Math.floor(Date.now() / 1000),
+            });
+          }
+        });
   }
 
   /**
@@ -695,6 +716,43 @@ export class WebhookService {
         instanceType: data.source,
         remoteJid: canonicalRemoteJid,
         remoteJidAlt: canonicalAlt || null,
+        messageId: data?.key?.id,
+        fromMe: false,
+        pushName: incomingPushName || null,
+        messageType,
+        content: displayContent,
+        mediaUrl: publicMediaUrl,
+        messageTimestamp: data?.messageTimestamp,
+      });
+    }
+
+    /* Persistir entrante de Evolution (WhatsApp real) en el store unificado, para
+       que la bandeja de Chats tenga historial local y abrir la conversación sea
+       instantáneo sin depender del fetch on-demand a Evolution. (Fase 2.5)
+       Aditivo y no bloqueante (persistMessage tiene su propio try/catch). El id
+       real (data.key.id) hace que la resync de la app deduplique por ON CONFLICT. */
+    if (!this.isUnifiedStoreChannel(data?.source) && !fromMe && userId) {
+      const mediaTypes = ['imageMessage', 'audioMessage', 'videoMessage', 'documentMessage'];
+      const isMedia = mediaTypes.includes(messageType);
+      const storedUrl = data?.message?.mediaUrl;
+      const publicMediaUrl =
+        typeof storedUrl === 'string' && /^https?:\/\//.test(storedUrl) ? storedUrl : null;
+      const mediaLabel =
+        messageType === 'imageMessage' ? '[Imagen]'
+          : messageType === 'audioMessage' ? '[Audio]'
+            : messageType === 'videoMessage' ? '[Video]'
+              : messageType === 'documentMessage' ? '[Documento]' : '';
+      const displayContent = isMedia
+        ? (data?.message?.conversation?.trim() || mediaLabel)
+        : incomingMessage;
+
+      void this.chatStore.persistMessage({
+        userId,
+        instanceName,
+        instanceType: 'evolution',
+        remoteJid: canonicalRemoteJid,
+        remoteJidAlt: canonicalAlt || null,
+        senderPn: rawSenderPn || null,
         messageId: data?.key?.id,
         fromMe: false,
         pushName: incomingPushName || null,

@@ -2391,8 +2391,12 @@ export class AiAgentService {
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
 
     const BLOCKED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '169.254'];
-    const MAX_BYTES = 500_000; // 500 KB
-    const MAX_CHARS = 4_000;   // ~1 000 tokens
+    // Tope de DESCARGA del HTML crudo. Es solo una salvaguarda anti-abuso; NO tiene
+    // que ver con cuánto texto se envía al modelo (eso lo limita MAX_CHARS). Un tope
+    // bajo hacía fallar páginas grandes pero legítimas (Wikipedia ~675KB, periódicos
+    // ~800KB) con "maxContentLength exceeded" → el agente parecía "no consultar" la URL.
+    const MAX_BYTES = 5_000_000; // 5 MB de HTML crudo
+    const MAX_CHARS = 4_000;     // ~1 000 tokens de texto extraído hacia el modelo
 
     // @ts-ignore
     return tool(
@@ -2412,10 +2416,12 @@ export class AiAgentService {
           }
 
           const response = await axios.get(resolvedUrl, {
-            timeout: 10_000,
+            timeout: 15_000,
             maxContentLength: MAX_BYTES,
+            maxRedirects: 5,
+            // UA de navegador real: muchos sitios devuelven 403 a UAs "bot".
             headers: {
-              'User-Agent': 'Mozilla/5.0 (compatible; AgenteIA/1.0)',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
               'Accept-Language': 'es,en;q=0.5',
             },
@@ -2459,6 +2465,21 @@ export class AiAgentService {
             .trim()
             .slice(0, MAX_CHARS);
 
+          // Sin selector: si el body casi no trae texto suele ser una SPA/React
+          // que renderiza con JavaScript (o una página tras login). En ese caso NO
+          // devolvemos el shell vacío (haría que el agente inventara): avisamos con
+          // la meta-descripción si existe para que el agente sea honesto.
+          if (!selector && cleaned.length < 40) {
+            const meta =
+              $('meta[name="description"]').attr('content') ||
+              $('meta[property="og:description"]').attr('content') ||
+              '';
+            if (meta.trim()) {
+              return `🌐 ${parsed.hostname} no expone su contenido como texto plano (probablemente carga con JavaScript). Solo se pudo leer su descripción:\n\n${meta.trim().slice(0, MAX_CHARS)}`;
+            }
+            return `No se pudo leer el contenido de ${parsed.hostname}: la página no entrega texto legible (suele pasar con sitios que cargan su contenido con JavaScript o que requieren iniciar sesión). Informa al cliente que no puedes acceder a esa página y pídele que comparta el dato directamente.`;
+          }
+
           const truncated = cleaned.length >= MAX_CHARS;
           const header = `🌐 Contenido de ${parsed.hostname}${selector ? ` (selector: ${selector})` : ''}:\n\n`;
           const footer = truncated ? `\n\n[Contenido truncado. Se muestran los primeros ${MAX_CHARS} caracteres.]` : '';
@@ -2472,7 +2493,9 @@ export class AiAgentService {
           if (err?.response?.status === 404)
             return 'Error 404: La página no existe.';
           if (err?.code === 'ECONNABORTED' || err?.code === 'ETIMEDOUT')
-            return 'Error: La página tardó demasiado en responder (timeout 10s).';
+            return 'Error: La página tardó demasiado en responder (timeout 15s).';
+          if (typeof err?.message === 'string' && err.message.includes('maxContentLength'))
+            return 'Error: La página es demasiado pesada para leerla completa. Pide al cliente una URL más específica o el dato concreto que necesita.';
           return `No se pudo obtener el contenido de la URL. Error: ${err?.message ?? 'desconocido'}`;
         }
       },

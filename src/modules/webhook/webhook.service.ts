@@ -307,18 +307,16 @@ export class WebhookService {
     );
     this.logger.log(`[MESSAGE] M=${data?.message?.conversation ?? ''}`);
 
-    // DIAG TEMPORAL: capturar la forma real de un evento de BORRADO ("eliminar para
-    // todos") para saber cómo detectarlo. Se dispara solo en eventos sospechosos de
-    // borrado (sin texto / con protocolMessage / con stub). Quitar tras diagnosticar.
+    // DIAG TEMPORAL: registra TODOS los eventos del webhook (compacto) para ver qué
+    // llega exactamente al borrar un mensaje —o si no llega nada—. Filtra en los
+    // logs por [EVT] y por el número de prueba. Quitar tras diagnosticar.
     try {
       const _dm: any = data?.message;
       const _mt = data?.messageType;
       const _hasText = !!(_dm?.conversation || _dm?.extendedTextMessage?.text);
-      if (!_mt || _mt === 'protocolMessage' || (data as any)?.messageStubType != null || _dm?.protocolMessage || (!_hasText && _dm && Object.keys(_dm).length <= 1)) {
-        this.logger.warn(
-          `[DIAG_DELETE] event=${body.event} msgType=${_mt ?? '(none)'} stub=${(data as any)?.messageStubType ?? '-'} keyId=${data?.key?.id} fromMe=${data?.key?.fromMe} msgKeys=[${_dm ? Object.keys(_dm).join(',') : ''}] proto=${JSON.stringify(_dm?.protocolMessage ?? null)} DATA=${JSON.stringify(data).slice(0, 1200)}`,
-        );
-      }
+      this.logger.warn(
+        `[EVT] event=${body.event} msgType=${_mt ?? '(none)'} stub=${(data as any)?.messageStubType ?? '-'} keyId=${data?.key?.id} fromMe=${data?.key?.fromMe} rjid=${data?.key?.remoteJid} hasText=${_hasText} msgKeys=[${_dm ? Object.keys(_dm).join(',') : ''}]${_dm?.protocolMessage ? ` proto=${JSON.stringify(_dm.protocolMessage)}` : ''}`,
+      );
     } catch {}
 
     const rawRemoteJid = data?.key?.remoteJid ?? '';

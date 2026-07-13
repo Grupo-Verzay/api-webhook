@@ -120,9 +120,35 @@ export class ChatStoreService {
     return new Date();
   }
 
+  /**
+   * ¿Es un evento de BORRADO de mensaje (revoke / "eliminar para todos")?
+   * Se detecta igual que el frontend (lib/chat-persistence.ts). Estos eventos NO
+   * deben persistirse ni tocar el mensaje original: queremos conservar en la
+   * plataforma lo que el cliente escribió aunque después lo borre.
+   */
+  private isDeletedMessageEvent(input: PersistChatMessageInput): boolean {
+    const raw = input.raw;
+    const rawRecord = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, any>) : null;
+    const message = rawRecord?.message && typeof rawRecord.message === 'object'
+      ? (rawRecord.message as Record<string, any>)
+      : null;
+    const protocolType = message?.protocolMessage?.type ?? rawRecord?.protocolMessage?.type;
+
+    return (
+      input.messageType === 'protocolMessage' ||
+      input.messageType === 'messageStubType' ||
+      input.messageType === 'revokedMessage' ||
+      protocolType === 0 ||
+      protocolType === 'REVOKE' ||
+      protocolType === 'MESSAGE_REVOKE'
+    );
+  }
+
   /** Persiste un mensaje (entrante o saliente) en el store unificado. Nunca lanza. */
   async persistMessage(input: PersistChatMessageInput): Promise<void> {
     if (!input.userId || !input.instanceName || !input.remoteJid) return;
+    // Nunca persistir un borrado: conserva intacto el mensaje original.
+    if (this.isDeletedMessageEvent(input)) return;
 
     try {
       await this.ensureTables();

@@ -64,6 +64,11 @@ export class ChatStoreService {
         CREATE UNIQUE INDEX IF NOT EXISTS "chat_messages_user_instance_jid_msg_from_unique"
         ON "chat_messages" ("userId", "instanceName", "remoteJid", "messageId", "fromMe")
       `;
+      // Marca de "eliminado por el cliente" (revoke). El mensaje se conserva con su
+      // contenido; esta bandera solo permite al panel mostrar el badge "Eliminado".
+      await this.prisma.$executeRaw`
+        ALTER TABLE "chat_messages" ADD COLUMN IF NOT EXISTS "deleted" BOOLEAN NOT NULL DEFAULT FALSE
+      `;
       await this.prisma.$executeRaw`
         CREATE TABLE IF NOT EXISTS "chat_conversations" (
           "id" BIGSERIAL PRIMARY KEY,
@@ -142,6 +147,37 @@ export class ChatStoreService {
       protocolType === 'REVOKE' ||
       protocolType === 'MESSAGE_REVOKE'
     );
+  }
+
+  /**
+   * Marca un mensaje ya guardado como eliminado por el cliente (revoke), SIN tocar
+   * su contenido. El panel usa esta bandera para pintar el badge "Eliminado".
+   * Nunca lanza. Empata por messageId + conversación (remoteJid o su alterno).
+   */
+  async markMessageDeleted(input: {
+    userId: string;
+    instanceName: string;
+    remoteJid: string;
+    remoteJidAlt?: string | null;
+    messageId: string;
+  }): Promise<void> {
+    if (!input.userId || !input.instanceName || !input.messageId) return;
+    try {
+      await this.ensureTables();
+      const jidClause = input.remoteJidAlt
+        ? Prisma.sql`AND ("remoteJid" = ${input.remoteJid} OR "remoteJid" = ${input.remoteJidAlt})`
+        : Prisma.sql`AND "remoteJid" = ${input.remoteJid}`;
+      await this.prisma.$executeRaw`
+        UPDATE "chat_messages"
+        SET "deleted" = TRUE, "updatedAt" = NOW()
+        WHERE "userId" = ${input.userId}
+          AND "instanceName" = ${input.instanceName}
+          AND "messageId" = ${input.messageId}
+          ${jidClause}
+      `;
+    } catch (err: any) {
+      this.logger.error(`[ChatStore] Error marcando mensaje eliminado: ${err?.message}`);
+    }
   }
 
   /** Persiste un mensaje (entrante o saliente) en el store unificado. Nunca lanza. */

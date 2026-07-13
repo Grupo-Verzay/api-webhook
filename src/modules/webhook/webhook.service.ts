@@ -587,6 +587,29 @@ export class WebhookService {
       return;
     }
 
+    /* Borrado del cliente ("eliminar para todos" / revoke): NO se procesa como
+       mensaje ni dispara la IA; se MARCA el mensaje original como eliminado
+       (conservando su contenido) para que el panel muestre el badge "Eliminado". */
+    {
+      const protocolMsg: any = (data?.message as any)?.protocolMessage;
+      const isRevokeEvent =
+        messageType === 'protocolMessage' &&
+        (protocolMsg?.type === 0 || protocolMsg?.type === 'REVOKE' || protocolMsg?.type === 'MESSAGE_REVOKE');
+      if (isRevokeEvent) {
+        const deletedId = protocolMsg?.key?.id;
+        if (deletedId && userId) {
+          void this.chatStore.markMessageDeleted({
+            userId,
+            instanceName,
+            remoteJid: canonicalRemoteJid,
+            remoteJidAlt: canonicalAlt || null,
+            messageId: deletedId,
+          });
+        }
+        return;
+      }
+    }
+
     const model = defaultModel?.name || 'gpt-4o-mini';
     const provider = defaultProvider?.name || 'openai';
     const isAdminInstance = userId === process.env.ADMIN_USER_ID;

@@ -169,16 +169,16 @@ export class ChatStoreService {
     if (!input.userId || !input.instanceName || !input.messageId) return;
     try {
       await this.ensureTables();
-      const jidClause = input.remoteJidAlt
-        ? Prisma.sql`AND ("remoteJid" = ${input.remoteJid} OR "remoteJid" = ${input.remoteJidAlt})`
-        : Prisma.sql`AND "remoteJid" = ${input.remoteJid}`;
+      // Empatar SOLO por messageId dentro de la línea/cuenta: el id de WhatsApp es
+      // único, y el remoteJid del evento de borrado a veces llega como @lid (ID de
+      // privacidad) mientras el mensaje se guardó con el número real. Por eso NO se
+      // filtra por remoteJid (si no, no empataría y no se marcaría).
       await this.prisma.$executeRaw`
         UPDATE "chat_messages"
         SET "deleted" = TRUE, "updatedAt" = NOW()
         WHERE "userId" = ${input.userId}
           AND "instanceName" = ${input.instanceName}
           AND "messageId" = ${input.messageId}
-          ${jidClause}
       `;
       // Si el eliminado era el último mensaje, marcar la conversación para la lista.
       await this.prisma.$executeRaw`
@@ -187,7 +187,6 @@ export class ChatStoreService {
         WHERE "userId" = ${input.userId}
           AND "instanceName" = ${input.instanceName}
           AND "lastMessageId" = ${input.messageId}
-          ${jidClause}
       `;
     } catch (err: any) {
       this.logger.error(`[ChatStore] Error marcando mensaje eliminado: ${err?.message}`);

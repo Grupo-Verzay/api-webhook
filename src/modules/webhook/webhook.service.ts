@@ -202,6 +202,50 @@ export class WebhookService {
    * registra como "perdida". El dedupe por messageId (call_<id>) evita duplicados
    * cuando Evolution emite varios eventos para la misma llamada.
    */
+  /**
+   * Evento MESSAGES_DELETE de Evolution: uno o varios mensajes fueron borrados.
+   * Marca el mensaje original como eliminado (sin tocar su contenido) para que el
+   * panel muestre el badge "Eliminado" en la burbuja y "Mensaje eliminado" en la
+   * lista. No dispara IA ni persiste nada. El formato del `data` varía según la
+   * versión (una key, un array de keys, o { keys: [...] }), por eso se maneja de
+   * forma defensiva. Log temporal para verificar en la primera prueba.
+   */
+  private async handleMessageDeleteEvent(body: WebhookBodyDto): Promise<void> {
+    try {
+      const instanceName = body.instance;
+      const data: any = (body as unknown as { data?: unknown }).data;
+      this.logger.warn(
+        `[MSG_DELETE] instance=${instanceName} data=${JSON.stringify(data).slice(0, 800)}`,
+      );
+      const prismaInstancia = await this.instancesService.getUserId(instanceName);
+      const userId = prismaInstancia?.userId ?? '';
+      if (!userId) return;
+
+      const rawKeys: any[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.keys)
+          ? data.keys
+          : [data];
+      for (const entry of rawKeys) {
+        const key = entry?.key ?? entry;
+        const messageId: string | undefined = key?.id;
+        const remoteJid: string | undefined = key?.remoteJid ?? key?.remoteJidAlt;
+        const remoteJidAlt: string | null = key?.remoteJidAlt ?? null;
+        if (!messageId || !remoteJid) continue;
+        await this.chatStore.markMessageDeleted({
+          userId,
+          instanceName,
+          remoteJid,
+          remoteJidAlt,
+          messageId,
+        });
+        this.logger.warn(`[MSG_DELETE] marcado id=${messageId} rjid=${remoteJid}`);
+      }
+    } catch (e: any) {
+      this.logger.error(`[MSG_DELETE] error: ${e?.message}`);
+    }
+  }
+
   private async handleCallEvent(body: WebhookBodyDto): Promise<void> {
     try {
       const instanceName = body.instance;
@@ -287,6 +331,16 @@ export class WebhookService {
     // chat (llamada perdida) y no sigue el flujo normal de mensajes.
     if (body.event === 'call') {
       await this.handleCallEvent(body);
+      return;
+    }
+
+    // Evento de BORRADO (Evolution MESSAGES_DELETE): marca el mensaje original como
+    // eliminado (conserva su contenido) para el badge "Eliminado". No dispara IA.
+    if (
+      typeof body.event === 'string' &&
+      body.event.toLowerCase().replace(/_/g, '.') === 'messages.delete'
+    ) {
+      await this.handleMessageDeleteEvent(body);
       return;
     }
 

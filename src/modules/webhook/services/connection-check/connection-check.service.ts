@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/core/logger/logger.service';
 import { PrismaService } from 'src/database/prisma.service';
-import { NodeSenderService } from 'src/modules/workflow/services/node-sender.service.ts/node-sender.service';
+import { SystemNotificationDispatcherService } from 'src/modules/whatsapp/services/system-notification-dispatcher.service';
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID ?? 'cm842kthc0000qd2l66nbnytv';
 const TIMEOUT_MS = 10_000;
@@ -10,7 +10,11 @@ const TIME_ZONE = 'America/Bogota';
 const DISABLED_SENTINEL = '0000000000';
 
 const DISCONNECTION_MSG =
-  `📵 El WhatsApp esta *desvinculado* del Agente.\n\n*Solución*: entre a su cuenta\n\n👉 agente.ia-app.com/profile\n\n*Conectar* → en WhatsApp Business: Dispositivos vinculados.\n\n*Vincular un dispositivo* y escanee el *QR*  📳`;
+  '📵 El WhatsApp esta *desvinculado* del Agente.\n\n' +
+  '*Solucion*: entre a su cuenta\n\n' +
+  '👉 agente.ia-app.com/profile\n\n' +
+  '*Conectar* → en WhatsApp Business: Dispositivos vinculados.\n\n' +
+  '*Vincular un dispositivo* y escanee el *QR* 📳';
 
 type DailyEntry = { dayKey: string; count: number };
 
@@ -26,7 +30,7 @@ export class ConnectionCheckService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger: LoggerService,
-    private readonly nodeSenderService: NodeSenderService,
+    private readonly notificationDispatcher: SystemNotificationDispatcherService,
   ) {}
 
   private getDayKey(now: Date): string {
@@ -78,29 +82,6 @@ export class ConnectionCheckService {
   async run(now = new Date()): Promise<{ checked: number; disconnected: number; notified: number }> {
     const dayKey = this.getDayKey(now);
 
-    const adminUser = await this.prisma.user.findUnique({
-      where: { id: ADMIN_USER_ID },
-      include: {
-        apiKey: { select: { url: true } },
-        instancias: {
-          where: { instanceType: 'Whatsapp' },
-          select: { instanceName: true, instanceId: true },
-          take: 1,
-        },
-      },
-    });
-
-    const adminInstance = adminUser?.instancias[0];
-    const adminApiUrl = adminUser?.apiKey?.url?.trim();
-
-    if (!adminInstance || !adminApiUrl) {
-      this.logger.warn('[ConnectionCheck] Sin instancia admin disponible para enviar notificaciones.');
-      return { checked: 0, disconnected: 0, notified: 0 };
-    }
-
-    const adminBase = normalizeBase(adminApiUrl);
-    const adminSendUrl = `${adminBase}/message/sendText/${encodeURIComponent(adminInstance.instanceName)}`;
-
     const users = await this.prisma.user.findMany({
       where: {
         status: true,
@@ -120,41 +101,6 @@ export class ConnectionCheckService {
       },
     });
 
-    // Precarga instancias del "dueño" (cuenta padre de un asesor por ownerId, o
-    // reseller de un cliente por demoResellerId) en bulk para evitar N+1.
-    const ownerIds = [
-      ...new Set(
-        users.flatMap(u => [u.ownerId, u.demoResellerId]).filter(Boolean),
-      ),
-    ] as string[];
-    const resellerSenderMap = new Map<string, { sendUrl: string; senderApikey: string }>();
-
-    if (ownerIds.length > 0) {
-      const owners = await this.prisma.user.findMany({
-        where: { id: { in: ownerIds } },
-        select: {
-          id: true,
-          apiKey: { select: { url: true } },
-          instancias: {
-            where: { instanceType: 'Whatsapp' },
-            select: { instanceName: true, instanceId: true },
-            take: 1,
-          },
-        },
-      });
-      for (const owner of owners) {
-        const inst = owner.instancias[0];
-        const srv = owner.apiKey?.url?.trim();
-        if (inst && srv) {
-          const base = normalizeBase(srv);
-          resellerSenderMap.set(owner.id, {
-            sendUrl: `${base}/message/sendText/${encodeURIComponent(inst.instanceName)}`,
-            senderApikey: inst.instanceId,
-          });
-        }
-      }
-    }
-
     let checked = 0;
     let disconnected = 0;
     let notified = 0;
@@ -170,42 +116,42 @@ export class ConnectionCheckService {
       checked++;
 
       const connected = await this.isInstanceConnected(serverUrl, instance.instanceName, instance.instanceId);
-
       if (connected) continue;
 
       disconnected++;
 
       if (!this.canNotify(instanceKey, dayKey)) {
         this.logger.log(
-          `[ConnectionCheck] ${instance.instanceName} desconectada — límite diario alcanzado.`,
+          `[ConnectionCheck] ${instance.instanceName} desconectada; limite diario alcanzado.`,
         );
         continue;
       }
 
-      // Emisor: instancia del padre (asesor→ownerId) o del reseller
-      // (cliente→demoResellerId); si no hay, usar la instancia admin.
-      const ownerKey = user.ownerId ?? user.demoResellerId;
-      const resellerSender = ownerKey ? resellerSenderMap.get(ownerKey) : undefined;
-      const senderUrl = resellerSender?.sendUrl ?? adminSendUrl;
-      const senderApikey = resellerSender?.senderApikey ?? adminInstance.instanceId;
+      const ownerKey = user.ownerId ?? user.demoResellerId ?? ADMIN_USER_ID;
 
       try {
-        await this.nodeSenderService.sendTextNode(
-          senderUrl,
-          senderApikey,
-          phone,
-          DISCONNECTION_MSG,
-        );
+        const line = await this.notificationDispatcher.resolveLine(ownerKey);
+        if (!line) {
+          this.logger.warn('[ConnectionCheck] Sin linea configurada para notificar desconexion.');
+          continue;
+        }
+
+        const ok = await this.notificationDispatcher.sendText({
+          line,
+          remoteJid: phone,
+          text: DISCONNECTION_MSG,
+        });
+        if (!ok) throw new Error('No se pudo enviar la notificacion por la linea configurada.');
+
         this.markNotified(instanceKey, dayKey);
         notified++;
         const count = this.dailyNotified.get(instanceKey)?.count ?? 1;
-        const via = resellerSender ? `reseller=${user.ownerId}` : 'admin';
         this.logger.log(
-          `[ConnectionCheck] Notificación enviada → ${instance.instanceName} (userId=${user.id}) aviso=${count}/${MAX_DAILY_NOTIFICATIONS} via=${via}`,
+          `[ConnectionCheck] Notificacion enviada -> ${instance.instanceName} (userId=${user.id}) aviso=${count}/${MAX_DAILY_NOTIFICATIONS} via=${line.instanceName}`,
         );
       } catch (error: any) {
         this.logger.error(
-          `[ConnectionCheck] Error enviando notificación para ${instance.instanceName}`,
+          `[ConnectionCheck] Error enviando notificacion para ${instance.instanceName}`,
           error?.message,
         );
       }

@@ -4,7 +4,7 @@ import axios from 'axios';
 
 import { LoggerService } from 'src/core/logger/logger.service';
 import { PrismaService } from 'src/database/prisma.service';
-import { NodeSenderService } from 'src/modules/workflow/services/node-sender.service.ts/node-sender.service';
+import { SystemNotificationDispatcherService } from 'src/modules/whatsapp/services/system-notification-dispatcher.service';
 
 import { PaymentReceiptAnalyzerService } from './payment-receipt-analyzer.service';
 import { PaymentReceiptValidatorService } from './payment-receipt-validator.service';
@@ -14,9 +14,7 @@ import { ProcessResult } from '../types/receipt-analysis.types';
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID ?? 'cm842kthc0000qd2l66nbnytv';
 
 export type IncomingReceiptPayload = {
-  /** Texto extraído del mensaje (ya procesado por MessageTypeHandlerService) */
   content: string;
-  /** JID del remitente (cliente que envió el comprobante) */
   remoteJid: string;
 };
 
@@ -32,7 +30,7 @@ export class PaymentReceiptProcessorService {
     private readonly analyzer: PaymentReceiptAnalyzerService,
     private readonly validator: PaymentReceiptValidatorService,
     private readonly matcher: PaymentClientMatcherService,
-    private readonly nodeSender: NodeSenderService,
+    private readonly notificationDispatcher: SystemNotificationDispatcherService,
   ) {
     this.verzayAppUrl = (
       this.configService.get<string>('BILLING_CRON_ENDPOINT_URL') ??
@@ -43,10 +41,6 @@ export class PaymentReceiptProcessorService {
     this.cronSecret = this.configService.get<string>('CRON_SECRET') ?? '';
   }
 
-  // -------------------------------------------------------------------------
-  // Punto de entrada principal
-  // -------------------------------------------------------------------------
-
   async handle(payload: IncomingReceiptPayload): Promise<ProcessResult> {
     const { content, remoteJid } = payload;
 
@@ -55,29 +49,26 @@ export class PaymentReceiptProcessorService {
       'PaymentReceiptProcessor',
     );
 
-    // 1. Analizar el comprobante con LLM
     const analysis = await this.analyzer.analyze(content, ADMIN_USER_ID);
 
     if (!analysis.isPaymentReceipt || analysis.confidenceScore < 50) {
-      // No es un comprobante — ignorar silenciosamente
       return { success: false, message: 'No identificado como comprobante de pago.' };
     }
 
-    // 2. Validar con reglas de negocio
     const validation = await this.validator.validate(analysis);
 
     if (!validation.isValid) {
       this.logger.warn(
-        `[PaymentReceiptProcessor] Comprobante inválido de ${remoteJid}: ${validation.reason}`,
+        `[PaymentReceiptProcessor] Comprobante invalido de ${remoteJid}: ${validation.reason}`,
         'PaymentReceiptProcessor',
       );
       await this.notifyAdmin(
-        `⚠️ *Comprobante rechazado* de ${remoteJid}\n*Razón:* ${validation.reason}\n*Monto:* ${analysis.amount} ${analysis.currency}\n*Método:* ${analysis.method}`,
+        `⚠️ Comprobante rechazado de ${remoteJid}\nRazon: ${validation.reason}\nMonto: ${analysis.amount} ${analysis.currency}\nMetodo: ${analysis.method}`,
+        remoteJid,
       );
       return { success: false, message: validation.reason };
     }
 
-    // 3. Identificar al cliente por su número de WhatsApp
     const clientUserId = await this.matcher.findClientByRemoteJid(remoteJid);
 
     if (!clientUserId) {
@@ -86,15 +77,14 @@ export class PaymentReceiptProcessorService {
         'PaymentReceiptProcessor',
       );
       await this.notifyAdmin(
-        `⚠️ *Comprobante sin cliente* de ${remoteJid}\n*Monto:* ${analysis.amount} ${analysis.currency}\n*Método:* ${analysis.method}\n*Referencia:* ${analysis.reference ?? 'N/A'}\n\nConfirmar manualmente.`,
+        `⚠️ Comprobante sin cliente de ${remoteJid}\nMonto: ${analysis.amount} ${analysis.currency}\nMetodo: ${analysis.method}\nReferencia: ${analysis.reference ?? 'N/A'}\n\nConfirmar manualmente.`,
+        remoteJid,
       );
-      return { success: false, message: 'Cliente no encontrado para ese número de WhatsApp.' };
+      return { success: false, message: 'Cliente no encontrado para ese numero de WhatsApp.' };
     }
 
-    // 4. Construir externalReference para deduplicación
     const externalReference = this.validator.buildExternalReference(analysis);
 
-    // 5. Llamar al endpoint de confirmación de pago en verzay-app
     const confirmResult = await this.callConfirmPayment({
       clientUserId,
       amount: analysis.amount!,
@@ -109,7 +99,8 @@ export class PaymentReceiptProcessorService {
         'PaymentReceiptProcessor',
       );
       await this.notifyAdmin(
-        `❌ *Error al confirmar pago* de ${remoteJid}\n*Cliente ID:* ${clientUserId}\n*Error:* ${confirmResult.message}`,
+        `❌ Error al confirmar pago de ${remoteJid}\nCliente ID: ${clientUserId}\nError: ${confirmResult.message}`,
+        remoteJid,
       );
       return { success: false, message: confirmResult.message };
     }
@@ -118,15 +109,14 @@ export class PaymentReceiptProcessorService {
       return { success: true, message: 'Pago ya procesado anteriormente.', alreadyProcessed: true };
     }
 
-    // 6. Notificar al cliente que su pago fue recibido y confirmado
     await this.notifyClient(
       remoteJid,
-      `✅ *¡Pago confirmado!*\n*Monto:* ${analysis.amount} ${analysis.currency}\n*Método:* ${analysis.method}\n*Referencia:* ${analysis.reference ?? 'N/A'}\n\nTu acceso ha sido activado. ¡Gracias!`,
+      `✅ *Pago confirmado!*\n*Monto:* ${analysis.amount} ${analysis.currency}\n*Metodo:* ${analysis.method}\n*Referencia:* ${analysis.reference ?? 'N/A'}\n\nTu acceso ha sido activado. Gracias!`,
     );
 
-    // 7. Notificar al admin que el pago fue procesado exitosamente
     await this.notifyAdmin(
-      `✅ *Pago confirmado automáticamente*\n*Cliente:* ${remoteJid}\n*Monto:* ${analysis.amount} ${analysis.currency}\n*Método:* ${analysis.method}\n*Referencia:* ${analysis.reference ?? 'N/A'}\n*Próximo vencimiento:* ${confirmResult.newDueDate ? new Date(confirmResult.newDueDate).toLocaleDateString('es-CO') : 'N/A'}`,
+      `✅ Pago confirmado automaticamente\nCliente: ${remoteJid}\nMonto: ${analysis.amount} ${analysis.currency}\nMetodo: ${analysis.method}\nReferencia: ${analysis.reference ?? 'N/A'}\nProximo vencimiento: ${confirmResult.newDueDate ? new Date(confirmResult.newDueDate).toLocaleDateString('es-CO') : 'N/A'}`,
+      remoteJid,
     );
 
     this.logger.log(
@@ -141,10 +131,6 @@ export class PaymentReceiptProcessorService {
       newDueDate: confirmResult.newDueDate,
     };
   }
-
-  // -------------------------------------------------------------------------
-  // Llamada HTTP a verzay-app
-  // -------------------------------------------------------------------------
 
   private async callConfirmPayment(input: {
     clientUserId: string;
@@ -192,79 +178,40 @@ export class PaymentReceiptProcessorService {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Notificaciones WhatsApp
-  // -------------------------------------------------------------------------
-
-  private async getAdminInstanceConfig(): Promise<{
-    url: string;
-    apikey: string;
-  } | null> {
-    const admin = await this.prisma.user.findUnique({
-      where: { id: ADMIN_USER_ID },
-      select: {
-        apiKey: { select: { url: true } },
-        instancias: {
-          select: { instanceId: true, instanceName: true, instanceType: true },
-        },
-      },
-    });
-
-    if (!admin) return null;
-
-    const serverUrl = admin.apiKey?.url?.trim();
-    const instance =
-      admin.instancias.find((i) => i.instanceType === 'Whatsapp') ??
-      admin.instancias[0];
-
-    if (!serverUrl || !instance?.instanceId || !instance.instanceName) return null;
-
-    const normalizedBase = /^https?:\/\//i.test(serverUrl)
-      ? serverUrl.replace(/\/+$/, '')
-      : `https://${serverUrl.replace(/\/+$/, '')}`;
-
-    return {
-      url: `${normalizedBase}/message/sendText/${encodeURIComponent(instance.instanceName)}`,
-      apikey: instance.instanceId,
-    };
-  }
-
-  private async notifyAdmin(text: string): Promise<void> {
+  private async notifyAdmin(text: string, contact?: string): Promise<void> {
     try {
-      const cfg = await this.getAdminInstanceConfig();
-      if (!cfg) return;
+      const line = await this.notificationDispatcher.resolveLine(ADMIN_USER_ID);
+      if (!line) return;
 
-      // Notificar al número de notificación del admin (si tiene)
-      const admin = await this.prisma.user.findUnique({
-        where: { id: ADMIN_USER_ID },
-        select: { notificationNumber: true },
-      });
+      if (line.provider === 'meta') {
+        await this.notificationDispatcher.sendInternalNotification({
+          ownerUserId: ADMIN_USER_ID,
+          targetUserId: ADMIN_USER_ID,
+          type: 'Pago',
+          name: 'Sistema',
+          description: text,
+          contact: contact ?? '',
+        });
+        return;
+      }
 
-      const notifyJid = admin?.notificationNumber?.trim();
-      if (!notifyJid) return;
-
-      const jid = notifyJid.includes('@')
-        ? notifyJid
-        : `${notifyJid.replace(/\D/g, '')}@s.whatsapp.net`;
-
-      await this.nodeSender.sendTextNode(cfg.url, cfg.apikey, jid, text);
+      const phones = await this.notificationDispatcher.getNotificationPhones(ADMIN_USER_ID);
+      for (const phone of phones) {
+        await this.notificationDispatcher.sendText({ line, remoteJid: phone, text });
+      }
     } catch {
-      // Silencioso — no queremos romper el flujo por un error de notificación
+      // Una notificacion no debe romper el flujo de pago.
     }
   }
 
   private async notifyClient(remoteJid: string, text: string): Promise<void> {
     try {
-      const cfg = await this.getAdminInstanceConfig();
-      if (!cfg) return;
+      const line = await this.notificationDispatcher.resolveLine(ADMIN_USER_ID);
+      if (!line) return;
 
-      const jid = remoteJid.includes('@')
-        ? remoteJid
-        : `${remoteJid.replace(/\D/g, '')}@s.whatsapp.net`;
-
-      await this.nodeSender.sendTextNode(cfg.url, cfg.apikey, jid, text);
+      await this.notificationDispatcher.sendText({ line, remoteJid, text });
     } catch {
-      // Silencioso
+      // Silencioso.
     }
   }
 }

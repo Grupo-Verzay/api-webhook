@@ -6,8 +6,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { LoggerService } from 'src/core/logger/logger.service';
 import { NodeSenderService } from 'src/modules/workflow/services/node-sender.service.ts/node-sender.service';
 import { WorkflowService } from 'src/modules/workflow/services/workflow.service.ts/workflow.service';
-
-const ADMIN_USER_ID = process.env.ADMIN_USER_ID ?? 'cm842kthc0000qd2l66nbnytv';
+import { SystemNotificationDispatcherService } from 'src/modules/whatsapp/services/system-notification-dispatcher.service';
 
 interface ExecCtx {
   sessionId: number;
@@ -31,9 +30,10 @@ export class StageAutomationService {
     private readonly nodeSenderService: NodeSenderService,
     private readonly workflowService: WorkflowService,
     private readonly http: HttpService,
+    private readonly notificationDispatcher: SystemNotificationDispatcherService,
   ) {}
 
-  /** Construye el contexto de envío (instancia WhatsApp) para una sesión. */
+  /** Construye el contexto de envio (instancia WhatsApp) para una sesion. */
   private async buildCtx(sessionId: number): Promise<ExecCtx | null> {
     const session = await this.prisma.session.findUnique({
       where: { id: sessionId },
@@ -110,7 +110,7 @@ export class StageAutomationService {
   /**
    * Ejecuta las automatizaciones configuradas para un asesor cuando se le
    * asigna (auto o manual) un contacto. Incluye las que aplican a "cualquier
-   * asesor" (advisorId = null). Idempotencia: se dispara sólo con el asesor recibido.
+   * asesor" (advisorId = null). Idempotencia: se dispara solo con el asesor recibido.
    */
   async executeForAdvisor(sessionId: number, advisorId: string): Promise<void> {
     if (!advisorId) return;
@@ -208,9 +208,9 @@ export class StageAutomationService {
 
   /**
    * Ejecuta las automatizaciones de grupo de recordatorio cuando un recordatorio
-   * se ejecuta/envía. El contexto se arma desde el propio recordatorio (no hay
-   * sessionId garantizado): se resuelve la sesión por remoteJid+userId para las
-   * acciones que la requieren; las de solo envío (mensaje/flujo/archivo) no la necesitan.
+   * se ejecuta/envia. El contexto se arma desde el propio recordatorio (no hay
+   * sessionId garantizado): se resuelve la sesion por remoteJid+userId para las
+   * acciones que la requieren; las de solo envio (mensaje/flujo/archivo) no la necesitan.
    */
   async executeForReminderGroup(params: {
     userId: string;
@@ -230,7 +230,7 @@ export class StageAutomationService {
 
     if (automations.length === 0) return;
 
-    // Resolver sessionId por contacto (para acciones que mutan la sesión)
+    // Resolver sessionId por contacto (para acciones que mutan la sesion)
     const session = await this.prisma.session.findFirst({
       where: { remoteJid, userId },
       select: { id: true },
@@ -272,7 +272,7 @@ export class StageAutomationService {
       }
     } catch (err: any) {
       this.logger.error(
-        `[StageAutomation] Error en acción ${action.type} session=${ctx.sessionId}`,
+        `[StageAutomation] Error en accion ${action.type} session=${ctx.sessionId}`,
         err?.message,
         'StageAutomationService',
       );
@@ -308,10 +308,9 @@ export class StageAutomationService {
     if (!advisor?.notificationNumber) return;
 
     const text = `📋 *Nueva tarea*\n\n*${title}*${description ? `\n\n${description}` : ''}\n\n_Contacto: ${ctx.remoteJid}_`;
-    const sender = await this.getAdminSender();
-    if (!sender) return;
-    const sendUrl = `${sender.serverUrl}/message/sendText/${encodeURIComponent(sender.instanceName)}`;
-    await this.nodeSenderService.sendTextNode(sendUrl, sender.apikey, advisor.notificationNumber, text);
+    const line = await this.notificationDispatcher.resolveLine(ctx.userId);
+    if (!line) return;
+    await this.notificationDispatcher.sendText({ line, remoteJid: advisor.notificationNumber, text });
     this.logger.log(`[StageAutomation] TASK notificado targetId=${targetId}`, 'StageAutomationService');
   }
 
@@ -327,9 +326,9 @@ export class StageAutomationService {
   private async doExecuteFlow(cfg: Record<string, unknown>, ctx: ExecCtx) {
     const workflowName = String(cfg.workflowName);
     // executeWorkflow espera la URL BASE del servidor (arma /message/sendText,
-    // /message/sendWhatsAppAudio, etc. por dentro en cada nodo). Pasar aquí una
+    // /message/sendWhatsAppAudio, etc. por dentro en cada nodo). Pasar aqui una
     // URL ya construida con /message/sendText/<instancia> duplicaba la ruta y
-    // Evolution respondía 404 en TODOS los nodos del flujo lanzado por automatización.
+    // Evolution respondia 404 en TODOS los nodos del flujo lanzado por automatizacion.
     await this.workflowService.executeWorkflow(
       workflowName, ctx.serverUrl, ctx.apikey, ctx.instanceName, ctx.remoteJid, ctx.userId,
     );
@@ -350,7 +349,7 @@ export class StageAutomationService {
     const scheduledFor = new Date(Date.now() + delayMin * 60_000);
     await this.prisma.reminders.create({
       data: {
-        title: 'Recordatorio automático',
+        title: 'Recordatorio automatico',
         description: text,
         serverUrl: ctx.serverUrl,
         instanceName: ctx.instanceName,
@@ -377,11 +376,10 @@ export class StageAutomationService {
     });
     if (!advisor?.notificationNumber) return;
 
-    const text = message ?? `🔔 El lead *${ctx.remoteJid}* cambió de etapa.`;
-    const sender = await this.getAdminSender();
-    if (!sender) return;
-    const sendUrl = `${sender.serverUrl}/message/sendText/${encodeURIComponent(sender.instanceName)}`;
-    await this.nodeSenderService.sendTextNode(sendUrl, sender.apikey, advisor.notificationNumber, text);
+    const text = message ?? `🔔 El lead *${ctx.remoteJid}* cambio de etapa.`;
+    const line = await this.notificationDispatcher.resolveLine(ctx.userId);
+    if (!line) return;
+    await this.notificationDispatcher.sendText({ line, remoteJid: advisor.notificationNumber, text });
     this.logger.log(`[StageAutomation] NOTIFY_ADVISOR notificado ${advisor.notificationNumber}`, 'StageAutomationService');
   }
 
@@ -440,21 +438,4 @@ export class StageAutomationService {
     this.logger.log(`[StageAutomation] CHANGE_STATUS status=${status} session=${ctx.sessionId}`, 'StageAutomationService');
   }
 
-  private async getAdminSender() {
-    const admin = await this.prisma.user.findUnique({
-      where: { id: ADMIN_USER_ID },
-      include: {
-        apiKey: { select: { url: true } },
-        instancias: {
-          where: { instanceType: 'Whatsapp' },
-          select: { instanceName: true, instanceId: true },
-          take: 1,
-        },
-      },
-    });
-    const instance = admin?.instancias[0];
-    const url = admin?.apiKey?.url?.trim();
-    if (!instance || !url) return null;
-    return { serverUrl: normalizeBase(url), instanceName: instance.instanceName, apikey: instance.instanceId };
-  }
 }

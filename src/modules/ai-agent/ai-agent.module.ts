@@ -21,9 +21,10 @@ import { NotificationContactsService } from './services/notificacionService/noti
 import { ExternalClientDataModule } from '../external-client-data/external-client-data.module';
 import { TtsService } from './services/tts/tts.service';
 import { GoogleSheetsModule } from '../google-sheets/google-sheets.module';
+import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 
 @Module({
-  imports: [HttpModule, ConfigModule, forwardRef(() => WorkflowModule), ExternalClientDataModule, GoogleSheetsModule, AiCreditsModule],
+  imports: [HttpModule, ConfigModule, forwardRef(() => WorkflowModule), ExternalClientDataModule, GoogleSheetsModule, AiCreditsModule, WhatsAppModule],
   providers: [
     AiAgentService,
     PromptService,

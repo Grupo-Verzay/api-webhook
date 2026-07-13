@@ -9,6 +9,7 @@ import { TelegramSenderAdapter } from './adapters/telegram-sender.adapter';
 import { WhatsAppSenderFactory } from './whatsapp-sender.factory';
 import { WhatsAppController } from './whatsapp.controller';
 import { WorkflowModule } from 'src/modules/workflow/workflow.module';
+import { SystemNotificationDispatcherService } from './services/system-notification-dispatcher.service';
 
 @Module({
   imports: [WorkflowModule],
@@ -22,7 +23,8 @@ import { WorkflowModule } from 'src/modules/workflow/workflow.module';
     MetaCloudApiSenderAdapter,
     TelegramSenderAdapter,
     WhatsAppSenderFactory,
+    SystemNotificationDispatcherService,
   ],
-  exports: [WhatsAppSenderFactory, BaileysSessionManager, BaileysMessageStore, BaileysSenderAdapter, TelegramSenderAdapter, MediaStorageService],
+  exports: [WhatsAppSenderFactory, SystemNotificationDispatcherService, BaileysSessionManager, BaileysMessageStore, BaileysSenderAdapter, TelegramSenderAdapter, MediaStorageService],
 })
 export class WhatsAppModule {}

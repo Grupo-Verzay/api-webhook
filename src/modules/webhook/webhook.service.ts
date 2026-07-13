@@ -307,18 +307,6 @@ export class WebhookService {
     );
     this.logger.log(`[MESSAGE] M=${data?.message?.conversation ?? ''}`);
 
-    // DIAG TEMPORAL: registra TODOS los eventos del webhook (compacto) para ver qué
-    // llega exactamente al borrar un mensaje —o si no llega nada—. Filtra en los
-    // logs por [EVT] y por el número de prueba. Quitar tras diagnosticar.
-    try {
-      const _dm: any = data?.message;
-      const _mt = data?.messageType;
-      const _hasText = !!(_dm?.conversation || _dm?.extendedTextMessage?.text);
-      this.logger.warn(
-        `[EVT] event=${body.event} msgType=${_mt ?? '(none)'} stub=${(data as any)?.messageStubType ?? '-'} keyId=${data?.key?.id} fromMe=${data?.key?.fromMe} rjid=${data?.key?.remoteJid} hasText=${_hasText} msgKeys=[${_dm ? Object.keys(_dm).join(',') : ''}]${_dm?.protocolMessage ? ` proto=${JSON.stringify(_dm.protocolMessage)}` : ''}`,
-      );
-    } catch {}
-
     const rawRemoteJid = data?.key?.remoteJid ?? '';
     const rawRemoteJidAlt = data?.key?.remoteJidAlt ?? '';
     const rawSenderLid = data?.key?.senderLid ?? '';

@@ -214,9 +214,6 @@ export class WebhookService {
     try {
       const instanceName = body.instance;
       const data: any = (body as unknown as { data?: unknown }).data;
-      this.logger.warn(
-        `[MSG_DELETE] instance=${instanceName} data=${JSON.stringify(data).slice(0, 800)}`,
-      );
       const prismaInstancia = await this.instancesService.getUserId(instanceName);
       const userId = prismaInstancia?.userId ?? '';
       if (!userId) return;

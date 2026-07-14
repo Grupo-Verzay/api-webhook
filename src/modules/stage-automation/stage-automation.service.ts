@@ -7,6 +7,7 @@ import { LoggerService } from 'src/core/logger/logger.service';
 import { NodeSenderService } from 'src/modules/workflow/services/node-sender.service.ts/node-sender.service';
 import { WorkflowService } from 'src/modules/workflow/services/workflow.service.ts/workflow.service';
 import { SystemNotificationDispatcherService } from 'src/modules/whatsapp/services/system-notification-dispatcher.service';
+import { WhatsAppSenderFactory } from 'src/modules/whatsapp/whatsapp-sender.factory';
 
 interface ExecCtx {
   sessionId: number;
@@ -14,7 +15,10 @@ interface ExecCtx {
   remoteJid: string;
   serverUrl: string;
   instanceName: string;
+  instanceType: string | null;
   apikey: string;
+  metaPhoneNumberId: string | null;
+  metaAccessToken: string | null;
 }
 
 function normalizeBase(url: string): string {
@@ -31,6 +35,7 @@ export class StageAutomationService {
     private readonly workflowService: WorkflowService,
     private readonly http: HttpService,
     private readonly notificationDispatcher: SystemNotificationDispatcherService,
+    private readonly senderFactory: WhatsAppSenderFactory,
   ) {}
 
   /** Construye el contexto de envio (instancia WhatsApp) para una sesion. */
@@ -40,13 +45,18 @@ export class StageAutomationService {
       select: {
         userId: true,
         remoteJid: true,
+        instanceId: true,
         user: {
           select: {
             apiKey: { select: { url: true } },
             instancias: {
-              where: { instanceType: 'Whatsapp' },
-              select: { instanceName: true, instanceId: true },
-              take: 1,
+              select: {
+                instanceName: true,
+                instanceId: true,
+                instanceType: true,
+                metaPhoneNumberId: true,
+                metaAccessToken: true,
+              },
             },
           },
         },
@@ -55,9 +65,13 @@ export class StageAutomationService {
 
     if (!session) return null;
 
-    const instance = session.user?.instancias[0];
+    const instances = session.user?.instancias ?? [];
+    const instance =
+      instances.find((item) => item.instanceName === session.instanceId) ??
+      instances.find((item) => item.instanceId === session.instanceId) ??
+      instances[0];
     const serverUrl = session.user?.apiKey?.url?.trim();
-    if (!instance || !serverUrl) {
+    if (!instance) {
       this.logger.warn(`[StageAutomation] Sin instancia para userId=${session.userId}`, 'StageAutomationService');
       return null;
     }
@@ -66,9 +80,12 @@ export class StageAutomationService {
       sessionId,
       userId: session.userId,
       remoteJid: session.remoteJid,
-      serverUrl: normalizeBase(serverUrl),
+      serverUrl: serverUrl ? normalizeBase(serverUrl) : '',
       instanceName: instance.instanceName,
+      instanceType: instance.instanceType,
       apikey: instance.instanceId,
+      metaPhoneNumberId: instance.metaPhoneNumberId,
+      metaAccessToken: instance.metaAccessToken,
     };
   }
 
@@ -242,7 +259,10 @@ export class StageAutomationService {
       remoteJid,
       serverUrl: normalizeBase(serverUrl),
       instanceName,
+      instanceType: 'Whatsapp',
       apikey,
+      metaPhoneNumberId: null,
+      metaAccessToken: null,
     };
 
     this.logger.log(
@@ -338,8 +358,16 @@ export class StageAutomationService {
   private async doMessage(cfg: Record<string, unknown>, ctx: ExecCtx) {
     const text = String(cfg.text ?? '');
     if (!text) return;
-    const sendUrl = `${ctx.serverUrl}/message/sendText/${encodeURIComponent(ctx.instanceName)}`;
-    await this.nodeSenderService.sendTextNode(sendUrl, ctx.apikey, ctx.remoteJid, text);
+    const sender = this.senderFactory.getSenderSync(ctx.instanceType);
+    const isMeta = String(ctx.instanceType ?? '').toLowerCase() === 'meta';
+    const ok = await sender.sendText(
+      ctx.instanceName,
+      ctx.remoteJid,
+      text,
+      isMeta ? ctx.metaPhoneNumberId ?? undefined : ctx.serverUrl,
+      isMeta ? ctx.metaAccessToken ?? undefined : ctx.apikey,
+    );
+    if (!ok) throw new Error(`No se pudo enviar MESSAGE por ${ctx.instanceName}`);
     this.logger.log(`[StageAutomation] MESSAGE enviado session=${ctx.sessionId}`, 'StageAutomationService');
   }
 

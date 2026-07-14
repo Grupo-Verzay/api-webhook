@@ -4,6 +4,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { LoggerService } from 'src/core/logger/logger.service';
 import {
   buildWhatsAppJidCandidates,
+  isLidJid,
   normalizeWhatsAppConversationJid,
   pickExplicitWhatsAppPhoneJid,
   pickObservedAlternateRemoteJid,
@@ -58,6 +59,27 @@ export class SessionService {
     );
   }
 
+  /**
+   * Resuelve un `@lid` (ID de privacidad, NO teléfono) al número real usando el
+   * mapa aprendido `chat_lid_map` (userId, lid) -> remoteJid, que llena el
+   * ChatStoreService con mensajes reales. Devuelve null si no se conoce. Evita
+   * crear una segunda sesión bajo @lid cuando ya sabemos el número real.
+   */
+  private async resolveLidToPhone(userId: string, lidJid: string): Promise<string | null> {
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ remoteJid: string }>>(
+        `SELECT "remoteJid" FROM "chat_lid_map" WHERE "userId" = $1 AND lower("lid") = lower($2) LIMIT 1`,
+        userId,
+        lidJid,
+      );
+      const real = rows?.[0]?.remoteJid;
+      return real && !isLidJid(real) ? real : null;
+    } catch {
+      // chat_lid_map la crea el webhook; si aún no existe, no es crítico.
+      return null;
+    }
+  }
+
   private async findSessionByCandidates(
     userId: string,
     instanceId: string,
@@ -106,7 +128,18 @@ export class SessionService {
       this.clean(remoteJidAlt),
       this.clean(senderPn),
     ];
-    const rj = this.resolvePreferredRemoteJid(observedAliases);
+    let rj = this.resolvePreferredRemoteJid(observedAliases);
+    // Prevención de duplicados @lid: si el canónico quedó como @lid pero ya
+    // conocemos el número real (aprendido en chat_lid_map), usamos el número real
+    // como canónico y dejamos el @lid como alias. Así NO se crea una segunda
+    // sesión bajo @lid del mismo contacto. Ver [[project_session_duplicates]].
+    if (isLidJid(rj)) {
+      const real = await this.resolveLidToPhone(userId, rj);
+      if (real) {
+        observedAliases.push(rj);
+        rj = real;
+      }
+    }
     const candidates = this.buildRemoteJidCandidates(rj, observedAliases);
 
     // Transacción serializable para evitar race condition entre dos webhooks

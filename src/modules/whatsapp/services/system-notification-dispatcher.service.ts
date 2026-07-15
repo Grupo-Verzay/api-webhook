@@ -297,22 +297,32 @@ export class SystemNotificationDispatcherService {
       return false;
     }
 
-    const result = await metaSender.sendTemplate(
-      args.line.metaPhoneNumberId,
-      args.line.metaAccessToken,
-      jid,
-      args.templateName,
-      args.languageCode ?? 'es_CO',
-      args.params,
+    const languageCodes = Array.from(
+      new Set([args.languageCode, 'es', 'es_CO'].filter(Boolean) as string[]),
     );
 
-    if (!result?.ok) {
+    let lastError: string | undefined;
+    for (const languageCode of languageCodes) {
+      const result = await metaSender.sendTemplate(
+        args.line.metaPhoneNumberId,
+        args.line.metaAccessToken,
+        jid,
+        args.templateName,
+        languageCode,
+        args.params,
+      );
+
+      if (result?.ok) return true;
+      lastError = result?.error;
+    }
+
+    if (lastError) {
       this.logger.warn(
-        `[SystemNotificationDispatcher] Meta rechazo plantilla ${args.templateName}: ${result?.error ?? 'sin detalle'}`,
+        `[SystemNotificationDispatcher] Meta rechazo plantilla ${args.templateName}: ${lastError}`,
       );
     }
 
-    return Boolean(result?.ok);
+    return false;
   }
 
   async sendInternalNotification(args: {
@@ -334,7 +344,7 @@ export class SystemNotificationDispatcherService {
     if (!phones.length) return 0;
 
     const contact = this.normalizePhone(args.contact);
-    const text = [
+    const legacyText = [
       `✅ *Nuevo aviso: ${args.type}*`,
       '',
       `👤 *Nombre:* ${args.name}`,
@@ -343,6 +353,32 @@ export class SystemNotificationDispatcherService {
       '📱 *Contacto:*',
       `📲 +${contact || 'Sin numero'}`,
       '--------•--------•--------•--------',
+      'Evento registrado',
+    ].join('\n');
+
+    void legacyText;
+    const fallbackText = [
+      `✅ *Nuevo aviso: ${args.type}*`,
+      '',
+      `👤 *Nombre:* ${args.name}`,
+      `📝 *Descripción:* ${args.description}`,
+      '',
+      '📱 *Contacto:*',
+      `📲 +${contact || 'Sin numero'}`,
+      '--------•--------•--------•--------',
+      'Evento registrado',
+    ].join('\n');
+
+    void fallbackText;
+    const text = [
+      `\u2705 *Nuevo aviso: ${args.type}*`,
+      '',
+      `\u{1F464} *Nombre:* ${args.name}`,
+      `\u{1F4DD} *Descripci\u00f3n:* ${args.description}`,
+      '',
+      '\u{1F4F1} *Contacto:*',
+      `\u{1F4F2} +${contact || 'Sin numero'}`,
+      '--------\u2022--------\u2022--------\u2022--------',
       'Evento registrado',
     ].join('\n');
 

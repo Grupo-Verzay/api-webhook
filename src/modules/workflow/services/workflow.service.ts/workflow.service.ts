@@ -152,12 +152,32 @@ export class WorkflowService implements OnModuleInit {
         .then(() => true)
         .catch(() => false);
     }
-    return this.nodeSenderService.sendTextNode(
+    // Evolution: capturamos el messageId REAL (sendTextNodeReturnId) para persistir
+    // el saliente con el marcador { sentByAi: true } SIN duplicar: el eco/resync de
+    // Evolution trae ese MISMO id y el ON CONFLICT lo dedupe (y el frontend ya
+    // preserva sentByAi). Antes no se persistía aquí y el saliente del flujo quedaba
+    // atribuido al "Asesor" en vez de "🤖 Agente IA".
+    const sentId = await this.nodeSenderService.sendTextNodeReturnId(
       `${urlevo}/message/sendText/${instanceName}`,
       apikey,
       remoteJid,
       t,
     );
+    if (sentId && this.chatStore && ctx.userId) {
+      void this.chatStore.persistMessage({
+        userId: ctx.userId,
+        instanceName: ctx.instanceName,
+        instanceType: 'evolution',
+        remoteJid,
+        messageId: sentId,
+        fromMe: true,
+        messageType: 'conversation',
+        content: t,
+        raw: { sentByAi: true },
+        messageTimestamp: Math.floor(Date.now() / 1000),
+      });
+    }
+    return !!sentId;
   }
 
   /**

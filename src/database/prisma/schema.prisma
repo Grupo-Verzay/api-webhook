@@ -972,6 +972,17 @@ model IaCredit {
   @@map("ia_credits")
 }
 
+model IaCreditAlert {
+  id        String   @id @default(uuid())
+  userId    String
+  threshold Int
+  createdAt DateTime @default(now())
+
+  @@unique([userId, threshold])
+  @@index([userId, createdAt])
+  @@map("ia_credit_alerts")
+}
+
 model PlanConfig {
   id        String   @id @default(uuid())
   plan      Plan     @unique

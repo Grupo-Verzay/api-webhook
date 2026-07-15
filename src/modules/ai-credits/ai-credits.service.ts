@@ -80,6 +80,7 @@ export class AiCreditsService {
         create: { id: randomUUID(), userId, total: credits, used: 0, renewalDate },
         update: { total: credits },
       });
+      await this.clearNotifiedThresholds(userId);
       this.logger.log(
         `[syncCreditsWithPlan] userId=${userId} plan=${plan} → total=${credits}`,
       );
@@ -108,6 +109,7 @@ export class AiCreditsService {
         },
         update: { total },
       });
+      await this.clearNotifiedThresholds(userId);
     } catch (error: any) {
       this.logger.error(
         `[overrideUserCredits] Error para userId=${userId}`,
@@ -150,7 +152,7 @@ export class AiCreditsService {
           where: { id: credit.id },
           data: { used: 0, total: newTotal, renewalDate: newRenewalDate },
         });
-        this.clearNotifiedThresholds(credit.userId);
+        await this.clearNotifiedThresholds(credit.userId);
         count++;
       } catch (error: any) {
         this.logger.error(
@@ -165,23 +167,26 @@ export class AiCreditsService {
   }
 
   // ── Credit Threshold Notification Tracking ──────────────────────
-  // In-memory dedup: evita enviar la misma alerta más de una vez por ciclo.
-  // Se limpia automáticamente al renovar créditos.
-  private readonly notifiedThresholds = new Map<string, Set<number>>();
-
-  hasNotifiedThreshold(userId: string, pct: number): boolean {
-    return this.notifiedThresholds.get(userId)?.has(pct) ?? false;
-  }
-
-  markThresholdNotified(userId: string, pct: number): void {
-    if (!this.notifiedThresholds.has(userId)) {
-      this.notifiedThresholds.set(userId, new Set());
+  // Persisted dedup: evita enviar la misma alerta mas de una vez por ciclo,
+  // incluso si el contenedor reinicia.
+  async claimThresholdNotification(userId: string, pct: number): Promise<boolean> {
+    try {
+      await this.prisma.iaCreditAlert.create({
+        data: { id: randomUUID(), userId, threshold: pct },
+      });
+      return true;
+    } catch (error: any) {
+      if (error?.code === 'P2002') return false;
+      this.logger.error(
+        `[claimThresholdNotification] Error userId=${userId} threshold=${pct}`,
+        error?.message || error,
+      );
+      return false;
     }
-    this.notifiedThresholds.get(userId)!.add(pct);
   }
 
-  clearNotifiedThresholds(userId: string): void {
-    this.notifiedThresholds.delete(userId);
+  async clearNotifiedThresholds(userId: string): Promise<void> {
+    await this.prisma.iaCreditAlert.deleteMany({ where: { userId } });
   }
 
   // ── Token Tracking ───────────────────────────────────────────────

@@ -74,6 +74,8 @@ export class SystemNotificationDispatcherService {
         `;
         const instanceName = rows[0]?.instanceName?.trim();
         if (instanceName) return instanceName;
+
+        return '';
       }
 
       const rows = await this.prisma.$queryRaw<Array<{ instanceName: string | null }>>`
@@ -98,7 +100,7 @@ export class SystemNotificationDispatcherService {
       this.logger.warn(
         `[SystemNotificationDispatcher] No se pudo leer configuracion de notificaciones: ${(error as Error)?.message ?? 'sin detalle'}`,
       );
-      return DEFAULT_SYSTEM_NOTIFICATION_INSTANCE;
+      return ownerId ? '' : DEFAULT_SYSTEM_NOTIFICATION_INSTANCE;
     }
   }
 
@@ -158,16 +160,79 @@ export class SystemNotificationDispatcherService {
     };
   }
 
+  private async resolveOwnerDefaultLine(ownerUserId?: string | null): Promise<NotificationLine | null> {
+    const ownerId = ownerUserId?.trim();
+    if (!ownerId) return null;
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: ownerId },
+      select: {
+        id: true,
+        notificationNumber: true,
+        apiKey: { select: { url: true, key: true } },
+        instancias: {
+          select: {
+            instanceName: true,
+            instanceId: true,
+            instanceType: true,
+            metaPhoneNumberId: true,
+            metaAccessToken: true,
+            metaChannel: true,
+          },
+        },
+      },
+    });
+
+    if (!user?.instancias?.length) return null;
+
+    const whatsappInstances = user.instancias.filter((instance) => {
+      if (!instance.instanceName || !instance.instanceId) return false;
+      const provider = this.providerFor(instance.instanceType);
+      return provider !== 'meta' || String(instance.metaChannel ?? 'whatsapp').toLowerCase() === 'whatsapp';
+    });
+
+    const instance =
+      whatsappInstances.find((item) => this.providerFor(item.instanceType) === 'meta' && item.metaPhoneNumberId && item.metaAccessToken) ??
+      whatsappInstances.find((item) => this.providerFor(item.instanceType) === 'baileys') ??
+      whatsappInstances[0];
+
+    if (!instance?.instanceName || !instance.instanceId) return null;
+
+    const provider = this.providerFor(instance.instanceType);
+
+    return {
+      userId: user.id,
+      notificationNumber: user.notificationNumber,
+      instanceName: instance.instanceName,
+      instanceId: instance.instanceId,
+      instanceType: instance.instanceType,
+      serverUrl: provider === 'evolution' ? this.normalizeBase(user.apiKey?.url) : null,
+      apiKey: provider === 'evolution' ? user.apiKey?.key ?? null : null,
+      metaPhoneNumberId: instance.metaPhoneNumberId,
+      metaAccessToken: instance.metaAccessToken,
+      metaChannel: instance.metaChannel,
+      provider,
+    };
+  }
+
   async resolveLine(ownerUserId?: string | null): Promise<NotificationLine | null> {
     const configured = await this.resolveConfiguredInstanceName(ownerUserId);
     const line = await this.resolveLineByInstanceName(configured);
     if (line) return line;
 
-    if (configured !== DEFAULT_SYSTEM_NOTIFICATION_INSTANCE) {
-      return this.resolveLineByInstanceName(DEFAULT_SYSTEM_NOTIFICATION_INSTANCE);
+    if (ownerUserId?.trim()) {
+      const ownerLine = await this.resolveOwnerDefaultLine(ownerUserId);
+      if (ownerLine) return ownerLine;
+
+      this.logger.warn(
+        `[SystemNotificationDispatcher] Sin linea propia para userId=${ownerUserId}. No se usara la linea global.`,
+      );
+      return null;
     }
 
-    return null;
+    return configured !== DEFAULT_SYSTEM_NOTIFICATION_INSTANCE
+      ? this.resolveLineByInstanceName(DEFAULT_SYSTEM_NOTIFICATION_INSTANCE)
+      : null;
   }
 
   async getNotificationPhones(userId: string): Promise<string[]> {

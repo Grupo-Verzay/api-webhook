@@ -1046,12 +1046,11 @@ export class WebhookService {
       const credits = await this.aiCreditsService.getCreditsByUser(userId);
 
       if (!credits.success) {
-        if (!this.aiCreditsService.hasNotifiedThreshold(userId, -1)) {
+        if (await this.aiCreditsService.claimThresholdNotification(userId, -1)) {
           const zeroFlag = flags.find((f) => f.pct === 0);
           const msg = zeroFlag ? zeroFlag.message({ available: 0, total: 0 }) : '🛑 Sin créditos disponibles.';
           try {
             await this.nodeSenderService.sendTextNode(apiUrl, apikey, userPhone, msg);
-            this.aiCreditsService.markThresholdNotified(userId, -1);
           } catch (error) {
             logger.error(`Error enviando notificación sin registro de créditos`, error);
           }
@@ -1062,19 +1061,27 @@ export class WebhookService {
       const { available, total } = credits;
       const availablePct = total > 0 ? Math.floor((available / total) * 100) : 0;
 
-      // Ordenar de mayor a menor para notificar primero el umbral más alto cruzado
-      const sortedFlags = [...flags].sort((a, b) => b.pct - a.pct);
+      const currentFlag =
+        available <= 0
+          ? flags.find((flag) => flag.pct === 0)
+          : [...flags]
+              .filter((flag) => flag.pct > 0)
+              .sort((a, b) => a.pct - b.pct)
+              .find((flag) => availablePct <= flag.pct);
 
-      for (const flag of sortedFlags) {
-        const crossed = flag.pct === 0 ? available <= 0 : availablePct <= flag.pct;
-        if (crossed && !this.aiCreditsService.hasNotifiedThreshold(userId, flag.pct)) {
-          logger.log(`⚠️ Créditos al ${availablePct}% — umbral ${flag.pct}% cruzado. Enviando notificación.`);
-          try {
-            await this.nodeSenderService.sendTextNode(apiUrl, apikey, userPhone, flag.message({ available, total }));
-            this.aiCreditsService.markThresholdNotified(userId, flag.pct);
-          } catch (error) {
-            logger.error(`Error enviando notificación por umbral ${flag.pct}%`, error);
-          }
+      if (currentFlag && (await this.aiCreditsService.claimThresholdNotification(userId, currentFlag.pct))) {
+        logger.log(
+          `⚠️ Créditos al ${availablePct}% — umbral ${currentFlag.pct}% cruzado. Enviando notificación.`,
+        );
+        try {
+          await this.nodeSenderService.sendTextNode(
+            apiUrl,
+            apikey,
+            userPhone,
+            currentFlag.message({ available, total }),
+          );
+        } catch (error) {
+          logger.error(`Error enviando notificación por umbral ${currentFlag.pct}%`, error);
         }
       }
 

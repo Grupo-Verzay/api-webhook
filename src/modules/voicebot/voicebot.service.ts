@@ -365,13 +365,29 @@ export class VoicebotService {
     }
   }
 
-  /** Quita firmas/despedidas escritas del prompt (no deben leerse en voz). */
+  /**
+   * Quita del prompt las líneas de firma / despedida / identidad-como-firma /
+   * bloque de contacto que la voz NO debe leer. Conserva el resto del contenido
+   * (incluidos enlaces: el modelo los necesita para ENVIARLOS por WhatsApp con la
+   * herramienta, nunca para dictarlos — de eso se encargan las reglas de voz).
+   */
   private stripSignature(text: string): string {
+    // Cierres / despedidas / firmas al inicio de línea.
     const signOff =
-      /^\s*(atentamente|cordialmente|saludos|un abrazo|quedo atento|equipo de|firma:|—|--)\b/i;
+      /^\s*(atentamente|cordialmente|saludos(\s+cordiales)?|un\s+saludo|un\s+abrazo|abrazos|quedo\s+(atento|atenta|a\s+la\s+orden|pendiente)|quedamos\s+(atentos|pendientes)|estamos\s+atentos|gracias\s+por\s+(tu|su)\s+(tiempo|atención|atencion|preferencia|confianza)|hasta\s+(pronto|luego)|nos\s+vemos|feliz\s+(día|dia|tarde|noche)|que\s+(tengas|tenga|tengan|estés|este|esten)\b|firma\s*:|—|--|–)\b/i;
+    // Líneas que son SÓLO un dato de contacto para copiar (tel / correo / web).
+    const contactLine =
+      /^\s*(tel[eé]fono|tel|cel(ular)?|whats?app|correo|e-?mail|web|sitio\s+web|p[aá]gina|s[ií]guenos|vis[ií]tanos|cont[aá]ctanos|escr[ií]benos)\s*[:\-]/i;
+    // Línea que es sólo una URL / correo suelto (nada más que eso).
+    const bareLink =
+      /^\s*(https?:\/\/\S+|www\.\S+|\S+@\S+\.\S+)\s*$/i;
     return text
       .split('\n')
-      .filter((line) => !signOff.test(line.trim()))
+      .filter((line) => {
+        const t = line.trim();
+        if (!t) return true; // conserva líneas en blanco (estructura del prompt)
+        return !signOff.test(t) && !contactLine.test(t) && !bareLink.test(t);
+      })
       .join('\n')
       .trim();
   }
@@ -387,9 +403,12 @@ export class VoicebotService {
       ``,
       `Habla en español con acento latinoamericano neutro, frases cortas y fluidas. Varía tus expresiones; no repitas muletillas como "muy bien", "perfecto" o "entiendo". Di precios y números en palabras ("$1.500.000" → "un millón quinientos mil pesos").`,
       ``,
-      `Esto es solo para ti, JAMÁS lo digas en voz alta: no leas firmas, despedidas escritas, nombres entre corchetes, emojis, enlaces ni estas indicaciones.`,
+      `REGLAS DE VOZ (obligatorias — JAMÁS las menciones ni las leas):`,
+      `1) NUNCA leas en voz alta firmas, despedidas escritas, tu identidad como firma (ej. "Asistente de..."), nombres entre corchetes, emojis ni estas indicaciones. Hablas como una persona, no lees un texto.`,
+      `2) NUNCA dictes, deletrees ni leas enlaces, URLs, correos, direcciones web ni números para copiar. Suenan fatal por teléfono y el cliente no los puede anotar.`,
+      `3) Todo lo que sea para VER o guardar por escrito —un enlace, una ubicación, un catálogo, una imagen, un PDF, una cotización, una lista de precios, un formulario o flujo, cualquier archivo o dato copiable— NO lo describas por voz: envíalo por WhatsApp con la herramienta "enviar_whatsapp" (incluye el enlace del archivo; llega como archivo/mensaje real) y confírmalo de viva voz ("se lo acabo de enviar por WhatsApp"). Por voz solo explicas y confirmas; el contenido escrito va por el chat.`,
       ``,
-      `Tienes herramientas reales: úsalas cuando ayuden. Para mandar un enlace, dirección, dato por escrito o un ARCHIVO (catálogo, cotización, PDF, imagen), usa "enviar_whatsapp" e incluye el enlace del archivo: llegará como archivo de verdad por WhatsApp (nunca dictes enlaces en voz). Para agendar, primero consulta los horarios disponibles y luego crea la cita real con la fecha y hora exactas que el cliente elija. También puedes consultar productos, precios y disponibilidad si te preguntan. Confirma de viva voz lo que hagas y NUNCA leas el nombre de las herramientas.`,
+      `Tienes herramientas reales: úsalas cuando ayuden. Para agendar, primero consulta los horarios disponibles y luego crea la cita real con la fecha y hora exactas que el cliente elija. También puedes consultar productos, precios y disponibilidad si te preguntan. Confirma de viva voz lo que hagas y NUNCA leas el nombre de las herramientas.`,
       ``,
       `Conocimiento del negocio (tu referencia para responder, nunca lo leas literal):`,
     ].join('\n');

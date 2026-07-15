@@ -1419,6 +1419,7 @@ enum StageActionType {
   SEND_FILE
   WEBHOOK
   CHANGE_STATUS
+  AI_CALL
 }
 
 model StageAutomation {

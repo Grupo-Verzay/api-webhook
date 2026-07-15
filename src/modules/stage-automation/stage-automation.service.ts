@@ -289,6 +289,7 @@ export class StageAutomationService {
         case StageActionType.SEND_FILE:       await this.doSendFile(cfg, ctx); break;
         case StageActionType.WEBHOOK:         await this.doWebhook(cfg, ctx); break;
         case StageActionType.CHANGE_STATUS:   await this.doChangeStatus(cfg, ctx); break;
+        case StageActionType.AI_CALL:         await this.doAiCall(cfg, ctx); break;
       }
     } catch (err: any) {
       this.logger.error(
@@ -464,6 +465,57 @@ export class StageAutomationService {
       data: { leadStatus: status, leadStatusUpdatedAt: new Date(), leadStatusSourceHash: null },
     });
     this.logger.log(`[StageAutomation] CHANGE_STATUS status=${status} session=${ctx.sessionId}`, 'StageAutomationService');
+  }
+
+  /**
+   * Lanza una llamada de voz AUTÓNOMA con la IA al lead. Le pide al servidor de
+   * llamadas (wacalls) que llame al número del lead y, al contestar, conecte el
+   * voicebot. Réplica de `startBotCallAction` del frontend, pero desde el backend
+   * (donde vive el dispatch de automatizaciones). Requiere ASTRACALLS_URL/KEY en
+   * el backend y que el dueño tenga número de llamadas (User.astra_calls_sid) +
+   * voicebot habilitado + créditos + OpenAI key (esto último lo valida wacalls,
+   * que responde 403 con un `reason`; aquí solo se registra y no se reintenta).
+   */
+  private async doAiCall(_cfg: Record<string, unknown>, ctx: ExecCtx) {
+    const base = (process.env.ASTRACALLS_URL || '').replace(/\/+$/, '');
+    const key = process.env.ASTRACALLS_API_KEY || '';
+    if (!base || !key) {
+      this.logger.warn('[StageAutomation] AI_CALL: ASTRACALLS_URL/KEY no configurado en el backend.', 'StageAutomationService');
+      return;
+    }
+    const phone = (ctx.remoteJid || '').replace(/\D/g, '');
+    if (phone.length < 6) {
+      this.logger.warn(`[StageAutomation] AI_CALL: teléfono inválido (remoteJid=${ctx.remoteJid}).`, 'StageAutomationService');
+      return;
+    }
+
+    // Número de llamadas del DUEÑO de la cuenta (qué línea de wacalls usar).
+    const rows = await this.prisma.$queryRaw<{ astra_calls_sid: string | null }[]>`
+      SELECT "astra_calls_sid" FROM "User" WHERE "id" = ${ctx.userId} LIMIT 1
+    `;
+    const sid = rows?.[0]?.astra_calls_sid;
+    if (!sid) {
+      this.logger.warn(`[StageAutomation] AI_CALL: cuenta ${ctx.userId} sin número de llamadas (astra_calls_sid).`, 'StageAutomationService');
+      return;
+    }
+
+    try {
+      const resp = await firstValueFrom(
+        this.http.post(
+          `${base}/api/sessions/${sid}/calls/bot`,
+          { phone },
+          { headers: { 'X-API-Key': key, 'Content-Type': 'application/json' }, validateStatus: () => true },
+        ),
+      );
+      if (resp.status >= 200 && resp.status < 300) {
+        this.logger.log(`[StageAutomation] AI_CALL lanzada a ${phone} (session=${ctx.sessionId}).`, 'StageAutomationService');
+      } else {
+        const reason = (resp.data && (resp.data.reason || resp.data.error)) || resp.status;
+        this.logger.warn(`[StageAutomation] AI_CALL no se realizó a ${phone}: ${reason}`, 'StageAutomationService');
+      }
+    } catch (err: any) {
+      this.logger.warn(`[StageAutomation] AI_CALL error a ${phone}: ${err?.message}`, 'StageAutomationService');
+    }
   }
 
 }

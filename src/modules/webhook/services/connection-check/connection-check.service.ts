@@ -11,6 +11,13 @@ const MAX_DAILY_NOTIFICATIONS = 3;
 const TIME_ZONE = 'America/Bogota';
 const DISABLED_SENTINEL = '0000000000';
 
+const QR_DISCONNECTION_MESSAGE =
+  '📵 El WhatsApp esta *desvinculado* del Agente.\n\n' +
+  '*Solución*: entre a su cuenta\n\n' +
+  '👉 agente.ia-app.com/profile\n\n' +
+  '*Conectar* → en WhatsApp Business: Dispositivos vinculados.\n\n' +
+  '*Vincular un dispositivo* y escanee el *QR* 📳';
+
 const DISCONNECTION_MSG =
   '📵 El WhatsApp esta *desvinculado* del Agente.\n\n' +
   '*Solucion*: entre a su cuenta\n\n' +
@@ -139,16 +146,28 @@ export class ConnectionCheckService {
           continue;
         }
 
-        const ok = await this.notificationDispatcher.sendText({
-          line,
-          remoteJid: phone,
-          text: DISCONNECTION_MSG,
-        });
+        let ok = false;
+        if (line.provider === 'meta') {
+          ok = await this.notificationDispatcher.sendMetaTemplate({
+            line,
+            remoteJid: phone,
+            templateName: 'whatsapp_desvinculado_qr',
+            params: ['agente.ia-app.com/profile'],
+          });
+        }
+
+        if (!ok) {
+          ok = await this.notificationDispatcher.sendText({
+            line,
+            remoteJid: phone,
+            text: QR_DISCONNECTION_MESSAGE,
+          });
+        }
         if (!ok) throw new Error('No se pudo enviar la notificacion por la linea configurada.');
 
         await this.chatHistoryService.saveMessage(
           buildChatHistorySessionId(line.instanceName, phone),
-          DISCONNECTION_MSG,
+          QR_DISCONNECTION_MESSAGE,
           'ia',
         );
 

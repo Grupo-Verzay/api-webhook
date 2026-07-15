@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/core/logger/logger.service';
 import { PrismaService } from 'src/database/prisma.service';
+import { ChatHistoryService } from 'src/modules/chat-history/chat-history.service';
+import { buildChatHistorySessionId } from 'src/modules/chat-history/chat-history-session.helper';
 import { SystemNotificationDispatcherService } from 'src/modules/whatsapp/services/system-notification-dispatcher.service';
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID ?? 'cm842kthc0000qd2l66nbnytv';
@@ -30,6 +32,7 @@ export class ConnectionCheckService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger: LoggerService,
+    private readonly chatHistoryService: ChatHistoryService,
     private readonly notificationDispatcher: SystemNotificationDispatcherService,
   ) {}
 
@@ -142,6 +145,12 @@ export class ConnectionCheckService {
           text: DISCONNECTION_MSG,
         });
         if (!ok) throw new Error('No se pudo enviar la notificacion por la linea configurada.');
+
+        await this.chatHistoryService.saveMessage(
+          buildChatHistorySessionId(line.instanceName, phone),
+          DISCONNECTION_MSG,
+          'ia',
+        );
 
         this.markNotified(instanceKey, dayKey);
         notified++;

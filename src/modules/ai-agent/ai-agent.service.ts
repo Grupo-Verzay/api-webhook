@@ -1561,7 +1561,7 @@ export class AiAgentService {
           const successText = message
             ? `${message} — ${confirmDate}`
             : `Cita agendada exitosamente para el ${confirmDate}.`;
-          return `${successText}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: La cita fue registrada. Muestra SOLO el mensaje de confirmación anterior. NO agregues frases como "Recibirás un recordatorio", "¿Puedo ayudarte con algo más?" ni ningún texto adicional.`;
+          return `${successText}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: La cita fue registrada y el sistema ya envió el mensaje automático configurado para el servicio. Muestra SOLO el mensaje de confirmación anterior. NO llames Notificacion_Asesor/notificacion_asesor por esta cita. NO agregues frases como "Recibirás un recordatorio", "¿Puedo ayudarte con algo más?" ni ningún texto adicional.`;
         } catch (err: any) {
           const errMsg = err?.response?.data?.message ?? err?.message ?? 'error desconocido';
           logger.error(`[crear_cita] Error: ${errMsg}`);
@@ -1811,7 +1811,7 @@ export class AiAgentService {
           const successText = message
             ? `${message} — ${confirmDate}`
             : `Cita agendada exitosamente para el ${confirmDate}.`;
-          return `${successText}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: La cita fue registrada. Muestra SOLO el mensaje de confirmación anterior. NO agregues frases adicionales.`;
+          return `${successText}\n\n[INSTRUCCIÓN INTERNA — NO MOSTRAR AL USUARIO]: La cita/reserva fue registrada y el sistema ya envió el mensaje automático configurado para el servicio. Muestra SOLO el mensaje de confirmación anterior. NO llames Notificacion_Asesor/notificacion_asesor por esta cita/reserva. NO agregues frases adicionales.`;
         } catch (err: any) {
           const errMsg = err?.response?.data?.error ?? err?.response?.data?.message ?? err?.message ?? 'error desconocido';
           logger.error(`[crear_cita_booking] Error: ${errMsg}`);
@@ -2601,7 +2601,7 @@ export class AiAgentService {
     const HARDCODED_BUILTIN_CONFIGS = [
       {
         toolKey: 'Notificacion_Asesor', toolType: 'notificacion_asesor',
-        toolDescription: 'Utiliza esta *tool* solo cuando un usuario necesite la ayuda directa de un asesor humano o exista un registro ya guardado de (solicitud, pedido, reclamo, cita, reserva o el usuario envía una *imagen de comprobante de pago* que requiere validación).',
+        toolDescription: 'Utiliza esta *tool* solo cuando un usuario necesite ayuda directa de un asesor humano o exista un registro que requiere atencion manual (solicitud, pedido, reclamo o comprobante de pago). No la uses despues de crear una cita/reserva con las herramientas de agenda, porque ese flujo ya envia su confirmacion automatica.',
       },
       {
         toolKey: 'Ejecutar_Flujos', toolType: 'ejecutar_flujos',

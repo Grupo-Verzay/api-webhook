@@ -12,7 +12,7 @@ export const DEFAULT_EXTERNAL_TOOL_CONFIGS: DefaultExternalToolConfig[] = [
     toolKey: 'Notificacion_Asesor',
     displayName: 'Notificacion Asesor',
     toolDescription:
-      'Utiliza esta *tool* solo cuando un usuario necesite la ayuda directa de un asesor humano o exista un registro ya guardado de (solicitud, pedido, reclamo, cita, reserva o el usuario envía una *imagen de comprobante de pago* que requiere validación).',
+      'Utiliza esta *tool* solo cuando un usuario necesite ayuda directa de un asesor humano o exista un registro que requiere atencion manual (solicitud, pedido, reclamo o comprobante de pago). No la uses despues de crear una cita/reserva con las herramientas de agenda, porque ese flujo ya envia su confirmacion automatica.',
     toolCategory: 'builtin',
     toolType: 'notificacion_asesor',
     sortOrder: 0,

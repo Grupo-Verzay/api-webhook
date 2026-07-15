@@ -225,7 +225,9 @@ export class WorkflowService implements OnModuleInit {
         .sendMedia(instanceName, remoteJid, type, caption, mediaUrl)
         .catch(() => false);
     }
-    return this.nodeSenderService.sendMediaNode(
+    // Evolution: capturamos el id real y persistimos el saliente como Agente IA
+    // (sin duplicar: el eco/resync trae el mismo id y el ON CONFLICT lo dedupe).
+    const sent = await this.nodeSenderService.sendMediaNodeWithId(
       `${urlevo}/message/sendMedia/${instanceName}`,
       apikey,
       remoteJid,
@@ -233,6 +235,22 @@ export class WorkflowService implements OnModuleInit {
       caption,
       mediaUrl,
     );
+    if (sent.ok && sent.id && this.chatStore && ctx.userId) {
+      void this.chatStore.persistMessage({
+        userId: ctx.userId,
+        instanceName: ctx.instanceName,
+        instanceType: 'evolution',
+        remoteJid,
+        messageId: sent.id,
+        fromMe: true,
+        messageType: `${type}Message`,
+        content: (caption ?? '').trim() || null,
+        mediaUrl,
+        raw: { sentByAi: true },
+        messageTimestamp: Math.floor(Date.now() / 1000),
+      });
+    }
+    return sent.ok;
   }
 
   /** Envío de AUDIO de un nodo, enrutando por canal. */
@@ -252,12 +270,30 @@ export class WorkflowService implements OnModuleInit {
         .sendAudio(instanceName, remoteJid, audioUrl)
         .catch(() => false);
     }
-    return this.nodeSenderService.sendAudioNode(
+    // Evolution: id real + persistir como Agente IA (nota de voz). mediaUrl null:
+    // el audio suele venir en base64 (pesado); el resync de Evolution completa el
+    // archivo. Con messageType 'audioMessage' basta para no descartar el registro.
+    const sent = await this.nodeSenderService.sendAudioNodeWithId(
       `${urlevo}/message/sendWhatsAppAudio/${instanceName}`,
       apikey,
       remoteJid,
       audioUrl,
     );
+    if (sent.ok && sent.id && this.chatStore && ctx.userId) {
+      void this.chatStore.persistMessage({
+        userId: ctx.userId,
+        instanceName: ctx.instanceName,
+        instanceType: 'evolution',
+        remoteJid,
+        messageId: sent.id,
+        fromMe: true,
+        messageType: 'audioMessage',
+        content: null,
+        raw: { sentByAi: true },
+        messageTimestamp: Math.floor(Date.now() / 1000),
+      });
+    }
+    return sent.ok;
   }
 
   private async persistFlowOutboundMedia(

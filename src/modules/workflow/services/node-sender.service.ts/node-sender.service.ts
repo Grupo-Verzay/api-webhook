@@ -85,14 +85,17 @@ export class NodeSenderService {
   /**
    * Envía un nodo multimedia (imagen, video o documento) y registra la respuesta.
    */
-  async sendMediaNode(
+  // Devuelve { ok, id } con el messageId REAL de Evolution para poder persistir el
+  // saliente (marcado como Agente IA) sin duplicar. `ok` conserva la semántica del
+  // boolean previo (éxito = no lanzó), independiente de si vino id.
+  async sendMediaNodeWithId(
     url: string,
     apikey: string,
     remoteJid: string,
     type: string,
     caption: string,
     mediaUrl: string,
-  ) {
+  ): Promise<{ ok: boolean; id: string | null }> {
     try {
       const mimeMap = {
         image: 'image/png',
@@ -116,30 +119,33 @@ export class NodeSenderService {
         delay: 1200,
       };
 
-      // this.logger.log(
-      //   `Enviando ${type} a ${remoteJid} con mimetype: ${mimetype}, caption: "${caption}" y mediaURL: ${mediaUrl}`,
-      //   'NodeSenderService',
-      // );
-
       const response = await firstValueFrom(
         this.http.post(url, body, {
           headers: { 'Content-Type': 'application/json', apikey },
         }),
       );
 
-      // this.logger.log(
-      //   `Respuesta del ${type} a ${remoteJid}: ${JSON.stringify(response.data)}`,
-      //   'NodeSenderService',
-      // );
-      return true;
+      return { ok: true, id: response?.data?.key?.id ?? null };
     } catch (error) {
       this.logger.error(
         `Error enviando ${type} a ${remoteJid}`,
         error?.response?.data || error.message,
         'NodeSenderService',
       );
-      return false;
+      return { ok: false, id: null };
     }
+  }
+
+  /** Contrato previo (boolean): delega en sendMediaNodeWithId. */
+  async sendMediaNode(
+    url: string,
+    apikey: string,
+    remoteJid: string,
+    type: string,
+    caption: string,
+    mediaUrl: string,
+  ): Promise<boolean> {
+    return (await this.sendMediaNodeWithId(url, apikey, remoteJid, type, caption, mediaUrl)).ok;
   }
 
   /**
@@ -150,12 +156,14 @@ export class NodeSenderService {
    * @param {string} remoteJid - 573107964105@s.whatsapp.net (o solo número, según lo que ya uses).
    * @param {string} audioUrl - URL o base64 del audio.
    */
-  async sendAudioNode(
+  // Igual que sendAudioNode pero devolviendo { ok, id } con el messageId REAL para
+  // persistir el saliente (Agente IA) sin duplicar.
+  async sendAudioNodeWithId(
     url: string,
     apikey: string,
     remoteJid: string,
     audioUrl: string,
-  ) {
+  ): Promise<{ ok: boolean; id: string | null }> {
     try {
       const body = {
         // Mantenemos el mismo formato que ya usas para "number"
@@ -176,20 +184,25 @@ export class NodeSenderService {
         }),
       );
 
-      // Si quieres loggear la respuesta, descomenta:
-      // this.logger.log(
-      //   `Respuesta del audio a ${remoteJid}: ${JSON.stringify(response.data)}`,
-      //   'NodeSenderService',
-      // );
-      return true;
+      return { ok: true, id: response?.data?.key?.id ?? null };
     } catch (error) {
       this.logger.error(
         `Error enviando audio a ${remoteJid}`,
         error?.response?.data || error.message,
         'NodeSenderService',
       );
-      return false;
+      return { ok: false, id: null };
     }
+  }
+
+  /** Contrato previo (boolean): delega en sendAudioNodeWithId. */
+  async sendAudioNode(
+    url: string,
+    apikey: string,
+    remoteJid: string,
+    audioUrl: string,
+  ): Promise<boolean> {
+    return (await this.sendAudioNodeWithId(url, apikey, remoteJid, audioUrl)).ok;
   }
 
   /**

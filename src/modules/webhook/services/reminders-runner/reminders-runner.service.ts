@@ -290,7 +290,18 @@ export class RemindersRunnerService {
             continue;
           }
           if (message) {
-            const ok = await sender.sendText(instanceName, remoteJid, message, serverUrl, apikey);
+            // Evolution: enviar capturando el id real y marcar como "Agente IA" (no
+            // "Asesor"), sin duplicar. Baileys/otros: envío normal (sin ese marcado).
+            const ok = serverUrl
+              ? await this.workflowService.sendEvolutionAiText(
+                  serverUrl,
+                  apikey,
+                  instanceName,
+                  remoteJid,
+                  reminder.userId,
+                  message,
+                )
+              : await sender.sendText(instanceName, remoteJid, message, serverUrl, apikey);
             if (!ok) {
               throw new Error(
                 `Error enviando reminder id=${reminder.id} a ${remoteJid}`,

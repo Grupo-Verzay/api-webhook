@@ -359,16 +359,45 @@ export class StageAutomationService {
   private async doMessage(cfg: Record<string, unknown>, ctx: ExecCtx) {
     const text = String(cfg.text ?? '');
     if (!text) return;
-    const sender = this.senderFactory.getSenderSync(ctx.instanceType);
     const isMeta = String(ctx.instanceType ?? '').toLowerCase() === 'meta';
-    const ok = await sender.sendText(
-      ctx.instanceName,
-      ctx.remoteJid,
-      text,
-      isMeta ? ctx.metaPhoneNumberId ?? undefined : ctx.serverUrl,
-      isMeta ? ctx.metaAccessToken ?? undefined : ctx.apikey,
-    );
-    if (!ok) throw new Error(`No se pudo enviar MESSAGE por ${ctx.instanceName}`);
+
+    if (isMeta) {
+      const sender = this.senderFactory.getSenderSync(ctx.instanceType);
+      const ok = await sender.sendText(
+        ctx.instanceName,
+        ctx.remoteJid,
+        text,
+        ctx.metaPhoneNumberId ?? undefined,
+        ctx.metaAccessToken ?? undefined,
+      );
+      if (!ok) throw new Error(`No se pudo enviar MESSAGE por ${ctx.instanceName}`);
+      // Meta no eco-persiste el saliente → lo marcamos como Agente IA (id aleatorio).
+      await this.workflowService.persistOutboundAiText({
+        userId: ctx.userId,
+        instanceName: ctx.instanceName,
+        instanceType: 'meta',
+        remoteJid: ctx.remoteJid,
+        content: text,
+      });
+    } else {
+      // Evolution: capturamos el messageId REAL para persistir el saliente como
+      // Agente IA SIN duplicar (el eco/resync dedupe por ese id).
+      const sentId = await this.nodeSenderService.sendTextNodeReturnId(
+        `${ctx.serverUrl}/message/sendText/${ctx.instanceName}`,
+        ctx.apikey,
+        ctx.remoteJid,
+        text,
+      );
+      if (!sentId) throw new Error(`No se pudo enviar MESSAGE por ${ctx.instanceName}`);
+      await this.workflowService.persistOutboundAiText({
+        userId: ctx.userId,
+        instanceName: ctx.instanceName,
+        instanceType: 'evolution',
+        remoteJid: ctx.remoteJid,
+        messageId: sentId,
+        content: text,
+      });
+    }
     this.logger.log(`[StageAutomation] MESSAGE enviado session=${ctx.sessionId}`, 'StageAutomationService');
   }
 

@@ -7,6 +7,7 @@ import { AiAgentService } from 'src/modules/ai-agent/ai-agent.service';
 import { ChatHistoryService } from 'src/modules/chat-history/chat-history.service';
 import { buildChatHistorySessionId } from 'src/modules/chat-history/chat-history-session.helper';
 import { NodeSenderService } from 'src/modules/workflow/services/node-sender.service.ts/node-sender.service';
+import { WorkflowService } from 'src/modules/workflow/services/workflow.service.ts/workflow.service';
 import { buildWhatsAppJidCandidates } from 'src/utils/whatsapp-jid.util';
 import {
   computeNextCrmFollowUpDate,
@@ -24,6 +25,7 @@ export class CrmFollowUpRunnerService {
     private readonly chatHistoryService: ChatHistoryService,
     private readonly nodeSenderService: NodeSenderService,
     private readonly crmFollowUpRuleService: CrmFollowUpRuleService,
+    private readonly workflowService: WorkflowService,
   ) {}
 
   private buildRemoteJidCandidates(remoteJid: string) {
@@ -365,10 +367,14 @@ export class CrmFollowUpRunnerService {
           );
         }
 
-        const ok = await this.nodeSenderService.sendTextNode(
-          `${serverUrl}/message/sendText/${followUp.instanceId}`,
+        // Evolution: enviar con id real y marcar el saliente como "Agente IA" (no
+        // "Asesor"), sin duplicar.
+        const ok = await this.workflowService.sendEvolutionAiText(
+          serverUrl,
           apiKey,
+          followUp.instanceId,
           followUp.session.remoteJid,
+          followUp.userId,
           safeMessage,
         );
 
@@ -392,14 +398,24 @@ export class CrmFollowUpRunnerService {
               const mediaType = selectedItem?.mediaType ?? 'image';
 
               if (mediaType === 'audio') {
-                await this.nodeSenderService.sendAudioNode(
+                const sent = await this.nodeSenderService.sendAudioNodeWithId(
                   `${serverUrl}/message/sendWhatsAppAudio/${followUp.instanceId}`,
                   apiKey,
                   followUp.session.remoteJid,
                   selectedUrl,
                 );
+                if (sent.ok && sent.id) {
+                  await this.workflowService.persistOutboundAiMedia({
+                    userId: followUp.userId,
+                    instanceName: followUp.instanceId,
+                    instanceType: 'evolution',
+                    remoteJid: followUp.session.remoteJid,
+                    messageId: sent.id,
+                    messageType: 'audioMessage',
+                  });
+                }
               } else {
-                await this.nodeSenderService.sendMediaNode(
+                const sent = await this.nodeSenderService.sendMediaNodeWithId(
                   `${serverUrl}/message/sendMedia/${followUp.instanceId}`,
                   apiKey,
                   followUp.session.remoteJid,
@@ -407,6 +423,17 @@ export class CrmFollowUpRunnerService {
                   '',
                   selectedUrl,
                 );
+                if (sent.ok && sent.id) {
+                  await this.workflowService.persistOutboundAiMedia({
+                    userId: followUp.userId,
+                    instanceName: followUp.instanceId,
+                    instanceType: 'evolution',
+                    remoteJid: followUp.session.remoteJid,
+                    messageId: sent.id,
+                    messageType: `${mediaType}Message`,
+                    mediaUrl: selectedUrl,
+                  });
+                }
               }
 
               this.logger.log(

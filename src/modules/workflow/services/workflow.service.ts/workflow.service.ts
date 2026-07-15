@@ -370,6 +370,106 @@ export class WorkflowService implements OnModuleInit {
     }
   }
 
+  /**
+   * Persiste un TEXTO saliente marcado como "Agente IA" (raw.sentByAi=true), para
+   * reuso desde otros emisores automáticos (automatizaciones de etapa/etiqueta,
+   * recordatorios, follow-ups). En Evolution se debe pasar el messageId REAL para
+   * que el eco/resync lo deduplique (no duplicar); en canales (meta/telegram) puede
+   * ir sin id. Nunca lanza.
+   */
+  async persistOutboundAiText(params: {
+    userId?: string | null;
+    instanceName: string;
+    instanceType?: string | null;
+    remoteJid: string;
+    messageId?: string | null;
+    content: string;
+  }): Promise<void> {
+    try {
+      const t = (params.content ?? '').trim();
+      if (!t || !this.chatStore || !params.userId) return;
+      await this.chatStore.persistMessage({
+        userId: params.userId,
+        instanceName: params.instanceName,
+        instanceType: params.instanceType ?? 'evolution',
+        remoteJid: params.remoteJid,
+        ...(params.messageId ? { messageId: params.messageId } : {}),
+        fromMe: true,
+        messageType: 'conversation',
+        content: t,
+        raw: { sentByAi: true },
+        messageTimestamp: Math.floor(Date.now() / 1000),
+      });
+    } catch (e: any) {
+      this.logger.warn(`[AiOutboundPersist] error: ${e?.message}`, 'WorkflowService');
+    }
+  }
+
+  /**
+   * Envía un TEXTO por Evolution capturando el messageId REAL y lo persiste como
+   * "Agente IA" SIN duplicar (el eco/resync dedupe por ese id). Devuelve true si se
+   * envió. Reuso desde emisores automáticos (recordatorios, automatizaciones, etc.).
+   */
+  async sendEvolutionAiText(
+    serverUrl: string,
+    apikey: string,
+    instanceName: string,
+    remoteJid: string,
+    userId: string | null | undefined,
+    text: string,
+  ): Promise<boolean> {
+    const t = (text ?? '').trim();
+    if (!t) return true;
+    const sentId = await this.nodeSenderService.sendTextNodeReturnId(
+      `${serverUrl}/message/sendText/${instanceName}`,
+      apikey,
+      remoteJid,
+      t,
+    );
+    if (!sentId) return false;
+    await this.persistOutboundAiText({
+      userId,
+      instanceName,
+      instanceType: 'evolution',
+      remoteJid,
+      messageId: sentId,
+      content: t,
+    });
+    return true;
+  }
+
+  /** Persiste un MEDIA/audio saliente marcado como "Agente IA". En Evolution pasar
+   *  el messageId real para deduplicar con el eco/resync (no duplicar). Nunca lanza. */
+  async persistOutboundAiMedia(params: {
+    userId?: string | null;
+    instanceName: string;
+    instanceType?: string | null;
+    remoteJid: string;
+    messageId?: string | null;
+    messageType: string;
+    content?: string | null;
+    mediaUrl?: string | null;
+  }): Promise<void> {
+    try {
+      if (!this.chatStore || !params.userId) return;
+      await this.chatStore.persistMessage({
+        userId: params.userId,
+        instanceName: params.instanceName,
+        instanceType: params.instanceType ?? 'evolution',
+        remoteJid: params.remoteJid,
+        ...(params.messageId ? { messageId: params.messageId } : {}),
+        fromMe: true,
+        messageType: params.messageType,
+        content: params.content ?? null,
+        mediaUrl: params.mediaUrl ?? null,
+        raw: { sentByAi: true },
+        messageTimestamp: Math.floor(Date.now() / 1000),
+      });
+    } catch (e: any) {
+      this.logger.warn(`[AiOutboundPersist] error media: ${e?.message}`, 'WorkflowService');
+    }
+  }
+
   private readonly NODE_TIMEOUT_MS = 15000;
 
   private async getRecentUserTextsForIntention(

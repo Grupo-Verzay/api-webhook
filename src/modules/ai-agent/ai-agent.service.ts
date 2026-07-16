@@ -879,6 +879,9 @@ export class AiAgentService {
         if (res === 'skipped_appointment') {
           return 'Notificacion omitida: la cita/reserva ya fue registrada en este chat. No vuelvas a llamar Notificacion_Asesor por esta cita.';
         }
+        if (res === 'skipped_generic_advisor') {
+          return 'Notificacion omitida: el detalle corresponde a un registro/cita y no a una solicitud humana explicita. No vuelvas a llamar Notificacion_Asesor por este caso.';
+        }
         return res === 'ok'
           ? `Notificación enviada al asesor para el cliente "${nombre}". Detalle: ${detalles}`
           : `No se pudo notificar al asesor. Detalle original del cliente: ${detalles}`;

@@ -5,6 +5,7 @@ import { ChatHistoryService } from 'src/modules/chat-history/chat-history.servic
 import { buildChatHistorySessionId } from 'src/modules/chat-history/chat-history-session.helper';
 import { BaileysSessionManager } from 'src/modules/whatsapp/adapters/baileys/baileys-session.manager';
 import { SystemNotificationDispatcherService } from 'src/modules/whatsapp/services/system-notification-dispatcher.service';
+import { ChatStoreService } from '../chat-store/chat-store.service';
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID ?? 'cm842kthc0000qd2l66nbnytv';
 const TIMEOUT_MS = 10_000;
@@ -43,6 +44,7 @@ export class ConnectionCheckService {
     private readonly chatHistoryService: ChatHistoryService,
     private readonly notificationDispatcher: SystemNotificationDispatcherService,
     private readonly baileysSessions: BaileysSessionManager,
+    private readonly chatStore: ChatStoreService,
   ) {}
 
   private getDayKey(now: Date): string {
@@ -215,6 +217,26 @@ export class ConnectionCheckService {
             QR_DISCONNECTION_MESSAGE,
             'ia',
           );
+
+          // Persistir el aviso en la bandeja unificada (chat_messages/
+          // chat_conversations) para que aparezca en el panel de Chats de la línea
+          // emisora, igual que un envío manual. Sin esto el aviso salía y se
+          // entregaba, pero no se veía en Chats (solo quedaba en el historial de IA).
+          // Solo para Meta: su envío no persiste por sí mismo y Meta no reenvía el
+          // saliente por webhook, así que no hay riesgo de duplicado. Evolution/
+          // Baileys ya persisten su saliente por su propio flujo/echo.
+          if (line.provider === 'meta') {
+            await this.chatStore.persistMessage({
+              userId: line.userId,
+              instanceName: line.instanceName,
+              instanceType: line.instanceType ?? 'meta',
+              remoteJid: this.notificationDispatcher.normalizeJid(phone),
+              fromMe: true,
+              messageType: 'conversation',
+              content: QR_DISCONNECTION_MESSAGE,
+              messageTimestamp: now,
+            });
+          }
 
           this.markNotified(instanceKey, dayKey);
           notified++;

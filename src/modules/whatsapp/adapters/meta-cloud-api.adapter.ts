@@ -43,6 +43,21 @@ export class MetaCloudApiSenderAdapter implements IWhatsAppSender {
     }
   }
 
+  /**
+   * Normaliza un número de WhatsApp al formato E.164 que espera Meta Cloud API.
+   *
+   * México: WhatsApp/Baileys guardan los móviles como `521XXXXXXXXXX` (con el `1`
+   * heredado), pero Cloud API exige E.164 SIN ese `1` (`52XXXXXXXXXX`). Sin esta
+   * conversión los avisos a clientes mexicanos se caían en silencio tras migrar la
+   * línea emisora de Evolution/Baileys (tolerantes) a Meta. No aplica a Argentina:
+   * su E.164 móvil sí conserva el `9` (`549…`).
+   */
+  private normalizeWhatsAppTo(digits: string): string {
+    const mx = digits.match(/^521(\d{10})$/);
+    if (mx) return `52${mx[1]}`;
+    return digits;
+  }
+
   /** Extrae el ID del destinatario y determina el canal según el sufijo del remoteJid. */
   private normalizeJid(remoteJid: string): NormalizedJid {
     if (remoteJid.endsWith('@messenger')) {
@@ -51,9 +66,12 @@ export class MetaCloudApiSenderAdapter implements IWhatsAppSender {
     if (remoteJid.endsWith('@instagram')) {
       return { to: remoteJid.replace('@instagram', ''), channel: 'instagram' };
     }
-    // WhatsApp: strip suffix y deja solo dígitos
+    // WhatsApp: strip suffix, deja solo dígitos y ajusta a E.164 (México).
+    const digits = remoteJid
+      .replace(/@s\.whatsapp\.net$|@g\.us$|@lid$/, '')
+      .replace(/[^0-9]/g, '');
     return {
-      to: remoteJid.replace(/@s\.whatsapp\.net$|@g\.us$|@lid$/, '').replace(/[^0-9]/g, ''),
+      to: this.normalizeWhatsAppTo(digits),
       channel: 'whatsapp',
     };
   }

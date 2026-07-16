@@ -3,6 +3,7 @@ import { LoggerService } from 'src/core/logger/logger.service';
 import { PrismaService } from 'src/database/prisma.service';
 import { ChatHistoryService } from 'src/modules/chat-history/chat-history.service';
 import { buildChatHistorySessionId } from 'src/modules/chat-history/chat-history-session.helper';
+import { BaileysSessionManager } from 'src/modules/whatsapp/adapters/baileys/baileys-session.manager';
 import { SystemNotificationDispatcherService } from 'src/modules/whatsapp/services/system-notification-dispatcher.service';
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID ?? 'cm842kthc0000qd2l66nbnytv';
@@ -41,6 +42,7 @@ export class ConnectionCheckService {
     private readonly logger: LoggerService,
     private readonly chatHistoryService: ChatHistoryService,
     private readonly notificationDispatcher: SystemNotificationDispatcherService,
+    private readonly baileysSessions: BaileysSessionManager,
   ) {}
 
   private getDayKey(now: Date): string {
@@ -65,7 +67,7 @@ export class ConnectionCheckService {
   private async isInstanceConnected(
     serverUrl: string,
     instanceName: string,
-    instanceId: string,
+    apiKey: string,
   ): Promise<boolean> {
     try {
       const base = normalizeBase(serverUrl);
@@ -76,7 +78,7 @@ export class ConnectionCheckService {
         `${base}/instance/connect/${encodeURIComponent(instanceName)}`,
         {
           method: 'GET',
-          headers: { apikey: instanceId },
+          headers: { apikey: apiKey },
           signal: controller.signal,
         },
       ).finally(() => clearTimeout(timeout));
@@ -89,24 +91,58 @@ export class ConnectionCheckService {
     }
   }
 
+  private isQrWhatsappType(instanceType: string | null | undefined): boolean {
+    const type = String(instanceType ?? 'Whatsapp').trim().toLowerCase();
+    return type === 'whatsapp' || type === 'evolution' || type === 'baileys';
+  }
+
+  private async isQrInstanceConnected(params: {
+    instanceType: string | null | undefined;
+    serverUrl?: string | null;
+    apiKey?: string | null;
+    instanceName: string;
+    instanceId: string;
+  }): Promise<boolean> {
+    const type = String(params.instanceType ?? 'Whatsapp').trim().toLowerCase();
+    if (type === 'baileys') {
+      return this.baileysSessions.isConnected(params.instanceName);
+    }
+
+    const serverUrl = params.serverUrl?.trim();
+    const apiKey = params.apiKey?.trim() || params.instanceId;
+    if (!serverUrl || !apiKey) return false;
+    return this.isInstanceConnected(serverUrl, params.instanceName, apiKey);
+  }
+
   async run(now = new Date()): Promise<{ checked: number; disconnected: number; notified: number }> {
     const dayKey = this.getDayKey(now);
 
     const users = await this.prisma.user.findMany({
       where: {
         status: true,
-        instancias: { some: { instanceType: 'Whatsapp' } },
+        instancias: {
+          some: {
+            OR: [
+              { instanceType: null },
+              { instanceType: { in: ['Whatsapp', 'whatsapp', 'evolution', 'baileys'] } },
+            ],
+          },
+        },
       },
       select: {
         id: true,
         ownerId: true,
         demoResellerId: true,
         notificationNumber: true,
-        apiKey: { select: { url: true } },
+        apiKey: { select: { url: true, key: true } },
         instancias: {
-          where: { instanceType: 'Whatsapp' },
-          select: { instanceName: true, instanceId: true },
-          take: 1,
+          where: {
+            OR: [
+              { instanceType: null },
+              { instanceType: { in: ['Whatsapp', 'whatsapp', 'evolution', 'baileys'] } },
+            ],
+          },
+          select: { instanceName: true, instanceId: true, instanceType: true },
         },
       },
     });
@@ -116,72 +152,82 @@ export class ConnectionCheckService {
     let notified = 0;
 
     for (const user of users) {
-      const instance = user.instancias[0];
       const serverUrl = user.apiKey?.url?.trim();
+      const apiKey = user.apiKey?.key?.trim();
       const phone = user.notificationNumber;
 
-      if (!instance || !serverUrl || !phone || phone === DISABLED_SENTINEL) continue;
+      if (!phone || phone === DISABLED_SENTINEL) continue;
 
-      const instanceKey = `${user.id}::${instance.instanceName}`;
-      checked++;
+      for (const instance of user.instancias) {
+        if (!instance?.instanceName || !instance.instanceId || !this.isQrWhatsappType(instance.instanceType)) continue;
 
-      const connected = await this.isInstanceConnected(serverUrl, instance.instanceName, instance.instanceId);
-      if (connected) continue;
+        const instanceKey = `${user.id}::${instance.instanceName}`;
+        checked++;
 
-      disconnected++;
+        const connected = await this.isQrInstanceConnected({
+          instanceType: instance.instanceType,
+          serverUrl,
+          apiKey,
+          instanceName: instance.instanceName,
+          instanceId: instance.instanceId,
+        });
+        if (connected) continue;
 
-      if (!this.canNotify(instanceKey, dayKey)) {
-        this.logger.log(
-          `[ConnectionCheck] ${instance.instanceName} desconectada; limite diario alcanzado.`,
-        );
-        continue;
-      }
+        disconnected++;
 
-      const ownerKey = user.ownerId ?? user.demoResellerId ?? ADMIN_USER_ID;
-
-      try {
-        const line = await this.notificationDispatcher.resolveLine(ownerKey);
-        if (!line) {
-          this.logger.warn('[ConnectionCheck] Sin linea configurada para notificar desconexion.');
+        if (!this.canNotify(instanceKey, dayKey)) {
+          this.logger.log(
+            `[ConnectionCheck] ${instance.instanceName} desconectada; limite diario alcanzado.`,
+          );
           continue;
         }
 
-        let ok = false;
-        if (line.provider === 'meta') {
-          ok = await this.notificationDispatcher.sendMetaTemplate({
-            line,
-            remoteJid: phone,
-            templateName: 'whatsapp_desvinculado_qr',
-            params: ['agente.ia-app.com/profile'],
-          });
+        const ownerKey = user.ownerId ?? user.demoResellerId ?? ADMIN_USER_ID;
+
+        try {
+          const line = await this.notificationDispatcher.resolveLine(ownerKey);
+          if (!line) {
+            this.logger.warn('[ConnectionCheck] Sin linea configurada para notificar desconexion.');
+            continue;
+          }
+
+          let ok = false;
+          if (line.provider === 'meta') {
+            ok = await this.notificationDispatcher.sendMetaTemplate({
+              line,
+              remoteJid: phone,
+              templateName: 'whatsapp_desvinculado_qr',
+              params: ['agente.ia-app.com/profile'],
+            });
+          }
+
+          if (!ok) {
+            ok = await this.notificationDispatcher.sendText({
+              line,
+              remoteJid: phone,
+              text: QR_DISCONNECTION_MESSAGE,
+            });
+          }
+          if (!ok) throw new Error('No se pudo enviar la notificacion por la linea configurada.');
+
+          await this.chatHistoryService.saveMessage(
+            buildChatHistorySessionId(line.instanceName, phone),
+            QR_DISCONNECTION_MESSAGE,
+            'ia',
+          );
+
+          this.markNotified(instanceKey, dayKey);
+          notified++;
+          const count = this.dailyNotified.get(instanceKey)?.count ?? 1;
+          this.logger.log(
+            `[ConnectionCheck] Notificacion enviada -> ${instance.instanceName} (userId=${user.id}) aviso=${count}/${MAX_DAILY_NOTIFICATIONS} via=${line.instanceName}`,
+          );
+        } catch (error: any) {
+          this.logger.error(
+            `[ConnectionCheck] Error enviando notificacion para ${instance.instanceName}`,
+            error?.message,
+          );
         }
-
-        if (!ok) {
-          ok = await this.notificationDispatcher.sendText({
-            line,
-            remoteJid: phone,
-            text: QR_DISCONNECTION_MESSAGE,
-          });
-        }
-        if (!ok) throw new Error('No se pudo enviar la notificacion por la linea configurada.');
-
-        await this.chatHistoryService.saveMessage(
-          buildChatHistorySessionId(line.instanceName, phone),
-          QR_DISCONNECTION_MESSAGE,
-          'ia',
-        );
-
-        this.markNotified(instanceKey, dayKey);
-        notified++;
-        const count = this.dailyNotified.get(instanceKey)?.count ?? 1;
-        this.logger.log(
-          `[ConnectionCheck] Notificacion enviada -> ${instance.instanceName} (userId=${user.id}) aviso=${count}/${MAX_DAILY_NOTIFICATIONS} via=${line.instanceName}`,
-        );
-      } catch (error: any) {
-        this.logger.error(
-          `[ConnectionCheck] Error enviando notificacion para ${instance.instanceName}`,
-          error?.message,
-        );
       }
     }
 

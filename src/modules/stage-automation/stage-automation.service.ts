@@ -273,6 +273,29 @@ export class StageAutomationService {
     await this.runAutomations(automations, ctx);
   }
 
+  /**
+   * Ejecuta UNA accion de automatizacion sobre una sesion. Lo usan los NODOS de
+   * automatizacion de /workflow (workflow.service.ts) para reutilizar EXACTAMENTE
+   * los mismos handlers que las automatizaciones del Kanban (tags, asignar/
+   * notificar asesor, tarea, cambiar estado, toggle IA, webhook, llamada IA),
+   * sin duplicar logica. La config viaja como JSON guardado en WorkflowNode.message.
+   */
+  async runActionForSession(
+    type: StageActionType,
+    config: unknown,
+    sessionId: number,
+  ): Promise<void> {
+    const ctx = await this.buildCtx(sessionId);
+    if (!ctx) {
+      this.logger.warn(
+        `[StageAutomation] runActionForSession sin contexto session=${sessionId} type=${type}`,
+        'StageAutomationService',
+      );
+      return;
+    }
+    await this.runAction({ type, config }, ctx);
+  }
+
   private async runAction(action: { type: StageActionType; config: unknown }, ctx: ExecCtx): Promise<void> {
     const cfg = action.config as Record<string, unknown>;
     try {

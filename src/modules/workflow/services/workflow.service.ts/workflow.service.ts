@@ -3,7 +3,7 @@ import { ModuleRef } from '@nestjs/core';
 import { NodeSenderService } from '../node-sender.service.ts/node-sender.service';
 import { LoggerService } from 'src/core/logger/logger.service';
 import { convertDelayToSeconds } from 'src/modules/webhook/utils/convert-delay-to-seconds.helper';
-import { Session, WorkflowNode } from '@prisma/client';
+import { Session, StageActionType, WorkflowNode } from '@prisma/client';
 import { SessionService } from 'src/modules/session/session.service';
 import { SessionTriggerService } from 'src/modules/session-trigger/session-trigger.service';
 import { PrismaService } from 'src/database/prisma.service';
@@ -60,6 +60,25 @@ interface getSessionInterface {
   instanceName: string;
   userId: string;
 }
+
+/**
+ * Nodos de automatización de /workflow -> StageActionType del motor de
+ * automatizaciones. Debe mantenerse igual al AUTOMATION_NODE_TO_STAGE_ACTION del
+ * frontend (types/workflow-node.ts). Estos nodos no envían nada al cliente:
+ * su config viaja como JSON en WorkflowNode.message y se ejecuta reutilizando
+ * los handlers de StageAutomationService (los mismos del Kanban).
+ */
+const AUTOMATION_TIPO_MAP: Record<string, StageActionType> = {
+  'tag-add': StageActionType.TAG_ADD,
+  'tag-remove': StageActionType.TAG_REMOVE,
+  'assign-advisor': StageActionType.ASSIGN,
+  'create-task': StageActionType.TASK,
+  'notify-advisor': StageActionType.NOTIFY_ADVISOR,
+  'change-status': StageActionType.CHANGE_STATUS,
+  'toggle-ai': StageActionType.TOGGLE_AI,
+  webhook: StageActionType.WEBHOOK,
+  'ai-call': StageActionType.AI_CALL,
+};
 @Injectable()
 export class WorkflowService implements OnModuleInit {
   private aiAgentService!: AiAgentService;
@@ -67,6 +86,7 @@ export class WorkflowService implements OnModuleInit {
   private chatStore!: any;
   private externalClientDataService!: any;
   private googleSheetsService!: any;
+  private stageAutomationService!: any;
 
   constructor(
     private prisma: PrismaService,
@@ -105,6 +125,16 @@ export class WorkflowService implements OnModuleInit {
       this.googleSheetsService = this.moduleRef.get(GoogleSheetsService, { strict: false });
     } catch {
       // Módulo de Google Sheets no disponible
+    }
+    try {
+      const {
+        StageAutomationService,
+      } = require('../../../stage-automation/stage-automation.service');
+      this.stageAutomationService = this.moduleRef.get(StageAutomationService, {
+        strict: false,
+      });
+    } catch {
+      // Módulo de automatizaciones no disponible (nodos de automatización serán no-op)
     }
   }
 
@@ -1249,6 +1279,45 @@ export class WorkflowService implements OnModuleInit {
     // los guarda en la ficha (ExternalClientData) y los sincroniza a Google Sheets.
     if (node.tipo === 'guardar-ficha') {
       await this.executeGuardarFichaNode(node, ctx);
+      return;
+    }
+
+    // Nodos de AUTOMATIZACIÓN (tags, asignar/notificar asesor, tarea, cambiar
+    // estado, toggle IA, webhook, llamada IA). Tampoco envían nada al cliente:
+    // reutilizan los handlers del Kanban (StageAutomationService). La config va
+    // como JSON en node.message.
+    const automationType = AUTOMATION_TIPO_MAP[node.tipo];
+    if (automationType) {
+      if (!this.stageAutomationService) {
+        this.logger.warn(
+          `[nodo][automatizacion] StageAutomationService no disponible (tipo="${node.tipo}" id="${node.id}")`,
+          'WorkflowService',
+        );
+        return;
+      }
+
+      const s =
+        session ?? (await this.getSession({ remoteJid, instanceName, userId }));
+      if (!s) {
+        this.logger.warn(
+          `[nodo][automatizacion] Sin sesión para ejecutar tipo="${node.tipo}" (${remoteJid})`,
+          'WorkflowService',
+        );
+        return;
+      }
+
+      let cfg: Record<string, unknown> = {};
+      try {
+        cfg = node.message ? JSON.parse(node.message) : {};
+      } catch {
+        cfg = {};
+      }
+
+      await this.stageAutomationService.runActionForSession(
+        automationType,
+        cfg,
+        s.id,
+      );
       return;
     }
 

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/core/logger/logger.service';
-import { PrismaService } from 'src/database/prisma/prisma.service';
+import { PrismaService } from 'src/database/prisma.service';
 import { SystemNotificationDispatcherService } from 'src/modules/whatsapp/services/system-notification-dispatcher.service';
 
 @Injectable()

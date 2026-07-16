@@ -818,10 +818,10 @@ export class AiAgentService {
   }
 
   private buildNotificacionAsesorTool(cfg: any, params: {
-    userId: string; server_url: string; apikey: string;
+    userId: string; sessionId: string; server_url: string; apikey: string;
     instanceName: string; remoteJid: string;
   }, notificationSentThisTurn?: { value: boolean }): any {
-    const { userId, server_url, apikey, instanceName, remoteJid } = params;
+    const { userId, sessionId, server_url, apikey, instanceName, remoteJid } = params;
     const logger = this.scopedLogger({ userId, instanceName, remoteJid });
     const googleSheetsCfg: { spreadsheetId: string; sheetName: string } | null = cfg._googleSheetsCfg ?? null;
 
@@ -873,9 +873,12 @@ export class AiAgentService {
 
         const res = await this.notificacionTool.handleNotificacionTool(
           { nombre, detalles } as any,
-          userId, server_url, apikey, instanceName, remoteJid,
+          userId, sessionId, server_url, apikey, instanceName, remoteJid,
         );
         if (notificationSentThisTurn) notificationSentThisTurn.value = true;
+        if (res === 'skipped_appointment') {
+          return 'Notificacion omitida: la cita/reserva ya fue registrada en este chat. No vuelvas a llamar Notificacion_Asesor por esta cita.';
+        }
         return res === 'ok'
           ? `Notificación enviada al asesor para el cliente "${nombre}". Detalle: ${detalles}`
           : `No se pudo notificar al asesor. Detalle original del cliente: ${detalles}`;

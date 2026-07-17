@@ -84,8 +84,15 @@ export class AutoAssignService {
 
       const maxChats = settings[0].auto_assign_max_chats ?? 5;
 
-      // 2. Find advisor with lowest active session count below the limit
-      const candidates = await this.prisma.$queryRaw<{ id: string; active_count: number }[]>`
+      // 2. Round-robin 1-1-1: elige al asesor que lleva MÁS tiempo sin recibir un
+      //    lead (rotación pareja), SALTANDO a quien esté no disponible o ya lleno
+      //    (chats activos >= maxChats). Todo el conteo está ACOTADO a esta cuenta
+      //    (s."userId" = ownerId) para que la carga del asesor en OTRA cuenta
+      //    asociada no desvíe el reparto de este dueño.
+      //    - load: chats activos del asesor SOLO en esta cuenta (para el límite).
+      //    - last_assign: última vez que recibió un lead de esta cuenta; NULLS
+      //      FIRST = los que nunca han recibido van primero. Desempate por id.
+      const candidates = await this.prisma.$queryRaw<{ id: string }[]>`
         WITH members AS (
           SELECT u.id, u.advisor_available
           FROM "User" u
@@ -98,15 +105,31 @@ export class AutoAssignService {
           FROM "linked_accounts" la
           JOIN "User" u ON u.id = la."linked_user_id"
           WHERE la."master_user_id" = ${ownerId}
+        ),
+        load AS (
+          SELECT s.assigned_advisor_id AS id, COUNT(*)::int AS cnt
+          FROM "Session" s
+          WHERE s."userId" = ${ownerId}
+            AND s.status = true
+            AND s.assigned_advisor_id IS NOT NULL
+          GROUP BY s.assigned_advisor_id
+        ),
+        last_assign AS (
+          SELECT al."advisorId" AS id, MAX(al."createdAt") AS last_at
+          FROM "AssignmentLog" al
+          JOIN "Session" s ON s.id = al."sessionId"
+          WHERE s."userId" = ${ownerId}
+            AND al."advisorId" IS NOT NULL
+            AND al.action IN ('auto_assigned', 'assigned', 'taken', 'transferred')
+          GROUP BY al."advisorId"
         )
-        SELECT m.id, COUNT(s.id)::int AS active_count
+        SELECT m.id
         FROM members m
-        LEFT JOIN "Session" s
-          ON s.assigned_advisor_id = m.id AND s.status = true
+        LEFT JOIN load l ON l.id = m.id
+        LEFT JOIN last_assign la ON la.id = m.id
         WHERE m.advisor_available = true
-        GROUP BY m.id
-        HAVING COUNT(s.id)::int < ${maxChats}
-        ORDER BY COUNT(s.id) ASC
+          AND COALESCE(l.cnt, 0) < ${maxChats}
+        ORDER BY la.last_at ASC NULLS FIRST, m.id ASC
         LIMIT 1
       `;
 

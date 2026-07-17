@@ -27,10 +27,10 @@ export class NotificacionToolService {
   ): Promise<string> {
     try {
       const details = String(args.detalles ?? '');
-      const appointmentAlreadyCreated = await this.hasRecentAppointment(userId, chatSessionId, remoteJid);
+      const appointmentAlreadyCreated = await this.hasActiveAppointment(userId, chatSessionId, remoteJid);
       if (appointmentAlreadyCreated) {
         this.logger.warn(
-          `Notificacion_Asesor omitida: ya existe una cita/reserva reciente para sessionId=${chatSessionId}`,
+          `Notificacion_Asesor omitida: el contacto ya tiene una cita/reserva reciente o proxima para sessionId=${chatSessionId}. La cita ya notifico al asesor con "Nuevo aviso: Cita".`,
           'NotificacionToolService',
         );
         return 'skipped_appointment';
@@ -79,11 +79,17 @@ export class NotificacionToolService {
     return normalized.includes('este contacto esta esperando tu respuesta en el chat');
   }
 
-  private async hasRecentAppointment(userId: string, chatSessionId: string, remoteJid: string): Promise<boolean> {
+  private async hasActiveAppointment(userId: string, chatSessionId: string, remoteJid: string): Promise<boolean> {
     const sessionId = Number(chatSessionId);
     if (!userId) return false;
 
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    // Ventana amplia: la solicitud de asesor espuria puede dispararse bastante
+    // despues de agendar (se han visto ~30 min de diferencia). Suprimimos el
+    // aviso de asesor si el contacto agendo en las ultimas 12 h O tiene una cita
+    // futura pendiente/confirmada; en ambos casos el asesor ya fue avisado con
+    // "Nuevo aviso: Cita" y no debe recibir tambien "Solicitud de asesor".
+    const recentSince = new Date(Date.now() - 12 * 60 * 60 * 1000);
+    const now = new Date();
     const remote = String(remoteJid ?? '').trim();
     const remotePhone = this.normalizePhone(remote);
 
@@ -113,8 +119,16 @@ export class NotificacionToolService {
     const appointment = await this.prisma.appointment.findFirst({
       where: {
         userId,
-        createdAt: { gte: tenMinutesAgo },
+        status: { notIn: ['CANCELADA', 'DESCARTADO'] as any },
         OR: sessionFilters,
+        AND: [
+          {
+            OR: [
+              { createdAt: { gte: recentSince } },
+              { startTime: { gte: now } },
+            ],
+          },
+        ],
       },
       select: { id: true },
     });

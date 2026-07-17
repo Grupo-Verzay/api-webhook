@@ -131,7 +131,8 @@ export class VoicebotService {
       return {
         enabled: true,
         instructions,
-        voice: inst.voice || 'alloy',
+        // Voz por defecto: la más natural de `gpt-realtime` (evita 'alloy' robótica).
+        voice: inst.voice || 'marin',
         greeting,
         transferTo: inst.transfer || '',
         openaiKey,

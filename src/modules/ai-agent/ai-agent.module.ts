@@ -3,6 +3,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { AiAgentService } from './ai-agent.service';
+import { OwnerAgentService } from './owner/owner-agent.service';
 import { PromptService } from '../prompt/prompt.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
 import { IntentionService } from './services/intention/intention.service';
@@ -35,6 +36,7 @@ import { SystemNotificationDispatcherService } from '../whatsapp/services/system
   imports: [HttpModule, ConfigModule, forwardRef(() => WorkflowModule), ExternalClientDataModule, GoogleSheetsModule, AiCreditsModule],
   providers: [
     AiAgentService,
+    OwnerAgentService,
     PromptService,
     ChatHistoryService,
     IntentionService,

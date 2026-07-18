@@ -31,5 +31,14 @@ jobs:
 
       - name: Deploy via Portainer webhook
         run: |
-          curl -s -X POST "https://panel-n8n.ia-app.com/api/webhooks/28f107d6-c2b0-4a98-8392-820feae54900"
-          echo "Portainer webhook triggered"
+          # Capturamos el código HTTP y fallamos en rojo si Portainer no responde
+          # 2xx (con "curl -s" a secas un 4xx/5xx pasaba desapercibido).
+          code=$(curl -sS -o /tmp/portainer_resp.txt -w "%{http_code}" \
+            -X POST "https://panel-n8n.ia-app.com/api/webhooks/28f107d6-c2b0-4a98-8392-820feae54900")
+          echo "Portainer respondió HTTP $code"
+          echo "Cuerpo: $(cat /tmp/portainer_resp.txt)"
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            echo "::error::El webhook de Portainer falló (HTTP $code). El redespliegue NO ocurrió."
+            exit 1
+          fi
+          echo "Webhook de Portainer aceptado (HTTP $code)."

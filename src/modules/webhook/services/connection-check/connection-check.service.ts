@@ -137,6 +137,15 @@ export class ConnectionCheckService {
         demoResellerId: true,
         notificationNumber: true,
         apiKey: { select: { url: true, key: true } },
+        // Vínculo cliente→reseller por el sistema VIEJO (tabla `reseller`, columna
+        // userId). La vinculación vive en DOS sistemas (nuevo demoResellerId + viejo
+        // Reseller.userId); hay que combinar ambos para saber si el cliente pertenece
+        // a un reseller. Si solo se mira demoResellerId, un cliente vinculado por el
+        // sistema viejo cae al ADMIN (Verzay) y el aviso sale por la línea equivocada.
+        reseller_reseller_userIdToUser: {
+          select: { resellerid: true },
+          take: 1,
+        },
         instancias: {
           where: {
             OR: [
@@ -184,12 +193,25 @@ export class ConnectionCheckService {
           continue;
         }
 
-        const ownerKey = user.ownerId ?? user.demoResellerId ?? ADMIN_USER_ID;
+        // Reseller del cliente combinando AMBOS sistemas de vinculación:
+        // nuevo (demoResellerId) + viejo (Reseller.userId → resellerid).
+        const legacyResellerId = user.reseller_reseller_userIdToUser[0]?.resellerid ?? null;
+        const resellerId = user.demoResellerId ?? legacyResellerId;
+        // Si el cliente pertenece a un reseller, la notificación SOLO puede salir por
+        // la línea de ese reseller; nunca por Verzay. resolveLine(resellerId) devuelve
+        // null (sin fallback global) cuando el reseller no tiene línea disponible, así
+        // que basta con no dejar que ownerKey caiga al ADMIN para clientes de reseller.
+        const isResellerClient = Boolean(resellerId);
+        const ownerKey = user.ownerId ?? resellerId ?? ADMIN_USER_ID;
 
         try {
           const line = await this.notificationDispatcher.resolveLine(ownerKey);
           if (!line) {
-            this.logger.warn('[ConnectionCheck] Sin linea configurada para notificar desconexion.');
+            this.logger.warn(
+              isResellerClient
+                ? `[ConnectionCheck] Cliente de reseller (${resellerId}) sin linea del reseller para notificar; NO se usa Verzay. instancia=${instance.instanceName}`
+                : '[ConnectionCheck] Sin linea configurada para notificar desconexion.',
+            );
             continue;
           }
 

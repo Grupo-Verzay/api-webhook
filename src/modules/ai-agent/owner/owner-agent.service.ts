@@ -277,6 +277,21 @@ export class OwnerAgentService {
       },
     );
 
+    const asignarAsesor = mk(
+      async ({ sessionId, asesor, confirmar }: any) =>
+        runWrite('/api/owner/assign', { sessionId, advisorName: asesor }, confirmar, 'asignar asesor'),
+      {
+        name: 'owner_asignar_asesor',
+        description:
+          'Asigna un contacto a un asesor de la cuenta (por nombre), o lo libera si el nombre es "ninguno". REQUIERE confirmación: confirmar:true solo tras un "sí".',
+        schema: z.object({
+          sessionId: z.number().int().describe('sessionId del contacto'),
+          asesor: z.string().describe('Nombre del asesor, o "ninguno" para liberar'),
+          confirmar: z.boolean().optional().describe('true solo cuando el dueño ya confirmó'),
+        }),
+      },
+    );
+
     // ── Fase 3 (entrenamiento) ────────────────────────────────────────────────
     const verEntrenamiento = mk(
       async () => runRead('/api/owner/training/get'),
@@ -345,6 +360,7 @@ export class OwnerAgentService {
       enviarMensaje,
       moverLead,
       etiquetarContacto,
+      asignarAsesor,
       verEntrenamiento,
       listarRevisiones,
       agregarInstruccion,

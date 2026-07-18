@@ -28,3 +28,8 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/grupo-verzay/api-webhook:latest
+
+      - name: Deploy via Portainer webhook
+        run: |
+          curl -s -X POST "https://panel-n8n.ia-app.com/api/webhooks/28f107d6-c2b0-4a98-8392-820feae54900"
+          echo "Portainer webhook triggered"

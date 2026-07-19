@@ -3796,6 +3796,10 @@ export class AiAgentService {
           file,
           model: 'whisper-1',
           response_format: 'text',
+          language: 'es',
+          // Pista de vocabulario: sesga el reconocimiento hacia el nombre de la
+          // marca "Verzay" para que no lo confunda con "Versailles"/"Versalles".
+          prompt: 'Verzay. Verzay Pruebas. Hola, soy de Verzay.',
         });
 
         return transcription;

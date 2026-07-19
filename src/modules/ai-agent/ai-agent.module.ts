@@ -67,6 +67,7 @@ import { SystemNotificationDispatcherService } from '../whatsapp/services/system
     LlmClientFactory,
     AgentNotificationService,
     AiAgentService,
+    OwnerAgentService,
     TtsService,
   ],
 })

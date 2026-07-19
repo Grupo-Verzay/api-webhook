@@ -3,11 +3,11 @@ import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 
 import { LoggerService } from 'src/core/logger/logger.service';
 import { PrismaService } from 'src/database/prisma.service';
 import { ChatHistoryService } from '../../chat-history/chat-history.service';
+import { LlmClientFactory } from '../services/llmClientFactory/llmClientFactory.service';
 import { OWNER_AGENT_SYSTEM_PROMPT } from './owner-agent.prompt';
 
 /**
@@ -27,6 +27,7 @@ export class OwnerAgentService {
     private readonly logger: LoggerService,
     private readonly prisma: PrismaService,
     private readonly chatHistoryService: ChatHistoryService,
+    private readonly llmClientFactory: LlmClientFactory,
   ) {}
 
   private appUrl(): string {
@@ -58,7 +59,8 @@ export class OwnerAgentService {
 
   /**
    * ¿El mensaje entrante es del dueño de la cuenta? Requiere flag activo,
-   * configuración presente y coincidencia del número con notificationNumber.
+   * configuración presente y que el número coincida con el número del dueño
+   * configurado (ownerModePhone; si está vacío, cae a notificationNumber).
    */
   async isOwnerMessage(userId: string, remoteJid: string): Promise<boolean> {
     if (!this.isEnabled() || !this.appUrl() || !this.secret()) return false;
@@ -68,26 +70,42 @@ export class OwnerAgentService {
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { notificationNumber: true },
+      select: { ownerModeEnabled: true, ownerModePhone: true, notificationNumber: true },
     });
-    const ownerDigits = this.normalizePhone(user?.notificationNumber);
+    if (!user?.ownerModeEnabled) return false;
+
+    const ownerDigits = this.normalizePhone(
+      user?.ownerModePhone || user?.notificationNumber,
+    );
     return this.phonesMatch(fromDigits, ownerDigits);
   }
 
-  /** Atiende el mensaje del dueño con el agente ReAct administrativo. */
+  /**
+   * Atiende el mensaje del dueño con el agente ReAct administrativo.
+   * Construye su propio cliente LLM con la config del usuario y usa historyId
+   * (string instancia-remoteJid) para la memoria de la conversación.
+   */
   async handle(params: {
     userId: string;
     remoteJid: string;
-    sessionId: string;
+    historyId: string;
     input: string;
-    client: BaseChatModel;
+    apiKey: string;
+    model: string;
+    provider: string;
   }): Promise<string> {
     const ownerPhone = this.phoneFromJid(params.remoteJid);
     const tools = this.buildOwnerTools({ userId: params.userId, ownerPhone });
 
+    const client = this.llmClientFactory.getClient({
+      provider: params.provider as any,
+      apiKey: params.apiKey,
+      model: params.model,
+    });
+
     let historyMessages: any[] = [];
     try {
-      const chatHistory = await this.chatHistoryService.getChatHistoryWithTypes(params.sessionId);
+      const chatHistory = await this.chatHistoryService.getChatHistoryWithTypes(params.historyId);
       historyMessages = (chatHistory ?? []).map(({ content, type }: any) => {
         const isAi = type === 'ia' || type === 'ai';
         return isAi
@@ -104,7 +122,7 @@ export class OwnerAgentService {
       new HumanMessage({ content: [{ type: 'text', text: params.input }] }),
     ];
 
-    const agent = createReactAgent({ llm: params.client, tools });
+    const agent = createReactAgent({ llm: client, tools });
     const result = await agent.invoke({ messages }, { recursionLimit: 20 });
     return this.extractText(result);
   }

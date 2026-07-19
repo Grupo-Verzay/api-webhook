@@ -250,20 +250,20 @@ export class OwnerAgentService {
       {
         name: 'owner_buscar_contacto',
         description:
-          'Busca contactos del dueño por nombre o número. Úsala SIEMPRE antes de una acción sobre un contacto para obtener su sessionId. Solo lectura.',
+          'Busca contactos del dueño por nombre o número. Úsala para encontrar el NÚMERO del contacto antes de una acción. Solo lectura.',
         schema: z.object({ busqueda: z.string().describe('Nombre o número a buscar') }),
       },
     );
 
     const enviarMensaje = mk(
-      async ({ sessionId, texto, confirmar }: any) =>
-        runWrite('/api/owner/message', { sessionId, text: texto }, confirmar, 'enviar mensaje'),
+      async ({ numero, texto, confirmar }: any) =>
+        runWrite('/api/owner/message', { phone: numero, text: texto }, confirmar, 'enviar mensaje'),
       {
         name: 'owner_enviar_mensaje',
         description:
-          'Envía un mensaje de WhatsApp a un contacto del dueño (sessionId de owner_buscar_contacto). REQUIERE confirmación del dueño: llama con confirmar:true solo tras un "sí".',
+          'Envía un mensaje de WhatsApp a un contacto del dueño, identificado por su NÚMERO de teléfono (el que ya viste/mostraste en la conversación). REQUIERE confirmación del dueño: llama con confirmar:true solo tras un "sí".',
         schema: z.object({
-          sessionId: z.number().int().describe('sessionId del contacto'),
+          numero: z.string().describe('Número de teléfono del contacto, con código de país'),
           texto: z.string().describe('Mensaje a enviar'),
           confirmar: z.boolean().optional().describe('true solo cuando el dueño ya confirmó'),
         }),
@@ -271,14 +271,14 @@ export class OwnerAgentService {
     );
 
     const moverLead = mk(
-      async ({ sessionId, estado, confirmar }: any) =>
-        runWrite('/api/owner/lead-status', { sessionId, status: estado }, confirmar, 'mover estado de lead'),
+      async ({ numero, estado, confirmar }: any) =>
+        runWrite('/api/owner/lead-status', { phone: numero, status: estado }, confirmar, 'mover estado de lead'),
       {
         name: 'owner_mover_lead',
         description:
-          'Cambia el estado de lead (kanban) de un contacto. REQUIERE confirmación: confirmar:true solo tras un "sí".',
+          'Cambia el estado de lead (kanban) de un contacto, identificado por su NÚMERO. REQUIERE confirmación: confirmar:true solo tras un "sí".',
         schema: z.object({
-          sessionId: z.number().int().describe('sessionId del contacto'),
+          numero: z.string().describe('Número de teléfono del contacto, con código de país'),
           estado: z
             .enum(['FRIO', 'TIBIO', 'CALIENTE', 'FINALIZADO', 'DESCARTADO'])
             .describe('Nuevo estado del lead'),
@@ -288,14 +288,14 @@ export class OwnerAgentService {
     );
 
     const etiquetarContacto = mk(
-      async ({ sessionId, etiqueta, confirmar }: any) =>
-        runWrite('/api/owner/tag', { sessionId, tag: etiqueta }, confirmar, 'etiquetar contacto'),
+      async ({ numero, etiqueta, confirmar }: any) =>
+        runWrite('/api/owner/tag', { phone: numero, tag: etiqueta }, confirmar, 'etiquetar contacto'),
       {
         name: 'owner_etiquetar_contacto',
         description:
-          'Aplica una etiqueta (por nombre) a un contacto; se crea si no existe. REQUIERE confirmación: confirmar:true solo tras un "sí".',
+          'Aplica una etiqueta (por nombre) a un contacto identificado por su NÚMERO; se crea si no existe. REQUIERE confirmación: confirmar:true solo tras un "sí".',
         schema: z.object({
-          sessionId: z.number().int().describe('sessionId del contacto'),
+          numero: z.string().describe('Número de teléfono del contacto, con código de país'),
           etiqueta: z.string().describe('Nombre de la etiqueta'),
           confirmar: z.boolean().optional().describe('true solo cuando el dueño ya confirmó'),
         }),
@@ -303,14 +303,14 @@ export class OwnerAgentService {
     );
 
     const asignarAsesor = mk(
-      async ({ sessionId, asesor, confirmar }: any) =>
-        runWrite('/api/owner/assign', { sessionId, advisorName: asesor }, confirmar, 'asignar asesor'),
+      async ({ numero, asesor, confirmar }: any) =>
+        runWrite('/api/owner/assign', { phone: numero, advisorName: asesor }, confirmar, 'asignar asesor'),
       {
         name: 'owner_asignar_asesor',
         description:
-          'Asigna un contacto a un asesor de la cuenta (por nombre), o lo libera si el nombre es "ninguno". REQUIERE confirmación: confirmar:true solo tras un "sí".',
+          'Asigna un contacto (identificado por su NÚMERO) a un asesor de la cuenta (por nombre), o lo libera si el nombre es "ninguno". REQUIERE confirmación: confirmar:true solo tras un "sí".',
         schema: z.object({
-          sessionId: z.number().int().describe('sessionId del contacto'),
+          numero: z.string().describe('Número de teléfono del contacto, con código de país'),
           asesor: z.string().describe('Nombre del asesor, o "ninguno" para liberar'),
           confirmar: z.boolean().optional().describe('true solo cuando el dueño ya confirmó'),
         }),

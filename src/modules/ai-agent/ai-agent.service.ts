@@ -26,7 +26,6 @@ import { LlmClientFactory } from './services/llmClientFactory/llmClientFactory.s
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { NodeSenderService } from '../workflow/services/node-sender.service.ts/node-sender.service';
 import { AgentNotificationService } from './services/notificacionService/notificacion.service';
-import { OwnerAgentService } from './owner/owner-agent.service';
 
 // LangGraph + Tools
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
@@ -88,7 +87,6 @@ export class AiAgentService {
     @Inject(forwardRef(() => WorkflowService))
     private readonly workflowService: WorkflowService,
     private readonly googleSheetsService: GoogleSheetsService,
-    private readonly ownerAgentService: OwnerAgentService,
   ) {}
 
   private async resolveNotifSender(
@@ -2845,27 +2843,6 @@ export class AiAgentService {
     try {
       // Inicializar LLM (LangChain client) — local a esta llamada para evitar race conditions
       const client = this.initializeClient(apikeyOpenAi, defaultModel, defaultProvider);
-
-      // ── Modo Dueño por WhatsApp ────────────────────────────────────────────
-      // Si quien escribe es el dueño de la cuenta (número == notificationNumber),
-      // se atiende con el agente administrativo aislado. Cualquier fallo cae al
-      // flujo normal de clientes (nunca lo rompe). Detrás del flag OWNER_MODE_ENABLED.
-      try {
-        if (await this.ownerAgentService.isOwnerMessage(userId, remoteJid)) {
-          const ownerReply = await this.ownerAgentService.handle({
-            userId,
-            remoteJid,
-            sessionId,
-            input,
-            client,
-          });
-          if (ownerReply && ownerReply.trim()) return ownerReply;
-        }
-      } catch (ownerErr: any) {
-        logger.error(
-          `[owner-mode] fallback a flujo normal: ${ownerErr?.message ?? ownerErr}`,
-        );
-      }
 
       // Entrenamiento POR CANAL: cada canal (WhatsApp QR/Cloud, Facebook,
       // Instagram, Telegram) puede tener su PROPIO AgentPrompt. Si el canal de

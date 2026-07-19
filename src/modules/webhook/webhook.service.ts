@@ -1,6 +1,7 @@
 ﻿import { Injectable } from '@nestjs/common';
 
 import { AiAgentService } from '../ai-agent/ai-agent.service';
+import { OwnerAgentService } from '../ai-agent/owner/owner-agent.service';
 
 import { SessionService } from '../session/session.service';
 import { LoggerService } from 'src/core/logger/logger.service';
@@ -53,6 +54,7 @@ export class WebhookService {
   constructor(
     private readonly logger: LoggerService,
     private readonly aiAgentService: AiAgentService,
+    private readonly ownerAgentService: OwnerAgentService,
     private readonly sessionService: SessionService,
     private readonly userService: UserService,
     private readonly instancesService: InstancesService,
@@ -470,6 +472,50 @@ export class WebhookService {
         'WebhookService',
       );
       return;
+    }
+
+    // ── Modo Dueño por WhatsApp ───────────────────────────────────────────────
+    // PRIORIDAD MÁXIMA: si el remitente es el dueño (número configurado en el
+    // panel) y el modo está activo, se atiende con el agente administrativo y se
+    // corta el flujo. Va ANTES del puente de operario y del registro de lead, así
+    // que el número del dueño nunca se trata como operario ni como cliente.
+    // Aislado: ante cualquier error, cae al flujo normal.
+    if (userId && !fromMe) {
+      try {
+        if (await this.ownerAgentService.isOwnerMessage(userId, String(remoteJid))) {
+          const ownerInput =
+            data?.message?.conversation ||
+            data?.message?.extendedTextMessage?.text ||
+            '';
+          if (ownerInput.trim()) {
+            const historyId = buildChatHistorySessionId(instanceName, String(remoteJid));
+            await this.chatHistoryService.saveMessage(historyId, ownerInput, 'human').catch(() => undefined);
+
+            const reply = await this.ownerAgentService.handle({
+              userId,
+              remoteJid: String(remoteJid),
+              historyId,
+              input: ownerInput,
+              apiKey: defaultApiKey,
+              model: (defaultModel as any)?.name,
+              provider: (defaultProvider as any)?.name,
+            });
+
+            if (reply && reply.trim()) {
+              const sendOwner = this.makeSendTextFn(instanceName, server_url, apikey, userId, 'owner_mode');
+              await sendOwner(String(remoteJid), reply);
+              await this.chatHistoryService.saveMessage(historyId, reply, 'ia').catch(() => undefined);
+            }
+          }
+          return; // el dueño NUNCA se procesa como operario ni como lead
+        }
+      } catch (e: any) {
+        this.logger.warn(
+          `[OWNER] Error atendiendo al dueño: ${e?.message ?? e}`,
+          'WebhookService',
+        );
+        // cae al flujo normal
+      }
     }
 
     // ── Puente con operario: ¿es la RESPUESTA de un operario a una consulta? ──

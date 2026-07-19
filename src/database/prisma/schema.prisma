@@ -472,6 +472,8 @@ model User {
   lng                                String                       @default("0.0000")
   mapsUrl                            String                       @default("https://maps.google.com/?q=0,0")
   notificationNumber                 String                       @default("0000000000")
+  ownerModeEnabled                   Boolean                      @default(false) @map("owner_mode_enabled")
+  ownerModePhone                     String?                      @map("owner_mode_phone")
   openingPhrase                      String?                      @default("DEPRECATED")
   apiKeyId                           String?
   delSeguimiento                     String?                      @default("Estamos para servirle.") @map("del_seguimiento")

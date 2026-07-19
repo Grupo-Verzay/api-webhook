@@ -23,12 +23,32 @@ import { OWNER_AGENT_SYSTEM_PROMPT } from './owner-agent.prompt';
  */
 @Injectable()
 export class OwnerAgentService {
+  // Acción pendiente de confirmación por dueño (key = userId:ownerPhone).
+  // Permite ejecutar de forma determinística cuando el dueño dice "sí", sin
+  // depender de que el modelo recuerde y llame la herramienta correctamente.
+  private readonly pending = new Map<
+    string,
+    { endpoint: string; args: Record<string, unknown>; accion: string; at: number }
+  >();
+  private readonly PENDING_TTL_MS = 10 * 60 * 1000;
+
   constructor(
     private readonly logger: LoggerService,
     private readonly prisma: PrismaService,
     private readonly chatHistoryService: ChatHistoryService,
     private readonly llmClientFactory: LlmClientFactory,
   ) {}
+
+  private isAffirmative(text: string): boolean {
+    return /^\s*(s[ií]|s[ií]\s|dale|ok(ay)?|confirmo|confirmar|conf[ií]rmalo|h[aá]zlo|env[ií]a(lo)?|adelante|correcto|listo|de una|as[ií] es|perfecto)\b/i.test(
+      (text ?? '').trim(),
+    );
+  }
+  private isNegative(text: string): boolean {
+    return /^\s*(no|nop|cancela(r)?|mejor no|d[eé]jalo|olv[ií]dalo|para|detente)\b/i.test(
+      (text ?? '').trim(),
+    );
+  }
 
   private appUrl(): string {
     // NEXTJS_URL es la variable canónica del backend para alcanzar la app (verzay-app).
@@ -95,6 +115,40 @@ export class OwnerAgentService {
     provider: string;
   }): Promise<string> {
     const ownerPhone = this.phoneFromJid(params.remoteJid);
+
+    // ── Confirmación determinística ─────────────────────────────────────────
+    // Si hay una acción preparada esperando confirmación y el dueño responde
+    // "sí"/"no", se resuelve aquí sin pasar por el modelo (que a veces no lo hace).
+    const pendKey = `${params.userId}:${ownerPhone}`;
+    const pend = this.pending.get(pendKey);
+    const trimmed = (params.input ?? '').trim();
+    if (pend && Date.now() - pend.at < this.PENDING_TTL_MS) {
+      if (this.isAffirmative(trimmed)) {
+        this.pending.delete(pendKey);
+        const { status, json } = await this.callOwnerEndpoint(pend.endpoint, {
+          ...pend.args,
+          confirmed: true,
+        });
+        this.logger.log(
+          `[owner-tool] (confirmado) ${pend.endpoint} → ${status} ${JSON.stringify(json ?? {}).slice(0, 300)}`,
+          'OwnerAgentService',
+        );
+        const reply =
+          status >= 200 && status < 300
+            ? `✅ ${json?.message ?? 'Hecho.'}`
+            : `No se pudo completar (${status}): ${json?.message ?? 'error'}.`;
+        await this.chatHistoryService.saveMessage(params.historyId, trimmed, 'human').catch(() => undefined);
+        await this.chatHistoryService.saveMessage(params.historyId, reply, 'ia').catch(() => undefined);
+        return reply;
+      }
+      if (this.isNegative(trimmed)) {
+        this.pending.delete(pendKey);
+        return 'Listo, lo cancelo. ¿Algo más?';
+      }
+      // Cualquier otra cosa: la confirmación pendiente queda obsoleta.
+      this.pending.delete(pendKey);
+    }
+
     const tools = this.buildOwnerTools({ userId: params.userId, ownerPhone });
 
     const client = this.llmClientFactory.getClient({
@@ -172,17 +226,11 @@ export class OwnerAgentService {
       cfg: { name: string; description: string; schema: any },
     ): any => tool(fn as any, cfg as any);
 
-    // Ejecuta una acción de escritura respetando la confirmación.
-    const runWrite = async (
-      endpoint: string,
-      extra: Record<string, unknown>,
-      confirmar: boolean | undefined,
-      accion: string,
-    ): Promise<string> => {
-      if (confirmar !== true) {
-        return `Antes de ejecutar "${accion}" necesito que el dueño confirme. Muéstrale exactamente qué se hará y pídele un "sí"; luego vuelve a llamar esta herramienta con confirmar: true.`;
-      }
-      const { status, json } = await this.callOwnerEndpoint(endpoint, { ...base, ...extra, confirmed: true });
+    const pendKey = `${ctx.userId}:${ctx.ownerPhone}`;
+
+    // Ejecuta de inmediato (acciones que NO requieren confirmación: tarea, recordatorio).
+    const runDirect = async (endpoint: string, extra: Record<string, unknown>): Promise<string> => {
+      const { status, json } = await this.callOwnerEndpoint(endpoint, { ...base, ...extra });
       logger.log(
         `[owner-tool] ${endpoint} userId=${ctx.userId} args=${JSON.stringify(extra)} → ${status} ${JSON.stringify(json ?? {}).slice(0, 400)}`,
         'OwnerAgentService',
@@ -191,6 +239,15 @@ export class OwnerAgentService {
         return `OK: ${json?.message ?? 'acción completada'}. ${JSON.stringify(json ?? {})}`;
       }
       return `No se pudo completar (${status}): ${json?.message ?? 'error'}.`;
+    };
+
+    // Prepara una acción que requiere confirmación: guarda el pendiente. La
+    // ejecución real ocurre de forma determinística cuando el dueño dice "sí"
+    // (ver handle()). El modelo solo debe mostrar el detalle y pedir confirmación.
+    const prepare = (endpoint: string, extra: Record<string, unknown>, accion: string): string => {
+      this.pending.set(pendKey, { endpoint, args: { ...base, ...extra }, accion, at: Date.now() });
+      logger.log(`[owner-tool] preparada "${accion}" ${endpoint} args=${JSON.stringify(extra)}`, 'OwnerAgentService');
+      return `Acción "${accion}" preparada. Muéstrale al dueño EXACTAMENTE qué se hará (a quién, con qué número, qué texto/cambio) y pídele que confirme con "sí". NO llames más herramientas: cuando el dueño confirme, se ejecutará automáticamente.`;
     };
 
     const runRead = async (endpoint: string, extra: Record<string, unknown> = {}): Promise<string> => {
@@ -217,7 +274,7 @@ export class OwnerAgentService {
 
     const crearTarea = mk(
       async ({ titulo, fecha_iso, tipo }: any) =>
-        runWrite('/api/owner/task', { title: titulo, dueDate: fecha_iso, type: tipo }, true, 'crear tarea'),
+        runDirect('/api/owner/task', { title: titulo, dueDate: fecha_iso, type: tipo }),
       {
         name: 'owner_crear_tarea',
         description:
@@ -232,7 +289,7 @@ export class OwnerAgentService {
 
     const crearRecordatorio = mk(
       async ({ titulo, fecha_iso }: any) =>
-        runWrite('/api/owner/reminder', { title: titulo, dueDate: fecha_iso }, true, 'crear recordatorio'),
+        runDirect('/api/owner/reminder', { title: titulo, dueDate: fecha_iso }),
       {
         name: 'owner_crear_recordatorio',
         description:
@@ -256,63 +313,59 @@ export class OwnerAgentService {
     );
 
     const enviarMensaje = mk(
-      async ({ numero, texto, confirmar }: any) =>
-        runWrite('/api/owner/message', { phone: numero, text: texto }, confirmar, 'enviar mensaje'),
+      async ({ numero, texto }: any) =>
+        prepare('/api/owner/message', { phone: numero, text: texto }, 'enviar mensaje'),
       {
         name: 'owner_enviar_mensaje',
         description:
-          'Envía un mensaje de WhatsApp a un contacto del dueño, identificado por su NÚMERO de teléfono (el que ya viste/mostraste en la conversación). REQUIERE confirmación del dueño: llama con confirmar:true solo tras un "sí".',
+          'Prepara el envío de un mensaje de WhatsApp a un contacto del dueño, identificado por su NÚMERO de teléfono. Llámala UNA vez con el número y el texto; el sistema pedirá confirmación y, tras el "sí" del dueño, se envía solo. No la vuelvas a llamar tras la confirmación.',
         schema: z.object({
           numero: z.string().describe('Número de teléfono del contacto, con código de país'),
           texto: z.string().describe('Mensaje a enviar'),
-          confirmar: z.boolean().optional().describe('true solo cuando el dueño ya confirmó'),
         }),
       },
     );
 
     const moverLead = mk(
-      async ({ numero, estado, confirmar }: any) =>
-        runWrite('/api/owner/lead-status', { phone: numero, status: estado }, confirmar, 'mover estado de lead'),
+      async ({ numero, estado }: any) =>
+        prepare('/api/owner/lead-status', { phone: numero, status: estado }, 'mover estado de lead'),
       {
         name: 'owner_mover_lead',
         description:
-          'Cambia el estado de lead (kanban) de un contacto, identificado por su NÚMERO. REQUIERE confirmación: confirmar:true solo tras un "sí".',
+          'Prepara el cambio de estado de lead (kanban) de un contacto, identificado por su NÚMERO. El sistema pedirá confirmación y, tras el "sí", se aplica solo.',
         schema: z.object({
           numero: z.string().describe('Número de teléfono del contacto, con código de país'),
           estado: z
             .enum(['FRIO', 'TIBIO', 'CALIENTE', 'FINALIZADO', 'DESCARTADO'])
             .describe('Nuevo estado del lead'),
-          confirmar: z.boolean().optional().describe('true solo cuando el dueño ya confirmó'),
         }),
       },
     );
 
     const etiquetarContacto = mk(
-      async ({ numero, etiqueta, confirmar }: any) =>
-        runWrite('/api/owner/tag', { phone: numero, tag: etiqueta }, confirmar, 'etiquetar contacto'),
+      async ({ numero, etiqueta }: any) =>
+        prepare('/api/owner/tag', { phone: numero, tag: etiqueta }, 'etiquetar contacto'),
       {
         name: 'owner_etiquetar_contacto',
         description:
-          'Aplica una etiqueta (por nombre) a un contacto identificado por su NÚMERO; se crea si no existe. REQUIERE confirmación: confirmar:true solo tras un "sí".',
+          'Prepara aplicar una etiqueta (por nombre) a un contacto identificado por su NÚMERO; se crea si no existe. El sistema pedirá confirmación y, tras el "sí", se aplica sola.',
         schema: z.object({
           numero: z.string().describe('Número de teléfono del contacto, con código de país'),
           etiqueta: z.string().describe('Nombre de la etiqueta'),
-          confirmar: z.boolean().optional().describe('true solo cuando el dueño ya confirmó'),
         }),
       },
     );
 
     const asignarAsesor = mk(
-      async ({ numero, asesor, confirmar }: any) =>
-        runWrite('/api/owner/assign', { phone: numero, advisorName: asesor }, confirmar, 'asignar asesor'),
+      async ({ numero, asesor }: any) =>
+        prepare('/api/owner/assign', { phone: numero, advisorName: asesor }, 'asignar asesor'),
       {
         name: 'owner_asignar_asesor',
         description:
-          'Asigna un contacto (identificado por su NÚMERO) a un asesor de la cuenta (por nombre), o lo libera si el nombre es "ninguno". REQUIERE confirmación: confirmar:true solo tras un "sí".',
+          'Prepara asignar un contacto (identificado por su NÚMERO) a un asesor de la cuenta (por nombre), o liberarlo si el nombre es "ninguno". El sistema pedirá confirmación y, tras el "sí", se aplica sola.',
         schema: z.object({
           numero: z.string().describe('Número de teléfono del contacto, con código de país'),
           asesor: z.string().describe('Nombre del asesor, o "ninguno" para liberar'),
-          confirmar: z.boolean().optional().describe('true solo cuando el dueño ya confirmó'),
         }),
       },
     );
@@ -339,40 +392,36 @@ export class OwnerAgentService {
     );
 
     const agregarInstruccion = mk(
-      async ({ instruccion, titulo, confirmar }: any) =>
-        runWrite(
+      async ({ instruccion, titulo }: any) =>
+        prepare(
           '/api/owner/training/instruction',
           { instruction: instruccion, title: titulo },
-          confirmar,
           'agregar instrucción al entrenamiento',
         ),
       {
         name: 'owner_agregar_instruccion_entrenamiento',
         description:
-          'Agrega una instrucción al entrenamiento del agente de clientes y la publica (solo agrega, no reescribe). REQUIERE confirmación: confirmar:true solo tras un "sí".',
+          'Prepara agregar una instrucción al entrenamiento del agente de clientes y publicarla (solo agrega, no reescribe). El sistema pedirá confirmación y, tras el "sí", se publica sola.',
         schema: z.object({
           instruccion: z.string().describe('La regla/comportamiento a agregar'),
           titulo: z.string().optional().describe('Opcional. Título corto de la instrucción.'),
-          confirmar: z.boolean().optional().describe('true solo cuando el dueño ya confirmó'),
         }),
       },
     );
 
     const restaurarEntrenamiento = mk(
-      async ({ numero_revision, confirmar }: any) =>
-        runWrite(
+      async ({ numero_revision }: any) =>
+        prepare(
           '/api/owner/training/restore',
           { revisionNumber: numero_revision },
-          confirmar,
           'restaurar entrenamiento',
         ),
       {
         name: 'owner_restaurar_entrenamiento',
         description:
-          'Restaura el entrenamiento a una revisión previa (rollback) y la republica. REQUIERE confirmación: confirmar:true solo tras un "sí".',
+          'Prepara restaurar el entrenamiento a una revisión previa (rollback) y republicarla. El sistema pedirá confirmación y, tras el "sí", se aplica sola.',
         schema: z.object({
           numero_revision: z.number().int().describe('Número de revisión a restaurar'),
-          confirmar: z.boolean().optional().describe('true solo cuando el dueño ya confirmó'),
         }),
       },
     );

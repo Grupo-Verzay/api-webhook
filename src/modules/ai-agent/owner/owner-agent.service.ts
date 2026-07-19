@@ -32,6 +32,11 @@ export class OwnerAgentService {
   >();
   private readonly PENDING_TTL_MS = 10 * 60 * 1000;
 
+  // Último contacto sobre el que se trabajó en la conversación (key = userId:ownerPhone).
+  // Se inyecta al modelo cada turno para que "cámbialo", "etiquétalo", etc. sepan
+  // de quién se habla sin repetir el número. Robusto ante el olvido del modelo.
+  private readonly activeContact = new Map<string, { numero: string; nombre: string; at: number }>();
+
   constructor(
     private readonly logger: LoggerService,
     private readonly prisma: PrismaService,
@@ -170,9 +175,27 @@ export class OwnerAgentService {
       historyMessages = [];
     }
 
+    // Contacto activo: se lo recordamos al modelo para acciones de seguimiento
+    // ("cámbialo a caliente", "etiquétalo", "mándale otro") sin repetir el número.
+    const active = this.activeContact.get(pendKey);
+    const activeMsgs =
+      active && Date.now() - active.at < this.PENDING_TTL_MS
+        ? [
+            new SystemMessage({
+              content: [
+                {
+                  type: 'text',
+                  text: `Contacto activo de esta conversación: ${active.nombre} (número ${active.numero}). Si el dueño pide una acción sobre "él/ella" o sin indicar contacto, usa ESTE número.`,
+                },
+              ],
+            }),
+          ]
+        : [];
+
     const messages = [
       new SystemMessage({ content: [{ type: 'text', text: OWNER_AGENT_SYSTEM_PROMPT }] }),
       ...historyMessages,
+      ...activeMsgs,
       new HumanMessage({ content: [{ type: 'text', text: params.input }] }),
     ];
 
@@ -246,6 +269,14 @@ export class OwnerAgentService {
     // (ver handle()). El modelo solo debe mostrar el detalle y pedir confirmación.
     const prepare = (endpoint: string, extra: Record<string, unknown>, accion: string): string => {
       this.pending.set(pendKey, { endpoint, args: { ...base, ...extra }, accion, at: Date.now() });
+      const ph = (extra as any)?.phone;
+      if (typeof ph === 'string' && ph.trim()) {
+        this.activeContact.set(pendKey, {
+          numero: ph,
+          nombre: this.activeContact.get(pendKey)?.nombre || 'contacto',
+          at: Date.now(),
+        });
+      }
       logger.log(`[owner-tool] preparada "${accion}" ${endpoint} args=${JSON.stringify(extra)}`, 'OwnerAgentService');
       return `Acción "${accion}" preparada. Muéstrale al dueño EXACTAMENTE qué se hará (a quién, con qué número, qué texto/cambio) y pídele que confirme con "sí". NO llames más herramientas: cuando el dueño confirme, se ejecutará automáticamente.`;
     };
@@ -303,7 +334,24 @@ export class OwnerAgentService {
 
     // ── Fase 2 ───────────────────────────────────────────────────────────────
     const buscarContacto = mk(
-      async ({ busqueda }: any) => runRead('/api/owner/contacts/search', { query: busqueda }),
+      async ({ busqueda }: any) => {
+        const out = await runRead('/api/owner/contacts/search', { query: busqueda });
+        // Si hay exactamente un contacto, recuérdalo como contacto activo.
+        try {
+          const parsed = JSON.parse(out);
+          const list = Array.isArray(parsed?.contacts) ? parsed.contacts : [];
+          if (list.length === 1) {
+            const c = list[0];
+            const numero = String(c?.remoteJid ?? '').split('@')[0];
+            if (numero) {
+              this.activeContact.set(pendKey, { numero, nombre: c?.name || 'contacto', at: Date.now() });
+            }
+          }
+        } catch {
+          /* out no era JSON (error): ignorar */
+        }
+        return out;
+      },
       {
         name: 'owner_buscar_contacto',
         description:

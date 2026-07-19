@@ -29,6 +29,8 @@ import { LogCleanupService } from './services/log-cleanup/log-cleanup.service';
 import { LogCleanupSchedulerService } from './services/log-cleanup/log-cleanup.scheduler.service';
 import { ChatMessagesCleanupService } from './services/chat-messages-cleanup/chat-messages-cleanup.service';
 import { ChatMessagesCleanupSchedulerService } from './services/chat-messages-cleanup/chat-messages-cleanup.scheduler.service';
+import { MediaBackfillService } from './services/media-backfill/media-backfill.service';
+import { MediaBackfillSchedulerService } from './services/media-backfill/media-backfill.scheduler.service';
 import { PaymentReceiptModule } from 'src/modules/payment-receipt/payment-receipt.module';
 import { AutoAssignService } from './services/auto-assign/auto-assign.service';
 import { AutoAssignSweepSchedulerService } from './services/auto-assign/auto-assign-sweep.scheduler.service';
@@ -77,6 +79,8 @@ import { TrialFollowUpCronSchedulerService } from './services/trial-followup-cro
     LogCleanupSchedulerService,
     ChatMessagesCleanupService,
     ChatMessagesCleanupSchedulerService,
+    MediaBackfillService,
+    MediaBackfillSchedulerService,
     FollowUpRunnerService,
     FollowUpRunnerSchedulerService,
     MessageDirectionService,

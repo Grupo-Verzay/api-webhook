@@ -494,7 +494,11 @@ model User {
   meetingUrl                         String?
   preferredCurrencyCode              String                       @default("COP")
   tokenVersion                       Int                          @default(0)
-  passPlainTxt                       String?                      @default("IA@verzay.1234")
+  // NOTA: `passPlainTxt` NO se declara aquí a propósito. Es un campo que solo usa
+  // el FRONTEND (contraseñas visibles en el panel admin) y que este backend nunca
+  // lee ni escribe. La columna no existe en la BD, así que declararla hacía que
+  // Prisma la incluyera en todos los SELECT de User → error P2022 en el webhook y
+  // el Agente IA dejaba de responder. Un schema solo debe modelar lo que usa.
   enabledSynthesizer                 Boolean                      @default(false)
   status                             Boolean                      @default(true)
   enabledCrmFollowUps                Boolean                      @default(false)

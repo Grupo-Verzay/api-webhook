@@ -483,10 +483,19 @@ export class WebhookService {
     if (userId && !fromMe) {
       try {
         if (await this.ownerAgentService.isOwnerMessage(userId, String(remoteJid))) {
-          const ownerInput =
-            data?.message?.conversation ||
-            data?.message?.extendedTextMessage?.text ||
-            '';
+          // Extrae el texto de cualquier tipo de mensaje (incluye transcripción
+          // de audios/notas de voz y lectura de imágenes), igual que el flujo normal.
+          const ownerInput = (
+            await this.messageTypeHandlerService.extractContentByType(
+              data?.messageType ?? '',
+              defaultApiKey,
+              data,
+              (defaultModel as any)?.name,
+              (defaultProvider as any)?.name,
+            )
+          )
+            .toString()
+            .trim();
           if (ownerInput.trim()) {
             const historyId = buildChatHistorySessionId(instanceName, String(remoteJid));
             await this.chatHistoryService.saveMessage(historyId, ownerInput, 'human').catch(() => undefined);

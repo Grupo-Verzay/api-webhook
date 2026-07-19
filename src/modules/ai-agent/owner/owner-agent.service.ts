@@ -183,17 +183,24 @@ export class OwnerAgentService {
         return `Antes de ejecutar "${accion}" necesito que el dueño confirme. Muéstrale exactamente qué se hará y pídele un "sí"; luego vuelve a llamar esta herramienta con confirmar: true.`;
       }
       const { status, json } = await this.callOwnerEndpoint(endpoint, { ...base, ...extra, confirmed: true });
+      logger.log(
+        `[owner-tool] ${endpoint} userId=${ctx.userId} args=${JSON.stringify(extra)} → ${status} ${JSON.stringify(json ?? {}).slice(0, 400)}`,
+        'OwnerAgentService',
+      );
       if (status >= 200 && status < 300) {
         return `OK: ${json?.message ?? 'acción completada'}. ${JSON.stringify(json ?? {})}`;
       }
-      logger.warn(`[owner-tool] ${endpoint} → ${status}: ${json?.message ?? ''}`);
       return `No se pudo completar (${status}): ${json?.message ?? 'error'}.`;
     };
 
     const runRead = async (endpoint: string, extra: Record<string, unknown> = {}): Promise<string> => {
       const { status, json } = await this.callOwnerEndpoint(endpoint, { ...base, ...extra });
+      // Diagnóstico: registra qué se consultó, la cuenta y un resumen del resultado.
+      logger.log(
+        `[owner-tool] ${endpoint} userId=${ctx.userId} args=${JSON.stringify(extra)} → ${status} ${JSON.stringify(json ?? {}).slice(0, 400)}`,
+        'OwnerAgentService',
+      );
       if (status >= 200 && status < 300) return JSON.stringify(json ?? {});
-      logger.warn(`[owner-tool] ${endpoint} → ${status}: ${json?.message ?? ''}`);
       return `No se pudo consultar (${status}): ${json?.message ?? 'error'}.`;
     };
 

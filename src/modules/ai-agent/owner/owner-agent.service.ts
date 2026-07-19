@@ -200,8 +200,38 @@ export class OwnerAgentService {
     ];
 
     const agent = createReactAgent({ llm: client, tools });
-    const result = await agent.invoke({ messages }, { recursionLimit: 20 });
-    return this.extractText(result);
+    let result = await agent.invoke({ messages }, { recursionLimit: 20 });
+    let text = this.extractText(result);
+
+    // ── Red de seguridad contra "confirmación fantasma" ─────────────────────
+    // El modelo (sobre todo los pequeños) a veces ESCRIBE "¿Confirmas?" sin
+    // haber llamado la herramienta de preparación. En ese caso no queda nada
+    // encolado y el "sí" del dueño no ejecutaría la acción (o el modelo saltaría
+    // a otra acción distinta). Al entrar aquí el pending para esta conversación
+    // siempre está vacío, así que si el modelo pide confirmación y NO preparó
+    // nada, lo forzamos una vez a llamar la herramienta correcta.
+    const asksConfirmation = /confirm|¿\s*deseas|¿\s*proced|voy a preparar/i.test(text);
+    if (asksConfirmation && !this.pending.has(pendKey)) {
+      this.logger.log(
+        '[owner] confirmación fantasma (sin herramienta preparada); reintentando forzando la tool',
+        'OwnerAgentService',
+      );
+      const correction = new SystemMessage({
+        content: [
+          {
+            type: 'text',
+            text: 'CORRECCIÓN DEL SISTEMA: ibas a pedir confirmación pero NO llamaste la herramienta de preparación, así que no hay ninguna acción encolada y el "sí" del dueño no ejecutaría nada. Llama AHORA la herramienta owner_* correcta (owner_enviar_mensaje, owner_mover_lead, owner_etiquetar_contacto, owner_asignar_asesor, owner_agregar_instruccion_entrenamiento o owner_restaurar_entrenamiento) con los datos EXACTOS de lo que el dueño pidió en este turno —no otra acción distinta— para dejarla preparada. Después presenta la confirmación.',
+          },
+        ],
+      });
+      result = await agent.invoke(
+        { messages: [...messages, correction] },
+        { recursionLimit: 20 },
+      );
+      text = this.extractText(result);
+    }
+
+    return text;
   }
 
   private extractText(result: any): string {

@@ -112,7 +112,7 @@ export class FollowUpRunnerSchedulerService
 
       if (summary.due > 0 || summary.failed > 0 || summary.sent > 0) {
         this.logger.log(
-          `Runner scheduler procesado. due=${summary.due} sent=${summary.sent} failed=${summary.failed} skipped=${summary.skipped}`,
+          `Runner scheduler procesado. due=${summary.due} sent=${summary.sent} failed=${summary.failed} skipped=${summary.skipped} (fuera_de_ventana=${summary.skippedOutOfWindow})`,
           'FollowUpRunnerSchedulerService',
         );
       }

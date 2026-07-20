@@ -813,7 +813,11 @@ export class FollowUpRunnerService {
           data: { followUpStatus: 'pending' },
         });
         summary.skipped++;
-        this.logger.log(
+        // DEBUG (no LOG): esta línea se emitía por cada seguimiento fuera de horario
+        // (~178 por corrida, ~350/min) y tapaba todo lo demás en producción. El conteo
+        // ya queda en el resumen por corrida del scheduler (due=/sent=/skipped=).
+        // Se deja en DEBUG para poder reactivarla puntualmente al depurar.
+        this.logger.debug(
           `${loggerCtx} fuera de la ventana de envío de la cuenta → pospuesto.`,
           'FollowUpRunnerService',
         );

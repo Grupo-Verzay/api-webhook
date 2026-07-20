@@ -351,6 +351,24 @@ export class OwnerAgentService {
       },
     );
 
+    const listarTareas = mk(
+      async ({ cuando }: any) =>
+        runRead('/api/owner/tasks', {
+          scope: cuando === 'hoy' ? 'today' : 'pending',
+        }),
+      {
+        name: 'owner_listar_tareas',
+        description:
+          'Lista las tareas del dueño con su DETALLE: título, tipo, vencimiento, contacto (nombre + teléfono) y responsable. Úsala cuando el dueño pida ver sus tareas o los detalles de ellas (el resumen solo da el conteo). Solo lectura.',
+        schema: z.object({
+          cuando: z
+            .enum(['pendientes', 'hoy'])
+            .optional()
+            .describe('"pendientes" (por defecto, todas las pendientes) o "hoy" (las que vencen hoy).'),
+        }),
+      },
+    );
+
     const crearTarea = mk(
       async ({ titulo, fecha_iso, tipo }: any) =>
         runDirect('/api/owner/task', { title: titulo, dueDate: fecha_iso, type: tipo }),
@@ -565,6 +583,7 @@ export class OwnerAgentService {
     return [
       resumenDia,
       listarCitas,
+      listarTareas,
       crearTarea,
       crearRecordatorio,
       buscarContacto,

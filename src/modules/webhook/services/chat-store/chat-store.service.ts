@@ -232,7 +232,26 @@ export class ChatStoreService {
       // criterio que ya aplica SessionService al registrar la sesión, para que
       // ambas tablas coincidan en la identidad canónica.
       if (this.isLid(input.remoteJid)) {
-        const real = await this.resolveLid(input.userId, input.remoteJid);
+        let real = await this.resolveLid(input.userId, input.remoteJid);
+
+        // Si el mapa aún no conoce este @lid, el propio messageId lo delata: si
+        // ya guardamos ese mismo mensaje bajo un número, es EL MISMO mensaje y
+        // va a la misma conversación. Este es el caso del mensaje que "se envía
+        // doble": el panel lo guarda con el número al enviarlo y, un par de
+        // segundos después, el eco de Evolution llega dirigido por @lid; como
+        // el índice único incluye el remoteJid, entraba como fila nueva y la
+        // burbuja aparecía repetida. El cliente recibía UN solo mensaje.
+        if (!real && input.messageId?.trim()) {
+          real = await this.resolveByMessageId(
+            input.userId,
+            input.instanceName,
+            input.messageId.trim(),
+          );
+          // De paso aprendemos el par, para que el resto de mensajes de este
+          // contacto ya no necesiten esta segunda vía.
+          if (real) void this.rememberLid(input.userId, input.remoteJid, real);
+        }
+
         if (real) {
           input = {
             ...input,
@@ -426,6 +445,31 @@ export class ChatStoreService {
       return Number(rows[0]?.n ?? 0) > 0;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Busca si ese mismo mensaje ya está guardado bajo un JID de teléfono. Un
+   * messageId es único por mensaje en WhatsApp, así que encontrarlo bajo un
+   * número significa que es la misma conversación y no una nueva.
+   */
+  private async resolveByMessageId(
+    userId: string,
+    instanceName: string,
+    messageId: string,
+  ): Promise<string | null> {
+    try {
+      const rows = await this.prisma.$queryRaw<{ remoteJid: string }[]>`
+        SELECT "remoteJid" FROM "chat_messages"
+         WHERE "userId" = ${userId}
+           AND "instanceName" = ${instanceName}
+           AND "messageId" = ${messageId}
+           AND "remoteJid" NOT LIKE '%@lid'
+         LIMIT 1
+      `;
+      return rows[0]?.remoteJid ?? null;
+    } catch {
+      return null;
     }
   }
 

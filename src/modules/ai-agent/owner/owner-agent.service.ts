@@ -333,6 +333,24 @@ export class OwnerAgentService {
       },
     );
 
+    const listarCitas = mk(
+      async ({ cuando }: any) =>
+        runRead('/api/owner/appointments', {
+          scope: cuando === 'proximas' ? 'upcoming' : 'today',
+        }),
+      {
+        name: 'owner_listar_citas',
+        description:
+          'Lista las citas del dueño con su DETALLE: nombre del cliente, teléfono, hora, servicio y estado. Úsala cuando el dueño pida ver los nombres/números/detalles de las citas (el resumen solo da el conteo). Solo lectura.',
+        schema: z.object({
+          cuando: z
+            .enum(['hoy', 'proximas'])
+            .optional()
+            .describe('"hoy" (por defecto) para las citas de hoy, o "proximas" para las próximas.'),
+        }),
+      },
+    );
+
     const crearTarea = mk(
       async ({ titulo, fecha_iso, tipo }: any) =>
         runDirect('/api/owner/task', { title: titulo, dueDate: fecha_iso, type: tipo }),
@@ -546,6 +564,7 @@ export class OwnerAgentService {
 
     return [
       resumenDia,
+      listarCitas,
       crearTarea,
       crearRecordatorio,
       buscarContacto,

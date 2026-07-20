@@ -34,7 +34,7 @@ jobs:
           # Capturamos el código HTTP y fallamos en rojo si Portainer no responde
           # 2xx (con "curl -s" a secas un 4xx/5xx pasaba desapercibido).
           code=$(curl -sS -o /tmp/portainer_resp.txt -w "%{http_code}" \
-            -X POST "https://panel-n8n.ia-app.com/api/webhooks/e3b97f94-9c59-4d78-ab6f-847264564973")
+            -X POST "https://panel-n8n.ia-app.com/api/webhooks/42e0e628-b0e6-4f2d-9509-fd959b37d5e6")
           echo "Portainer respondió HTTP $code"
           echo "Cuerpo: $(cat /tmp/portainer_resp.txt)"
           if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then

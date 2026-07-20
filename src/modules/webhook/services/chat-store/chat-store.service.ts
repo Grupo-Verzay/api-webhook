@@ -224,6 +224,24 @@ export class ChatStoreService {
     try {
       await this.ensureTables();
 
+      // Si el mensaje viene dirigido por @lid y ya sabemos a qué número
+      // corresponde, guardamos la conversación bajo el NÚMERO y dejamos el
+      // @lid como alias. Sin esto se creaba una conversación aparte por cada
+      // @lid: en la bandeja aparecía el contacto duplicado, con el propio @lid
+      // como nombre ("152252530581757") en vez del cliente. Es el mismo
+      // criterio que ya aplica SessionService al registrar la sesión, para que
+      // ambas tablas coincidan en la identidad canónica.
+      if (this.isLid(input.remoteJid)) {
+        const real = await this.resolveLid(input.userId, input.remoteJid);
+        if (real) {
+          input = {
+            ...input,
+            remoteJid: real,
+            remoteJidAlt: input.remoteJidAlt || this.normLid(input.remoteJid),
+          };
+        }
+      }
+
       const messageId =
         input.messageId?.trim() ||
         `${input.fromMe ? 'out' : 'in'}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -305,6 +323,11 @@ export class ChatStoreService {
   }
 
   /** Normaliza un lid quitando sufijo de dispositivo (:NN) y asegurando @lid. */
+  /** ¿Este JID es un identificador de privacidad @lid y no un teléfono? */
+  private isLid(value?: string | null): boolean {
+    return typeof value === 'string' && value.includes('@lid');
+  }
+
   private normLid(value: string): string {
     const digits = (value || '').split('@')[0].split(':')[0].trim();
     return digits ? `${digits}@lid` : '';

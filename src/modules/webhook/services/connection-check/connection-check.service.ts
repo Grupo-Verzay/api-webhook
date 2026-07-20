@@ -9,8 +9,12 @@ import { ChatStoreService } from '../chat-store/chat-store.service';
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID ?? 'cm842kthc0000qd2l66nbnytv';
 const TIMEOUT_MS = 10_000;
-const MAX_DAILY_NOTIFICATIONS = 3;
-const TIME_ZONE = 'America/Bogota';
+// Cooldown persistente entre avisos de desconexión por instancia. Los slots son
+// 9/13/17 (separados 4h) con una tolerancia de recuperación de 2h. Un cooldown de
+// 3.5h (2h < 3.5h < 4h) hace que: un reinicio/deploy dentro de las 2h siguientes a
+// un slot NO reenvíe el aviso (persistido en BD, sobrevive al reinicio), y el
+// siguiente slot legítimo (4h después) sí pueda enviarlo. Resultado: máx. 1 por slot.
+const NOTIFY_COOLDOWN_MS = 3.5 * 60 * 60 * 1000;
 const DISABLED_SENTINEL = '0000000000';
 
 const QR_DISCONNECTION_MESSAGE =
@@ -27,8 +31,6 @@ const DISCONNECTION_MSG =
   '*Conectar* → en WhatsApp Business: Dispositivos vinculados.\n\n' +
   '*Vincular un dispositivo* y escanee el *QR* 📳';
 
-type DailyEntry = { dayKey: string; count: number };
-
 function normalizeBase(url: string): string {
   const trimmed = url.trim().replace(/\/+$/, '');
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
@@ -36,8 +38,6 @@ function normalizeBase(url: string): string {
 
 @Injectable()
 export class ConnectionCheckService {
-  private readonly dailyNotified = new Map<string, DailyEntry>();
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger: LoggerService,
@@ -47,24 +47,6 @@ export class ConnectionCheckService {
     private readonly chatStore: ChatStoreService,
   ) {}
 
-  private getDayKey(now: Date): string {
-    return new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE }).format(now);
-  }
-
-  private canNotify(instanceKey: string, dayKey: string): boolean {
-    const entry = this.dailyNotified.get(instanceKey);
-    if (!entry || entry.dayKey !== dayKey) return true;
-    return entry.count < MAX_DAILY_NOTIFICATIONS;
-  }
-
-  private markNotified(instanceKey: string, dayKey: string): void {
-    const entry = this.dailyNotified.get(instanceKey);
-    if (!entry || entry.dayKey !== dayKey) {
-      this.dailyNotified.set(instanceKey, { dayKey, count: 1 });
-    } else {
-      entry.count += 1;
-    }
-  }
 
   private async isInstanceConnected(
     serverUrl: string,
@@ -117,8 +99,6 @@ export class ConnectionCheckService {
   }
 
   async run(now = new Date()): Promise<{ checked: number; disconnected: number; notified: number }> {
-    const dayKey = this.getDayKey(now);
-
     const users = await this.prisma.user.findMany({
       where: {
         status: true,
@@ -153,7 +133,13 @@ export class ConnectionCheckService {
               { instanceType: { in: ['Whatsapp', 'whatsapp', 'evolution', 'baileys'] } },
             ],
           },
-          select: { instanceName: true, instanceId: true, instanceType: true },
+          select: {
+            id: true,
+            instanceName: true,
+            instanceId: true,
+            instanceType: true,
+            lastConnectionAlertAt: true,
+          },
         },
       },
     });
@@ -172,7 +158,6 @@ export class ConnectionCheckService {
       for (const instance of user.instancias) {
         if (!instance?.instanceName || !instance.instanceId || !this.isQrWhatsappType(instance.instanceType)) continue;
 
-        const instanceKey = `${user.id}::${instance.instanceName}`;
         checked++;
 
         const connected = await this.isQrInstanceConnected({
@@ -186,9 +171,14 @@ export class ConnectionCheckService {
 
         disconnected++;
 
-        if (!this.canNotify(instanceKey, dayKey)) {
+        // Dedup PERSISTENTE (sobrevive a reinicios/deploys): si ya se avisó de esta
+        // instancia dentro del cooldown, no se reenvía. Antes el contador vivía en
+        // memoria y cada deploy lo reseteaba, reenviando el aviso del mismo slot
+        // (p. ej. 9:00 y otra vez a las 9:33 tras un redeploy).
+        const lastAlert = instance.lastConnectionAlertAt;
+        if (lastAlert && now.getTime() - lastAlert.getTime() < NOTIFY_COOLDOWN_MS) {
           this.logger.log(
-            `[ConnectionCheck] ${instance.instanceName} desconectada; limite diario alcanzado.`,
+            `[ConnectionCheck] ${instance.instanceName} desconectada; ya avisada hace <3.5h (persistente), se omite.`,
           );
           continue;
         }
@@ -260,11 +250,15 @@ export class ConnectionCheckService {
             });
           }
 
-          this.markNotified(instanceKey, dayKey);
+          // Marca persistente del envío: evita el reenvío del mismo slot tras un
+          // reinicio. Se hace por id de instancia (clave primaria).
+          await this.prisma.instancia.update({
+            where: { id: instance.id },
+            data: { lastConnectionAlertAt: now },
+          });
           notified++;
-          const count = this.dailyNotified.get(instanceKey)?.count ?? 1;
           this.logger.log(
-            `[ConnectionCheck] Notificacion enviada -> ${instance.instanceName} (userId=${user.id}) aviso=${count}/${MAX_DAILY_NOTIFICATIONS} via=${line.instanceName}`,
+            `[ConnectionCheck] Notificacion enviada -> ${instance.instanceName} (userId=${user.id}) via=${line.instanceName}`,
           );
         } catch (error: any) {
           this.logger.error(

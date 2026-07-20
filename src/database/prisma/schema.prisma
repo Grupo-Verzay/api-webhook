@@ -120,6 +120,10 @@ model Instancia {
   metaVerifyToken        String? @map("meta_verify_token")
   metaChannel            String? @default("whatsapp") @map("meta_channel")
   metaPageId             String? @map("meta_page_id")
+  // Última vez que se envió el aviso de "WhatsApp desvinculado" para esta instancia.
+  // Persistente (no en memoria) para que un reinicio/deploy NO reenvíe el aviso del
+  // mismo slot horario. Ver ConnectionCheckService (cooldown entre slots 9/13/17).
+  lastConnectionAlertAt  DateTime? @map("last_connection_alert_at")
   user                   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])

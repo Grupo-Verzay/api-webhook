@@ -420,10 +420,32 @@ export class WebhookService {
     const userId = prismaInstancia?.userId ?? '';
     const instanceId = prismaInstancia?.instanceId ?? '';
 
-    // Aprender el mapeo lid -> número, para luego resolver el "from" de las
-    // llamadas entrantes (que llega como @lid) al chat correcto del contacto.
-    if (userId && rawSenderLid && remoteJid.includes('@s.whatsapp.net')) {
-      void this.chatStore.rememberLid(userId, rawSenderLid, remoteJid);
+    // Aprender el mapeo lid -> número. Sin esto, un evento dirigido solo por
+    // @lid no reconoce al contacto y se crea una SEGUNDA sesión: el lead se
+    // reasigna a otro asesor, se re-disparan sus automatizaciones, el nombre
+    // queda en "Desconocido"/el @lid, y el panel responde "No hay sesión CRM
+    // para asignar" porque busca por el otro JID.
+    //
+    // Antes se leía `key.senderLid`, un campo que esta versión de Evolution NO
+    // envía: 0 apariciones en 12.032 payloads de 3 días, por eso chat_lid_map
+    // llevaba 0 filas y la protección anti-duplicados nunca llegó a actuar.
+    // El par sí viene en los alias observados (remoteJid / remoteJidAlt /
+    // senderPn / senderLid), así que aprendemos de todos ellos.
+    if (userId) {
+      const phoneJid = observedJids.find(
+        (jid) => typeof jid === 'string' && jid.includes('@s.whatsapp.net'),
+      );
+      if (phoneJid) {
+        const lidsObservados = observedJids.filter(
+          (jid, i, arr) =>
+            typeof jid === 'string' &&
+            jid.includes('@lid') &&
+            arr.indexOf(jid) === i,
+        );
+        for (const lid of lidsObservados) {
+          void this.chatStore.rememberLid(userId, lid, phoneJid);
+        }
+      }
     }
 
     // Tiempo real: notificar que este chat cambió en cuanto sabemos a qué

@@ -369,6 +369,22 @@ export class OwnerAgentService {
       },
     );
 
+    const listarLeads = mk(
+      async ({ estado }: any) =>
+        runRead('/api/owner/leads', estado ? { status: estado } : {}),
+      {
+        name: 'owner_listar_leads',
+        description:
+          'Lista los leads/contactos del dueño con su estado del embudo (nombre, teléfono, estado, etiquetas). Úsala cuando el dueño pida ver sus leads/clientes por estado. Se puede filtrar por estado. Solo lectura.',
+        schema: z.object({
+          estado: z
+            .string()
+            .optional()
+            .describe('Opcional. Estado del embudo: frío, tibio, caliente, finalizado o descartado.'),
+        }),
+      },
+    );
+
     const crearTarea = mk(
       async ({ titulo, fecha_iso, tipo }: any) =>
         runDirect('/api/owner/task', { title: titulo, dueDate: fecha_iso, type: tipo }),
@@ -584,6 +600,7 @@ export class OwnerAgentService {
       resumenDia,
       listarCitas,
       listarTareas,
+      listarLeads,
       crearTarea,
       crearRecordatorio,
       buscarContacto,

@@ -385,6 +385,56 @@ export class OwnerAgentService {
       },
     );
 
+    const listarConversaciones = mk(
+      async ({ filtro }: any) =>
+        runRead('/api/owner/conversations', {
+          scope: filtro === 'sin_responder' ? 'unanswered' : 'recent',
+        }),
+      {
+        name: 'owner_listar_conversaciones',
+        description:
+          'Lista las conversaciones recientes del dueño con clientes (nombre, teléfono, último mensaje, cuándo, y si falta responder). Úsala cuando el dueño pida ver sus chats recientes o los que están sin responder. Solo lectura.',
+        schema: z.object({
+          filtro: z
+            .enum(['recientes', 'sin_responder'])
+            .optional()
+            .describe('"recientes" (por defecto) o "sin_responder" (el cliente escribió último).'),
+        }),
+      },
+    );
+
+    const listarProductos = mk(
+      async ({ solo_activos }: any) =>
+        runRead('/api/owner/products', solo_activos ? { onlyActive: true } : {}),
+      {
+        name: 'owner_listar_productos',
+        description:
+          'Lista los productos del catálogo del dueño (título, precio, stock, activo, categoría). Úsala cuando el dueño pregunte por su catálogo, precios o inventario. Solo lectura.',
+        schema: z.object({
+          solo_activos: z
+            .boolean()
+            .optional()
+            .describe('Opcional. true para listar solo los productos activos/publicados.'),
+        }),
+      },
+    );
+
+    const listarPagos = mk(
+      async ({ tipo }: any) =>
+        runRead('/api/owner/payments', { scope: tipo === 'gastos' ? 'expenses' : 'income' }),
+      {
+        name: 'owner_listar_pagos',
+        description:
+          'Lista los movimientos de finanzas del dueño: ventas/ingresos (por defecto) o gastos, con monto, moneda, fecha, título y contraparte. Úsala cuando el dueño pregunte por sus pagos, ventas, ingresos o gastos. Solo lectura.',
+        schema: z.object({
+          tipo: z
+            .enum(['ingresos', 'gastos'])
+            .optional()
+            .describe('"ingresos" (ventas, por defecto) o "gastos".'),
+        }),
+      },
+    );
+
     const crearTarea = mk(
       async ({ titulo, fecha_iso, tipo }: any) =>
         runDirect('/api/owner/task', { title: titulo, dueDate: fecha_iso, type: tipo }),
@@ -601,6 +651,9 @@ export class OwnerAgentService {
       listarCitas,
       listarTareas,
       listarLeads,
+      listarConversaciones,
+      listarProductos,
+      listarPagos,
       crearTarea,
       crearRecordatorio,
       buscarContacto,

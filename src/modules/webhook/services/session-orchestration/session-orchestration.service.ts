@@ -133,6 +133,30 @@ export class SessionOrchestrationService {
 
     void this.autoAssignService.tryAssign(newSession.id, userId, remoteJid, instanceName);
 
+    // Lead NUEVO: avisar a la app para la sincronización automática a Google
+    // Sheets (la app decide si sincroniza según el opt-in de la cuenta).
+    this.notifyNewLeadForSheetsSync(userId, remoteJid);
+
     return { status: true, canonicalRemoteJid: remoteJid };
+  }
+
+  /**
+   * Notifica a la app (verzay-app) que entró un lead NUEVO para que —si la
+   * cuenta activó la sincronización automática y tiene una hoja conectada— lo
+   * envíe a su Google Sheet. Fire-and-forget: nunca bloquea ni rompe el flujo
+   * del webhook, y si la app no responde simplemente se ignora.
+   */
+  private notifyNewLeadForSheetsSync(userId: string, remoteJid: string): void {
+    const base = (process.env.NEXTJS_URL ?? '').replace(/\/+$/, '');
+    const secret = (process.env.OWNER_COMMANDS_KEY ?? '').trim();
+    if (!base || !secret || !userId || !remoteJid) return;
+    void fetch(`${base}/api/owner/sync-contact`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${secret}`,
+      },
+      body: JSON.stringify({ userId, remoteJid }),
+    }).catch(() => undefined);
   }
 }

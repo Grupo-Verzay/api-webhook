@@ -3208,7 +3208,11 @@ export class AiAgentService {
         }
       }
 
-      const promptAI = `${extraRules} ${systemPrompt}${clientContextBlock}${externalDataBlock}${agendaRuleBlock}${businessHoursBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}${knowledgeContext}${operatorBridgeBlock}`.trim();
+      // Estilo de escritura para WhatsApp: enriquece el formato sin imponer un tono.
+      // Si el negocio configuró un tono propio en su entrenamiento, ese manda.
+      const styleBlock = `\n\n# Estilo de escritura (WhatsApp)\nEscribe como en WhatsApp: cercano y fácil de leer. Resalta lo importante con *negrilla* (un asterisco a cada lado) y usa emojis con moderación cuando encajen con el tono del negocio (no en cada frase). Evita párrafos largos: frases cortas y, cuando enumeres, viñetas "• ". Respeta SIEMPRE el tono y las instrucciones del negocio; si pidió un tono formal o sin emojis, priorízalo por encima de esta guía.`;
+
+      const promptAI = `${extraRules} ${systemPrompt}${styleBlock}${clientContextBlock}${externalDataBlock}${agendaRuleBlock}${businessHoursBlock}${dataQueryRuleBlock}${googleSheetsRuleBlock}${mapsBlock}${voiceBlock}${knowledgeContext}${operatorBridgeBlock}`.trim();
 
       // logger.log('PROMPT:', promptAI);
 

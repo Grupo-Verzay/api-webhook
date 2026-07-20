@@ -51,6 +51,14 @@ export class WebhookService {
   /** Contactos con un callback de buffer actualmente en ejecución */
   private readonly processingContacts = new Set<string>();
 
+  /**
+   * Texto que llegó MIENTRAS un contacto ya se estaba procesando. Antes se
+   * descartaba (el 2º mensaje del cliente se quedaba sin respuesta); ahora se
+   * acumula aquí y se procesa en cuanto termina el turno en curso, sin perder
+   * contenido del cliente y manteniendo la respuesta serializada por contacto.
+   */
+  private readonly pendingMerged = new Map<string, string>();
+
   constructor(
     private readonly logger: LoggerService,
     private readonly aiAgentService: AiAgentService,
@@ -1057,25 +1065,45 @@ export class WebhookService {
           `[WEBHOOK_DIAG] Buffer callback disparado para ${canonicalRemoteJid} | mergedLen=${mergedText.toString().length} | concurrentBlock=${this.processingContacts.has(canonicalRemoteJid)}`,
         );
         if (this.processingContacts.has(canonicalRemoteJid)) {
+          // No descartar el mensaje: encolarlo para procesarlo en cuanto termine
+          // el turno en curso. El drenado ocurre en el bucle de abajo.
+          const prev = this.pendingMerged.get(canonicalRemoteJid);
+          const queued = prev
+            ? `${prev} ${mergedText.toString()}`
+            : mergedText.toString();
+          this.pendingMerged.set(canonicalRemoteJid, queued);
           logger.warn(
-            `[WEBHOOK] Callback concurrente ignorado para ${canonicalRemoteJid}`,
+            `[WEBHOOK] Callback concurrente ENCOLADO para ${canonicalRemoteJid} (pendiente=${queued.length} chars) — se procesará al terminar el turno actual.`,
           );
           return;
         }
         this.processingContacts.add(canonicalRemoteJid);
         try {
-          await this.processBufferedMessage({
-            mergedText: mergedText.toString(),
-            canonicalRemoteJid, canonicalSession, instanceName, instanceId,
-            userId, pushName, server_url, apikey, defaultApiKey,
-            model, provider, messageType, userWithRelations,
-            sessionHistoryId, apiMsgUrl, sendTextFn, logger,
-          });
-        } catch (err: any) {
-          logger.error(
-            'Error en callback de messageBufferService.handleIncomingMessage (se evita crash global).',
-            err?.message || err,
-          );
+          // Procesa el texto actual y, a continuación, cualquier texto que haya
+          // llegado durante el proceso (encolado en pendingMerged). Serializado
+          // por contacto; nunca se pierde contenido del cliente.
+          let textToProcess: string | undefined = mergedText.toString();
+          while (textToProcess !== undefined) {
+            try {
+              await this.processBufferedMessage({
+                mergedText: textToProcess,
+                canonicalRemoteJid, canonicalSession, instanceName, instanceId,
+                userId, pushName, server_url, apikey, defaultApiKey,
+                model, provider, messageType, userWithRelations,
+                sessionHistoryId, apiMsgUrl, sendTextFn, logger,
+              });
+            } catch (err: any) {
+              logger.error(
+                'Error en processBufferedMessage (se evita crash global).',
+                err?.message || err,
+              );
+            }
+            // ¿Llegó algo mientras procesábamos? Si sí, se procesa en la siguiente
+            // vuelta. get+delete son síncronos: ningún timer del buffer puede
+            // colarse entre ambos ni entre leer "undefined" y liberar el lock.
+            textToProcess = this.pendingMerged.get(canonicalRemoteJid);
+            this.pendingMerged.delete(canonicalRemoteJid);
+          }
         } finally {
           this.processingContacts.delete(canonicalRemoteJid);
         }

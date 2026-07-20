@@ -26,7 +26,9 @@ type InstanceCreds = {
 };
 
 /**
- * Worker de backfill de `mediaUrl` para mensajes entrantes de Evolution.
+ * Worker de backfill de `mediaUrl` para mensajes de Evolution (entrantes y
+ * salientes: ambos pierden la URL por la misma carrera y ambos se recuperan por
+ * la misma vía barata; los salientes son ~97% del problema).
  *
  * Algunos mensajes multimedia se persisten sin `mediaUrl` (la URL de S3 aún no
  * estaba lista cuando llegó el webhook). Este worker recorre periódicamente los
@@ -92,8 +94,7 @@ export class MediaBackfillService {
     const candidates = await this.prisma.$queryRaw<CandidateRow[]>`
       SELECT "id", "userId", "instanceName", "messageId"
       FROM "chat_messages"
-      WHERE "fromMe" = false
-        AND "instanceType" = 'evolution'
+      WHERE "instanceType" = 'evolution'
         AND "mediaUrl" IS NULL
         AND "messageType" IN ('imageMessage', 'audioMessage', 'videoMessage', 'documentMessage')
         AND "mediaBackfillAttempts" < ${maxAttempts}

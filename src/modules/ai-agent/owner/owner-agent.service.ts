@@ -220,7 +220,7 @@ export class OwnerAgentService {
         content: [
           {
             type: 'text',
-            text: 'CORRECCIÓN DEL SISTEMA: ibas a pedir confirmación pero NO llamaste la herramienta de preparación, así que no hay ninguna acción encolada y el "sí" del dueño no ejecutaría nada. Llama AHORA la herramienta owner_* correcta (owner_enviar_mensaje, owner_mover_lead, owner_etiquetar_contacto, owner_asignar_asesor, owner_agregar_instruccion_entrenamiento o owner_restaurar_entrenamiento) con los datos EXACTOS de lo que el dueño pidió en este turno —no otra acción distinta— para dejarla preparada. Después presenta la confirmación.',
+            text: 'CORRECCIÓN DEL SISTEMA: ibas a pedir confirmación pero NO llamaste la herramienta de preparación, así que no hay ninguna acción encolada y el "sí" del dueño no ejecutaría nada. Llama AHORA la herramienta owner_* correcta (owner_enviar_mensaje, owner_mover_lead, owner_etiquetar_contacto, owner_asignar_asesor, owner_agregar_instruccion_entrenamiento, owner_editar_instruccion_entrenamiento, owner_eliminar_instruccion_entrenamiento o owner_restaurar_entrenamiento) con los datos EXACTOS de lo que el dueño pidió en este turno —no otra acción distinta— para dejarla preparada. Después presenta la confirmación.',
           },
         ],
       });
@@ -487,6 +487,46 @@ export class OwnerAgentService {
       },
     );
 
+    const editarInstruccion = mk(
+      async ({ id_instruccion, nuevo_texto, nuevo_titulo }: any) =>
+        prepare(
+          '/api/owner/training/instruction/edit',
+          { stepId: id_instruccion, instruction: nuevo_texto, title: nuevo_titulo },
+          'editar instrucción del entrenamiento',
+        ),
+      {
+        name: 'owner_editar_instruccion_entrenamiento',
+        description:
+          'Prepara EDITAR una instrucción existente del entrenamiento (por su id) y republicarla. Antes usa "owner_ver_entrenamiento" para obtener el id de la instrucción a cambiar. El sistema pedirá confirmación y, tras el "sí", se publica sola.',
+        schema: z.object({
+          id_instruccion: z
+            .string()
+            .describe('El id (del listado de owner_ver_entrenamiento) de la instrucción a editar'),
+          nuevo_texto: z.string().optional().describe('Nuevo texto/regla de la instrucción'),
+          nuevo_titulo: z.string().optional().describe('Opcional. Nuevo título corto.'),
+        }),
+      },
+    );
+
+    const eliminarInstruccion = mk(
+      async ({ id_instruccion }: any) =>
+        prepare(
+          '/api/owner/training/instruction/delete',
+          { stepId: id_instruccion },
+          'eliminar instrucción del entrenamiento',
+        ),
+      {
+        name: 'owner_eliminar_instruccion_entrenamiento',
+        description:
+          'Prepara ELIMINAR una instrucción del entrenamiento (por su id) y republicar. Es reversible (queda en el historial de revisiones). Antes usa "owner_ver_entrenamiento" para obtener el id. El sistema pedirá confirmación y, tras el "sí", se aplica sola.',
+        schema: z.object({
+          id_instruccion: z
+            .string()
+            .describe('El id (del listado de owner_ver_entrenamiento) de la instrucción a eliminar'),
+        }),
+      },
+    );
+
     const restaurarEntrenamiento = mk(
       async ({ numero_revision }: any) =>
         prepare(
@@ -516,6 +556,8 @@ export class OwnerAgentService {
       verEntrenamiento,
       listarRevisiones,
       agregarInstruccion,
+      editarInstruccion,
+      eliminarInstruccion,
       restaurarEntrenamiento,
     ];
   }

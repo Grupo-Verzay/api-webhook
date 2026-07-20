@@ -30,11 +30,23 @@ jobs:
           tags: ghcr.io/grupo-verzay/api-webhook:latest
 
       - name: Deploy via Portainer webhook
+        env:
+          # El webhook se guarda como secret, NO hardcodeado: cada "Update the
+          # stack" en Portainer recrea el servicio y regenera su webhook con un ID
+          # nuevo (apagado), así que un ID fijo obligaba a un PR cada vez. Con el
+          # secret, recuperarse es editarlo en Settings -> Secrets (30s).
+          PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
         run: |
+          # Si falta el secret, fallamos en rojo con un mensaje claro para que
+          # nadie se quede con un deploy silenciosamente sin aplicar.
+          if [ -z "$PORTAINER_WEBHOOK_URL" ]; then
+            echo "::error::Falta el secret PORTAINER_WEBHOOK_URL (Settings -> Secrets and variables -> Actions). El redespliegue NO ocurrió."
+            exit 1
+          fi
           # Capturamos el código HTTP y fallamos en rojo si Portainer no responde
           # 2xx (con "curl -s" a secas un 4xx/5xx pasaba desapercibido).
           code=$(curl -sS -o /tmp/portainer_resp.txt -w "%{http_code}" \
-            -X POST "https://panel-n8n.ia-app.com/api/webhooks/42e0e628-b0e6-4f2d-9509-fd959b37d5e6")
+            -X POST "$PORTAINER_WEBHOOK_URL")
           echo "Portainer respondió HTTP $code"
           echo "Cuerpo: $(cat /tmp/portainer_resp.txt)"
           if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then

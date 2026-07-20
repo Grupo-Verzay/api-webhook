@@ -69,6 +69,18 @@ export class ChatStoreService {
       await this.prisma.$executeRaw`
         ALTER TABLE "chat_messages" ADD COLUMN IF NOT EXISTS "deleted" BOOLEAN NOT NULL DEFAULT FALSE
       `;
+      // Contador de intentos del worker de backfill de mediaUrl. Evita reintentar
+      // indefinidamente medias que Evolution no logra resolver (media caducada,
+      // instancia inexistente, etc.). Ver MediaBackfillService.
+      await this.prisma.$executeRaw`
+        ALTER TABLE "chat_messages" ADD COLUMN IF NOT EXISTS "mediaBackfillAttempts" INTEGER NOT NULL DEFAULT 0
+      `;
+      // Índice parcial para el sweep del backfill: solo indexa las filas que aún no
+      // tienen mediaUrl, que son las candidatas a backfill.
+      await this.prisma.$executeRaw`
+        CREATE INDEX IF NOT EXISTS "chat_messages_media_backfill_idx"
+        ON "chat_messages" ("createdAt") WHERE "mediaUrl" IS NULL
+      `;
       await this.prisma.$executeRaw`
         CREATE TABLE IF NOT EXISTS "chat_conversations" (
           "id" BIGSERIAL PRIMARY KEY,
@@ -264,7 +276,15 @@ export class ChatStoreService {
           "lastMessageFromMe" = EXCLUDED."lastMessageFromMe",
           "lastMessageType" = EXCLUDED."lastMessageType",
           "lastMessageContent" = EXCLUDED."lastMessageContent",
-          "lastMessageMediaUrl" = EXCLUDED."lastMessageMediaUrl",
+          -- Si llega un mensaje NUEVO (id distinto) se usa su mediaUrl tal cual
+          -- (puede ser NULL si el nuevo último mensaje es texto). Si es el MISMO
+          -- último mensaje reentregado, no se pierde una URL ya resuelta (p. ej.
+          -- por el worker de backfill) cuando la reentrega llega sin ella.
+          "lastMessageMediaUrl" = CASE
+            WHEN EXCLUDED."lastMessageId" IS DISTINCT FROM "chat_conversations"."lastMessageId"
+              THEN EXCLUDED."lastMessageMediaUrl"
+            ELSE COALESCE(EXCLUDED."lastMessageMediaUrl", "chat_conversations"."lastMessageMediaUrl")
+          END,
           "lastMessageRaw" = EXCLUDED."lastMessageRaw",
           "lastMessageTimestamp" = EXCLUDED."lastMessageTimestamp",
           -- Solo se limpia la marca de eliminado si llega un mensaje NUEVO (id

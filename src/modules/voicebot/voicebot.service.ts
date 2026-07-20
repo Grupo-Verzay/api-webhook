@@ -5,6 +5,11 @@ import { AiAgentService } from '../ai-agent/ai-agent.service';
 import { LLAMADAS_AGENT_ID } from '../../types/channel-agent-ids';
 import { NodeSenderService } from '../workflow/services/node-sender.service.ts/node-sender.service';
 
+// Anti-repetición del auto-mensaje de "llamada perdida": no reenviarlo al mismo
+// contacto si ya se le mandó hace menos de esto. Mismo criterio que el envío manual
+// del panel (evita spamear al cliente cuando se reintenta la llamada).
+const MISSED_CALL_REPLY_COOLDOWN_MS = 3 * 60 * 60 * 1000;
+
 export interface VoicebotResolveResult {
   enabled: boolean;
   reason?: string; // por qué está deshabilitado: disabled | no_credits | no_openai_key | no_account
@@ -207,11 +212,57 @@ export class VoicebotService {
       const text = (row.text ?? '').trim();
       if (!text) return { ok: true, sent: false };
 
-      const sent = await this.sendWhatsapp(row.id, phone, text);
+      // Anti-repetición (3 h): si ya se le envió ESTE mismo mensaje al contacto en la
+      // ventana, no reenviar aunque se reintente la llamada. Se comprueba por el
+      // saliente ya persistido en chat_messages (mismo userId + texto + número).
+      // Mismo criterio que el envío manual del panel → comportamiento consistente.
+      const digits = (phone || '').replace(/\D/g, '');
+      const cooldownCutoff = new Date(Date.now() - MISSED_CALL_REPLY_COOLDOWN_MS);
+      const recent = await this.prisma.$queryRaw<{ ok: number }[]>`
+        SELECT 1 AS ok FROM "chat_messages"
+        WHERE "userId" = ${row.id}
+          AND "fromMe" = true
+          AND "content" = ${text}
+          AND "messageTimestamp" >= ${cooldownCutoff}
+          AND (
+            "remoteJid" LIKE ${`%${digits}%`}
+            OR "remoteJidAlt" LIKE ${`%${digits}%`}
+            OR "senderPn" LIKE ${`%${digits}%`}
+          )
+        LIMIT 1
+      `;
+      if (recent.length > 0) {
+        this.logger.log(
+          `[voicebot] auto-mensaje omitido (ya enviado <3h) userId=${row.id} phone=${phone}`,
+        );
+        return { ok: true, sent: false };
+      }
+
+      const res = await this.sendWhatsapp(row.id, phone, text);
+      // Persistir el saliente en chat_messages para que (a) el reintento lo encuentre
+      // en el dedup de arriba y (b) aparezca la burbuja en el panel. Se usa el
+      // messageId REAL de Evolution para que el eco posterior deduplique por ON
+      // CONFLICT y no salga la burbuja doble. Best-effort.
+      if (res.ok && res.id && res.instanceName) {
+        const remoteJid = `${digits}@s.whatsapp.net`;
+        await this.prisma.$executeRaw`
+          INSERT INTO "chat_messages" (
+            "userId", "instanceName", "instanceType", "remoteJid", "messageId",
+            "fromMe", "messageType", "content", "messageTimestamp", "createdAt", "updatedAt"
+          )
+          VALUES (
+            ${row.id}, ${res.instanceName}, ${res.instanceType}, ${remoteJid}, ${res.id},
+            true, 'conversation', ${text}, NOW(), NOW(), NOW()
+          )
+          ON CONFLICT ("userId", "instanceName", "remoteJid", "messageId", "fromMe") DO NOTHING
+        `.catch((e: any) =>
+          this.logger.warn(`[voicebot] persist auto-mensaje falló: ${e?.message ?? e}`),
+        );
+      }
       this.logger.log(
-        `[voicebot] auto-mensaje al no contestar userId=${row.id} phone=${phone} sent=${sent}`,
+        `[voicebot] auto-mensaje al no contestar userId=${row.id} phone=${phone} sent=${res.ok}`,
       );
-      return { ok: true, sent };
+      return { ok: true, sent: res.ok };
     } catch (err: any) {
       this.logger.warn(`[voicebot] handleCallResult error: ${err?.message ?? err}`);
       return { ok: false };
@@ -244,8 +295,8 @@ export class VoicebotService {
       if (name === 'enviar_whatsapp') {
         const msg = String(args.mensaje || args.texto || '').trim();
         if (!msg) return { ok: false, result: 'Falta el mensaje.' };
-        const sent = await this.sendWhatsapp(userId, phone, msg);
-        return sent
+        const res = await this.sendWhatsapp(userId, phone, msg);
+        return res.ok
           ? { ok: true, result: 'Listo, ya se lo envié por WhatsApp.' }
           : { ok: false, result: 'No pude enviarlo por WhatsApp en este momento.' };
       }
@@ -284,9 +335,14 @@ export class VoicebotService {
    * una URL de archivo (pdf/imagen/video/documento), lo envía como MEDIA real
    * (catálogo, cotización, etc.); si no, como texto.
    */
-  private async sendWhatsapp(userId: string, phone: string, text: string): Promise<boolean> {
+  private async sendWhatsapp(
+    userId: string,
+    phone: string,
+    text: string,
+  ): Promise<{ ok: boolean; id: string | null; instanceName: string | null; instanceType: string | null }> {
+    const fail = { ok: false, id: null, instanceName: null, instanceType: null };
     const digits = (phone || '').replace(/\D/g, '');
-    if (!digits) return false;
+    if (!digits) return fail;
     try {
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
@@ -294,14 +350,18 @@ export class VoicebotService {
           apiKey: { select: { url: true } },
           instancias: {
             where: { instanceType: 'Whatsapp' },
-            select: { instanceName: true, instanceId: true },
+            select: { instanceName: true, instanceId: true, instanceType: true },
             take: 1,
           },
         },
       });
       const inst = user?.instancias?.[0];
       const srv = user?.apiKey?.url?.trim();
-      if (!inst || !srv) return false;
+      if (!inst || !srv) return fail;
+      const instMeta = {
+        instanceName: inst.instanceName,
+        instanceType: inst.instanceType ?? 'evolution',
+      };
       const base = (/^https?:\/\//i.test(srv) ? srv : `https://${srv}`).replace(/\/+$/, '');
 
       // ¿El mensaje trae una URL de archivo? → enviarlo como MEDIA (documento/
@@ -326,7 +386,9 @@ export class VoicebotService {
           caption,
           mediaUrl,
         );
-        if (ok) return true;
+        // media enviada: no capturamos su messageId (no se persiste burbuja de media
+        // aquí); basta con ok para el resultado.
+        if (ok) return { ok: true, id: null, ...instMeta };
         // si el envío de media falla, cae a texto plano abajo
       }
 
@@ -336,9 +398,15 @@ export class VoicebotService {
         headers: { 'Content-Type': 'application/json', apikey: inst.instanceId },
         body: JSON.stringify({ number: digits, text }),
       });
-      return r.ok;
+      if (!r.ok) return fail;
+      // Capturamos el messageId real de Evolution (key.id) para poder persistir el
+      // saliente y que su eco posterior deduplique por ON CONFLICT.
+      const body: any = await r.json().catch(() => null);
+      const id =
+        body?.key?.id ?? body?.message?.key?.id ?? body?.data?.key?.id ?? null;
+      return { ok: true, id, ...instMeta };
     } catch {
-      return false;
+      return fail;
     }
   }
 

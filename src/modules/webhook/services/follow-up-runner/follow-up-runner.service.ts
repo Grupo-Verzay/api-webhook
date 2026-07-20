@@ -714,6 +714,9 @@ export class FollowUpRunnerService {
       sent: 0,
       failed: 0,
       skipped: 0,
+      // Motivo de los saltos, para que el log del scheduler diga POR QUÉ no se
+      // envió nada (antes 237 "skipped" sin explicación por corrida).
+      skippedOutOfWindow: 0,
     };
 
     for (const current of due) {
@@ -724,6 +727,38 @@ export class FollowUpRunnerService {
           `[FOLLOW_UP][id=${current.id}] Recordatorio vencido al crearse, eliminando sin enviar.`,
           'FollowUpRunnerService',
         );
+        continue;
+      }
+
+      // Ventana de envío ANTES de bloquear. Sólo los seguimientos de FLUJO/WORKFLOW
+      // respetan el horario laboral (idNodo no vacío y sin prefijo de recordatorio);
+      // recordatorios, confirmaciones y campañas salen siempre. Los flujos fuera de
+      // ventana ni se tocan: antes se bloqueaban (pending→processing) y se
+      // desbloqueaban (processing→pending) en CADA corrida (~237 ítems x2 escrituras
+      // cada ~25s) sólo para no hacer nada. Ahora se saltan sin escribir en BD.
+      const idNodo = (current.idNodo ?? '').trim();
+      const isReminderOrConfirm =
+        idNodo === '' ||
+        /^(?:appt|booking(?:-svc)?|task)-reminder-/.test(idNodo) ||
+        idNodo.startsWith('reminder-') ||
+        /^(?:appt|booking)-confirm-/.test(idNodo) ||
+        /^camping-/.test(idNodo);
+      const isFlowFollowUp = !isReminderOrConfirm;
+
+      // Sesión: se resuelve UNA vez (lectura barata) y se reutiliza tras el lock.
+      const resolvedSession = await this.findSessionByRemoteJid(
+        current.remoteJid ?? '',
+        current.instancia ?? '',
+      );
+
+      if (
+        isFlowFollowUp &&
+        !(await this.isWithinSendWindow(resolvedSession?.userId ?? ''))
+      ) {
+        // Fuera de horario: queda 'pending' para la próxima corrida dentro de
+        // ventana. No se bloquea, no cuenta intento, no escribe en BD.
+        summary.skipped++;
+        summary.skippedOutOfWindow++;
         continue;
       }
 
@@ -746,10 +781,7 @@ export class FollowUpRunnerService {
         continue;
       }
 
-      const session = await this.findSessionByRemoteJid(
-        seguimiento.remoteJid ?? '',
-        seguimiento.instancia ?? '',
-      );
+      const session = resolvedSession;
 
       const loggerCtx = `[FOLLOW_UP][id=${seguimiento.id}][instance=${seguimiento.instancia ?? '-'}][remoteJid=${seguimiento.remoteJid ?? '-'}]`;
 
@@ -786,40 +818,8 @@ export class FollowUpRunnerService {
       const effectiveUserId = session?.userId ?? '';
       const effectiveInstanceId = session?.instanceId ?? (seguimiento.instancia ?? '').trim();
 
-      // Ventana de envío por cuenta (horario + días en su zona horaria). Si un flujo cae
-      // fuera de la franja, se libera el lock (vuelve a 'pending') y se reintenta en la
-      // próxima corrida del runner que caiga dentro del horario. No cuenta intento.
-      const idNodo = (seguimiento.idNodo ?? '').trim();
-      // La ventana de envío (horario laboral) aplica ÚNICAMENTE a los seguimientos de
-      // FLUJO/WORKFLOW (nodos de /flow y /workflow), que se disparan de forma relativa a
-      // la inactividad del cliente y por eso sí deben respetar el horario. Estos usan
-      // `idNodo` = id del nodo del constructor (no vacío y sin prefijo de recordatorio).
-      //
-      // Todo lo demás tiene una hora exacta elegida por el usuario o debe salir de
-      // inmediato, así que NO se pospone:
-      //   - recordatorios: reminder-, appt-reminder-, booking-reminder-, booking-svc-reminder-, task-reminder-
-      //   - confirmaciones: appt-confirm-, booking-confirm-, e idNodo vacío ("")
-      //   - campañas: camping-
-      const isReminderOrConfirm =
-        idNodo === '' ||
-        /^(?:appt|booking(?:-svc)?|task)-reminder-/.test(idNodo) ||
-        idNodo.startsWith('reminder-') ||
-        /^(?:appt|booking)-confirm-/.test(idNodo) ||
-        /^camping-/.test(idNodo);
-      const isFlowFollowUp = !isReminderOrConfirm;
-      if (isFlowFollowUp && !(await this.isWithinSendWindow(effectiveUserId))) {
-        await this.prisma.seguimiento.updateMany({
-          where: { id: seguimiento.id, followUpStatus: 'processing' },
-          data: { followUpStatus: 'pending' },
-        });
-        summary.skipped++;
-        // Sin log por-item: esta rama se ejecutaba por cada seguimiento fuera de
-        // horario (~178 por corrida, ~350/min) y tapaba todo lo demás en los logs.
-        // El conteo ya queda en el resumen por corrida del scheduler
-        // ("Runner scheduler procesado. due=… sent=… skipped=…").
-        continue;
-      }
-
+      // (La ventana de envío ya se comprobó ANTES del lock; aquí el seguimiento
+      // está garantizado dentro de horario o es recordatorio/confirmación.)
       try {
         const finalMessage = await this.resolveFollowUpMessage(
           seguimiento,

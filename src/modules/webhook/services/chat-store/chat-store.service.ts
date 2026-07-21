@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 
@@ -31,11 +31,19 @@ export interface PersistChatMessageInput {
  * @messenger, @instagram, @s.whatsapp.net) para que empate con Session.remoteJid.
  */
 @Injectable()
-export class ChatStoreService {
+export class ChatStoreService implements OnModuleInit {
   private readonly logger = new Logger(ChatStoreService.name);
   private ensurePromise: Promise<void> | null = null;
 
   constructor(private readonly prisma: PrismaService) {}
+
+  onModuleInit(): void {
+    // Barrido único al arrancar: rellena el alias telefónico en las
+    // conversaciones "fantasma" @lid ya existentes que tengan un mapeo
+    // conocido (chat_lid_map), para que el frontend las fusione con el
+    // contacto real. Best-effort, no bloquea el arranque.
+    void this.backfillAllKnownLidAliases();
+  }
 
   private ensureTables(): Promise<void> {
     this.ensurePromise ??= (async () => {
@@ -365,8 +373,66 @@ export class ChatStoreService {
         ON CONFLICT ("userId", "lid")
         DO UPDATE SET "remoteJid" = EXCLUDED."remoteJid", "updatedAt" = NOW()
       `;
+      // En cuanto conocemos el número, "reparamos" la conversación fantasma que
+      // se hubiera creado bajo el @lid, rellenando su alias telefónico.
+      await this.backfillLidConversationAlias(userId, lid, remoteJid);
     } catch (err: any) {
       this.logger.error(`[ChatStore] Error guardando lid: ${err?.message}`);
+    }
+  }
+
+  /**
+   * Reparación NO destructiva de las "conversaciones fantasma" @lid: rellena
+   * remoteJidAlt/senderPn con el número real. No borra ni re-llavea nada; solo
+   * añade el alias telefónico para que el frontend fusione la conversación @lid
+   * con la del contacto real (deduplica por remoteJidAlt/senderPn) y resuelva la
+   * sesión (barra de acciones, nombre editable) vía ese alias.
+   */
+  private async backfillLidConversationAlias(
+    userId: string,
+    lid: string,
+    phoneJid: string,
+  ): Promise<void> {
+    if (!userId || !lid || !phoneJid || phoneJid.includes('@lid')) return;
+    try {
+      await this.prisma.$executeRaw`
+        UPDATE "chat_conversations"
+        SET "remoteJidAlt" = ${phoneJid},
+            "senderPn" = COALESCE("senderPn", ${phoneJid}),
+            "updatedAt" = NOW()
+        WHERE "userId" = ${userId}
+          AND "remoteJid" = ${lid}
+          AND "remoteJidAlt" IS DISTINCT FROM ${phoneJid}
+      `;
+    } catch (err: any) {
+      this.logger.error(`[ChatStore] Error backfill alias @lid: ${err?.message}`);
+    }
+  }
+
+  /**
+   * Barrido único (al arrancar): para cada mapeo lid->número ya conocido,
+   * rellena el alias telefónico en la conversación fantasma correspondiente.
+   * Idempotente y barato: solo toca filas cuyo alias aún difiere.
+   */
+  private async backfillAllKnownLidAliases(): Promise<void> {
+    try {
+      await this.ensureTables();
+      const affected = await this.prisma.$executeRaw`
+        UPDATE "chat_conversations" c
+        SET "remoteJidAlt" = m."remoteJid",
+            "senderPn" = COALESCE(c."senderPn", m."remoteJid"),
+            "updatedAt" = NOW()
+        FROM "chat_lid_map" m
+        WHERE c."userId" = m."userId"
+          AND c."remoteJid" = m."lid"
+          AND m."remoteJid" NOT LIKE '%@lid'
+          AND c."remoteJidAlt" IS DISTINCT FROM m."remoteJid"
+      `;
+      if (affected) {
+        this.logger.log(`[ChatStore] Backfill de alias @lid: ${affected} conversaciones reparadas.`);
+      }
+    } catch (err: any) {
+      this.logger.error(`[ChatStore] Error en barrido de backfill @lid: ${err?.message}`);
     }
   }
 

@@ -238,9 +238,21 @@ export class SessionService {
 
   // Get a specific session by remoteJid and instanceId
   async getSession(remoteJid: string, instanceId: string, userId: string) {
-    const candidates = this.buildRemoteJidCandidates(this.clean(remoteJid));
+    const cleanedRemoteJid = this.clean(remoteJid);
+    const cleanedUserId = this.clean(userId);
+    // Si preguntan por un @lid pero ya conocemos su número real (chat_lid_map),
+    // añadimos el teléfono a los candidatos para encontrar la sesión canónica
+    // (guardada bajo @s.whatsapp.net) en vez de devolver null.
+    const extraCandidates: string[] = [];
+    if (isLidJid(cleanedRemoteJid)) {
+      const real = await this.resolveLidToPhone(cleanedUserId, cleanedRemoteJid);
+      if (real) {
+        extraCandidates.push(real);
+      }
+    }
+    const candidates = this.buildRemoteJidCandidates(cleanedRemoteJid, extraCandidates);
     return this.findSessionByCandidates(
-      this.clean(userId),
+      cleanedUserId,
       this.clean(instanceId),
       candidates,
     );

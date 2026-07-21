@@ -49,26 +49,61 @@ export class BaileysWebhookBridgeService implements OnModuleInit {
     const message = msg.message ?? {};
     const messageType = Object.keys(message)[0] ?? 'conversation';
 
-    // Resolve real phone JID for @lid contacts
+    // Resolve real phone JID for @lid contacts.
+    // WhatsApp/Meta ahora entrega el remitente como @lid (ID de privacidad, NO el
+    // teléfono). Hay que resolverlo al número real ANTES de procesar, o se crea una
+    // "conversación fantasma" con el ID largo, sin nombre ni historial. El puente es
+    // el punto de estrangulamiento: si aquí dejamos el teléfono en remoteJidAlt,
+    // todo lo de abajo (sesión CRM, inbox unificado) queda anclado al número real.
     let remoteJidAlt = remoteJid;
     if (remoteJid.toLowerCase().endsWith('@lid')) {
-      // 1st: Baileys resuelve key.remoteJidAlt desde su auth state
-      const baileysAlt: string = key.remoteJidAlt ?? '';
-      if (baileysAlt && !baileysAlt.toLowerCase().endsWith('@lid')) {
-        remoteJidAlt = baileysAlt;
-        // Persistir en BD para próximos usos
-        const phoneDigits = baileysAlt.replace(/@[^@]*$/, '').replace(/\D/g, '');
+      const persistPhone = (jid: string) => {
+        const phoneDigits = jid.replace(/@[^@]*$/, '').replace(/\D/g, '');
         if (phoneDigits) {
           this.messageStore.updateContactPhone(instanceName, remoteJid, phoneDigits).catch(() => {});
         }
+      };
+
+      // 1º: Baileys resuelve key.remoteJidAlt desde su auth state
+      const baileysAlt: string = key.remoteJidAlt ?? '';
+      if (baileysAlt && !baileysAlt.toLowerCase().endsWith('@lid')) {
+        remoteJidAlt = baileysAlt;
+        persistPhone(baileysAlt);
       } else {
-        // 2nd: fallback a nuestra BD
-        const phoneNumber = await this.messageStore.getContactPhone(instanceName, remoteJid);
-        if (phoneNumber) {
-          remoteJidAlt = `${phoneNumber}@s.whatsapp.net`;
+        // 2º: mapeo NATIVO de Baileys (lidMapping) — autoridad para LID→PN.
+        // Se sincroniza vía USync/historial, así que resuelve incluso el primer
+        // mensaje que llega como @lid puro (el hueco que creaba los fantasmas).
+        let resolvedPhoneJid = '';
+        try {
+          const socket: any = this.sessions.getSocket(instanceName);
+          const pn: string | null | undefined =
+            await socket?.signalRepository?.lidMapping?.getPNForLID?.(remoteJid);
+          if (pn && !pn.toLowerCase().endsWith('@lid')) {
+            resolvedPhoneJid = pn;
+          }
+        } catch (err: any) {
+          this.logger.error(`[BaileyseBridge] getPNForLID falló para ${remoteJid}: ${err?.message}`, 'BaileysWebhookBridgeService');
+        }
+
+        if (resolvedPhoneJid) {
+          remoteJidAlt = resolvedPhoneJid;
+          persistPhone(resolvedPhoneJid);
+        } else {
+          // 3º: fallback a nuestra BD (mapeos ya aprendidos)
+          const phoneNumber = await this.messageStore.getContactPhone(instanceName, remoteJid);
+          if (phoneNumber) {
+            remoteJidAlt = `${phoneNumber}@s.whatsapp.net`;
+          }
         }
       }
     }
+
+    // senderPn explícito para que el webhook aprenda el mapeo LID→teléfono
+    // (chat_lid_map) y ancle la conversación al número real.
+    const senderPn =
+      remoteJidAlt !== remoteJid && remoteJidAlt.toLowerCase().endsWith('@s.whatsapp.net')
+        ? remoteJidAlt
+        : '';
 
     // Para imágenes y audio de Baileys, descargar la media y agregar base64 al payload.
     // Evolution API provee mediaUrl; Baileys necesita descarga directa via downloadContentFromMessage.
@@ -106,6 +141,7 @@ export class BaileysWebhookBridgeService implements OnModuleInit {
           id: key.id ?? '',
           participant: key.participant ?? '',
           participantAlt: key.participantAlt ?? key.participant ?? '',
+          senderPn,
           addressingMode: 'lid',
         },
         pushName: msg.pushName ?? '',

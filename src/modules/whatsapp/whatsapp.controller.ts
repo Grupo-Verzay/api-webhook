@@ -10,6 +10,10 @@ import { WhatsAppSenderFactory } from './whatsapp-sender.factory';
 import { MetaCloudApiSenderAdapter } from './adapters/meta-cloud-api.adapter';
 import { PrismaService } from 'src/database/prisma.service';
 import { LoggerService } from 'src/core/logger/logger.service';
+import { spawn } from 'child_process';
+import { writeFile, unlink } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 @Controller('whatsapp/baileys')
 export class WhatsAppController {
@@ -29,6 +33,53 @@ export class WhatsAppController {
     const key = (this.config.get<string>('CRM_FOLLOW_UP_RUNNER_KEY') ?? '').trim();
     const provided = (headers['x-internal-secret'] ?? headers['authorization']?.replace('Bearer ', '') ?? '').trim();
     if (!key || provided !== key) throw new UnauthorizedException();
+  }
+
+  /**
+   * Transcodifica un audio (típicamente webm/opus del navegador) a OGG/Opus,
+   * el formato de nota de voz que aceptan tanto Meta (WhatsApp Cloud API) como
+   * Baileys. Best-effort: si ffmpeg falla o no está, devuelve null y el llamador
+   * decide qué hacer. Usa ffmpeg-static (binario empaquetado, sin depender del
+   * sistema).
+   */
+  private async transcodeToOggOpus(input: Buffer, inExt = 'webm'): Promise<Buffer | null> {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const ffmpegPath = require('ffmpeg-static') as string | null;
+    if (!ffmpegPath) {
+      this.logger.warn('[audio] ffmpeg no disponible; no se transcodifica.');
+      return null;
+    }
+    const safeExt = /^[a-z0-9]+$/i.test(inExt) ? inExt : 'webm';
+    const tmpIn = join(tmpdir(), `aud_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${safeExt}`);
+    try {
+      await writeFile(tmpIn, input);
+      const out = await new Promise<Buffer>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        const errChunks: string[] = [];
+        const proc = spawn(ffmpegPath, [
+          '-i', tmpIn,
+          '-vn',
+          '-ac', '1',            // mono (nota de voz)
+          '-ar', '48000',        // 48 kHz (requerido por Opus)
+          '-c:a', 'libopus',
+          '-b:a', '32k',
+          '-f', 'ogg',
+          'pipe:1',
+        ]);
+        proc.stdout.on('data', (d: Buffer) => chunks.push(d));
+        proc.stderr.on('data', (d: Buffer) => errChunks.push(d.toString()));
+        proc.on('error', reject);
+        proc.on('close', (code) =>
+          code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(errChunks.join('').slice(-400))),
+        );
+      });
+      return out.length ? out : null;
+    } catch (err: any) {
+      this.logger.error(`[audio] Error transcodificando a OGG/Opus: ${err?.message}`);
+      return null;
+    } finally {
+      void unlink(tmpIn).catch(() => {});
+    }
   }
 
   /** GET /whatsapp/baileys/qr/:instanceName
@@ -275,11 +326,32 @@ export class WhatsAppController {
       'application/pdf': 'pdf',
     };
     const fileNameExt = body.fileName?.includes('.') ? body.fileName.split('.').pop()!.toLowerCase() : '';
-    const ext = fileNameExt || extMap[mimetype] || mimetype.split('/')[1] || 'bin';
 
-    const buffer = Buffer.from(base64Pure, 'base64');
+    let buffer = Buffer.from(base64Pure, 'base64');
+    let uploadMime = mimetype;
+    let ext = fileNameExt || extMap[mimetype] || mimetype.split('/')[1] || 'bin';
+
+    // Audio: WhatsApp Cloud API (Meta) SOLO acepta ogg-opus / mp4 / mpeg / aac /
+    // amr. El navegador graba en webm/opus, que Meta RECHAZA (acepta la petición
+    // con 200 pero nunca entrega la nota de voz). A diferencia de Evolution, aquí
+    // no hay transcodificación intermedia, así que la hacemos: webm → OGG/Opus.
+    const isAudioUpload = body.ptt || body.mediatype === 'audio';
+    const isMetaFriendlyAudio = /^audio\/(ogg|mp4|mpeg|aac|amr)$/i.test(mimetype);
+    if (isAudioUpload && !isMetaFriendlyAudio) {
+      const ogg = await this.transcodeToOggOpus(buffer, ext);
+      if (ogg) {
+        buffer = ogg;
+        uploadMime = 'audio/ogg';
+        ext = 'ogg';
+      } else {
+        this.logger.warn(
+          `[send-media-channel] No se pudo transcodificar el audio (${mimetype}) a OGG/Opus para "${instanceName}"; se envía tal cual.`,
+        );
+      }
+    }
+
     const key = `channel-ui/${instanceName}/${body.remoteJid.replace(/[@:]/g, '_')}/${Date.now()}.${ext}`;
-    const publicUrl = await this.mediaStorage.uploadBuffer(buffer, key, mimetype);
+    const publicUrl = await this.mediaStorage.uploadBuffer(buffer, key, uploadMime);
 
     // Credenciales por canal
     const apikey = instance.metaAccessToken ?? undefined;

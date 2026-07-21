@@ -207,6 +207,15 @@ export function buildWhatsAppJidCandidates(
       candidates.add(canonical);
     }
 
+    // Un @lid NO es un teléfono: sus dígitos son un ID de privacidad. Fabricar
+    // `<lidDigits>@s.whatsapp.net` producía un JID falso que nunca casa con la
+    // sesión real y, en el peor caso, podía casar con un contacto ajeno. Para un
+    // @lid solo conservamos su forma literal; el teléfono real se pasa aparte
+    // (senderPn/remoteJidAlt) como extraValue.
+    if (isLidJid(raw)) {
+      return;
+    }
+
     const digits = extractWhatsAppDigits(raw);
     if (!digits) {
       return;

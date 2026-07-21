@@ -59,10 +59,12 @@ export class WhatsAppController {
         const proc = spawn(ffmpegPath, [
           '-i', tmpIn,
           '-vn',
-          '-ac', '1',            // mono (nota de voz)
-          '-ar', '48000',        // 48 kHz (requerido por Opus)
+          '-ac', '1',                 // mono (nota de voz)
+          '-ar', '48000',             // 48 kHz (requerido por Opus)
           '-c:a', 'libopus',
           '-b:a', '32k',
+          '-application', 'voip',     // señaliza el Opus como VOZ → WhatsApp lo trata como nota de voz
+          '-map_metadata', '-1',      // sin metadatos: un OGG/Opus limpio se rinde como PTT, no como archivo de audio
           '-f', 'ogg',
           'pipe:1',
         ]);

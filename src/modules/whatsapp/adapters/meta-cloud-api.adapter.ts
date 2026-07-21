@@ -212,7 +212,10 @@ export class MetaCloudApiSenderAdapter implements IWhatsAppSender {
     const { to, channel } = this.normalizeJid(remoteJid);
 
     const messageBody = channel === 'whatsapp'
-      ? { type: 'audio', audio: { link: audioUrl } }
+      // voice: true → WhatsApp Cloud API lo entrega como NOTA DE VOZ (PTT), no
+      // como archivo de audio. Requiere que el audio sea OGG/Opus (ya se
+      // transcodifica antes de subirlo).
+      ? { type: 'audio', audio: { link: audioUrl, voice: true } }
       : { message: { attachment: { type: 'audio', payload: { url: audioUrl, is_reusable: true } } } };
 
     const res = await this.post(serverUrl!, apikey!, to, channel, messageBody);

@@ -128,7 +128,7 @@ export class AutoAssignService {
         LEFT JOIN load l ON l.id = m.id
         LEFT JOIN last_assign la ON la.id = m.id
         WHERE m.advisor_available = true
-          AND COALESCE(l.cnt, 0) < ${maxChats}
+          AND (${maxChats} <= 0 OR COALESCE(l.cnt, 0) < ${maxChats})
         ORDER BY la.last_at ASC NULLS FIRST, m.id ASC
         LIMIT 1
       `;

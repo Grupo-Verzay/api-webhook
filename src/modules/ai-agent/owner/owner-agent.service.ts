@@ -83,6 +83,35 @@ export class OwnerAgentService {
   }
 
   /**
+   * Lista de números autorizados del Modo Dueño. Para no tocar la base de datos,
+   * la app guarda a las personas (dueño, socio, admin…) como JSON en el campo
+   * `ownerModePhone`. Aceptamos ambos formatos (mismo criterio que la app,
+   * ver lib/owner-contacts.ts):
+   *   - JSON:   [{"name":"Juan","phone":"573001234567","role":"Dueño"}]
+   *   - Legado: "573001234567"  o  "573..,573.."  (solo números)
+   */
+  private ownerPhonesFrom(raw?: string | null): string[] {
+    const s = (raw ?? '').trim();
+    if (!s) return [];
+    if (s.startsWith('[')) {
+      try {
+        const arr = JSON.parse(s);
+        if (Array.isArray(arr)) {
+          return arr
+            .map((o) => this.normalizePhone(o?.phone))
+            .filter((p) => p.length >= 7);
+        }
+      } catch {
+        /* cae al parseo de legado */
+      }
+    }
+    return s
+      .split(',')
+      .map((p) => this.normalizePhone(p))
+      .filter((p) => p.length >= 7);
+  }
+
+  /**
    * ¿El mensaje entrante es del dueño de la cuenta? Requiere flag activo,
    * configuración presente y que el número coincida con el número del dueño
    * configurado (ownerModePhone; si está vacío, cae a notificationNumber).
@@ -99,10 +128,13 @@ export class OwnerAgentService {
     });
     if (!user?.ownerModeEnabled) return false;
 
-    const ownerDigits = this.normalizePhone(
-      user?.ownerModePhone || user?.notificationNumber,
-    );
-    return this.phonesMatch(fromDigits, ownerDigits);
+    // Varias personas autorizadas; si no hay lista, cae al número de notificación.
+    const candidates = this.ownerPhonesFrom(user?.ownerModePhone);
+    if (candidates.length === 0) {
+      const fallback = this.normalizePhone(user?.notificationNumber);
+      return this.phonesMatch(fromDigits, fallback);
+    }
+    return candidates.some((c) => this.phonesMatch(fromDigits, c));
   }
 
   /**
